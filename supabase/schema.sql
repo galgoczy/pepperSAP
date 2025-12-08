@@ -376,3 +376,48 @@ ON event_revenues FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_event_expenses_updated_at BEFORE UPDATE
 ON event_expenses FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- 6. TESZT FELHASZNÁLÓK BEÁLLÍTÁSA
+-- ============================================
+--
+-- FONTOS: Először hozd létre a felhasználókat a Supabase Auth-ban!
+--
+-- 1. Menj a Supabase Dashboard-ra: https://app.supabase.com
+-- 2. Válaszd ki a projekted
+-- 3. Authentication → Users → "Add user"
+-- 4. Hozd létre ezeket a felhasználókat:
+--    - gergo@pepperhouse.hu / admin123
+--    - unit@pepperhouse.hu / unit123
+--    - events@pepperhouse.hu / events123
+--
+-- 5. Utána futtasd az alábbi SQL-t (cseréld ki a USER_ID-kat!):
+
+/*
+-- Admin felhasználó (gergo@pepperhouse.hu)
+INSERT INTO user_profiles (id, full_name, role, unit_id)
+VALUES (
+  'IDE_IRD_A_GERGO_USER_ID-t',
+  'Gergő Admin',
+  'admin',
+  NULL
+);
+
+-- Éttermi egység felhasználó (unit@pepperhouse.hu)
+INSERT INTO user_profiles (id, full_name, role, unit_id)
+SELECT
+  'IDE_IRD_A_UNIT_USER_ID-t',
+  'Központi Étterem Felhasználó',
+  'unit',
+  id
+FROM units WHERE name = 'Központi Étterem';
+
+-- Rendezvény egység felhasználó (events@pepperhouse.hu)
+INSERT INTO user_profiles (id, full_name, role, unit_id)
+SELECT
+  'IDE_IRD_AZ_EVENTS_USER_ID-t',
+  'Rendezvény Felhasználó',
+  'events',
+  id
+FROM units WHERE name = 'Rendezvény Egység';
+*/

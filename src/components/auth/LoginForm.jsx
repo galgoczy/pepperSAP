@@ -1,9 +1,34 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Eye, EyeOff, LogIn } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Shield, Building2, PartyPopper } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { Button, Input, Card } from '../common';
 import toast from 'react-hot-toast';
+
+// Test accounts for quick login
+const TEST_ACCOUNTS = [
+  {
+    email: 'gergo@pepperhouse.hu',
+    password: 'admin123',
+    label: 'Admin',
+    icon: Shield,
+    color: 'bg-red-600 hover:bg-red-700',
+  },
+  {
+    email: 'unit@pepperhouse.hu',
+    password: 'unit123',
+    label: 'Éttermi egység',
+    icon: Building2,
+    color: 'bg-blue-600 hover:bg-blue-700',
+  },
+  {
+    email: 'events@pepperhouse.hu',
+    password: 'events123',
+    label: 'Rendezvény',
+    icon: PartyPopper,
+    color: 'bg-purple-600 hover:bg-purple-700',
+  },
+];
 
 export default function LoginForm() {
   const [email, setEmail] = useState('');
@@ -45,6 +70,34 @@ export default function LoginForm() {
     }
   };
 
+  const handleQuickLogin = async (account) => {
+    setEmail(account.email);
+    setPassword(account.password);
+    setError('');
+    setLoading(true);
+
+    try {
+      const { error: signInError } = await signIn(account.email, account.password);
+
+      if (signInError) {
+        if (signInError.message.includes('Invalid login')) {
+          setError(`Teszt fiók nem található: ${account.email}. Hozd létre a Supabase-ben!`);
+        } else {
+          setError('Hiba történt a bejelentkezés során');
+        }
+        return;
+      }
+
+      toast.success('Sikeres bejelentkezés!');
+      navigate(from, { replace: true });
+    } catch (err) {
+      setError('Váratlan hiba történt');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-neutral-light px-4">
       <div className="w-full max-w-md">
@@ -62,6 +115,26 @@ export default function LoginForm() {
             Jelentkezz be a folytatáshoz
           </p>
         </div>
+
+        {/* Quick Login Buttons */}
+        <Card className="p-4 mb-4">
+          <p className="text-sm text-gray-600 mb-3 text-center font-medium">
+            Gyors belépés (teszt)
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {TEST_ACCOUNTS.map((account) => (
+              <button
+                key={account.email}
+                onClick={() => handleQuickLogin(account)}
+                disabled={loading}
+                className={`${account.color} text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex flex-col items-center gap-1 disabled:opacity-50`}
+              >
+                <account.icon className="h-5 w-5" />
+                {account.label}
+              </button>
+            ))}
+          </div>
+        </Card>
 
         {/* Login Card */}
         <Card className="p-8">
@@ -116,6 +189,18 @@ export default function LoginForm() {
             </Button>
           </form>
         </Card>
+
+        {/* Test Account Info */}
+        <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-sm text-yellow-800 font-medium mb-2">
+            Teszt fiókok létrehozása Supabase-ben:
+          </p>
+          <ul className="text-xs text-yellow-700 space-y-1">
+            <li>1. Supabase Dashboard → Authentication → Users</li>
+            <li>2. "Add user" gomb → email + jelszó megadása</li>
+            <li>3. user_profiles táblába INSERT a role-lal</li>
+          </ul>
+        </div>
 
         {/* Footer */}
         <p className="text-center text-sm text-gray-500 mt-6">
