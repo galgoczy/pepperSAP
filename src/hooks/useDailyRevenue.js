@@ -1,0 +1,219 @@
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
+import toast from 'react-hot-toast';
+
+export function useDailyRevenue(unitId, date) {
+  const [revenue, setRevenue] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchRevenue = useCallback(async () => {
+    if (!unitId || !date) {
+      setRevenue(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('daily_revenue')
+        .select('*')
+        .eq('unit_id', unitId)
+        .eq('date', date)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
+      setRevenue(data || null);
+    } catch (error) {
+      console.error('Error fetching daily revenue:', error);
+      toast.error('Hiba a napi forgalom betöltésekor');
+    } finally {
+      setLoading(false);
+    }
+  }, [unitId, date]);
+
+  useEffect(() => {
+    fetchRevenue();
+  }, [fetchRevenue]);
+
+  const saveRevenue = async (revenueData) => {
+    try {
+      const dataToSave = {
+        ...revenueData,
+        unit_id: unitId,
+        date: date,
+      };
+
+      let result;
+      if (revenue?.id) {
+        // Update existing
+        const { data, error } = await supabase
+          .from('daily_revenue')
+          .update(dataToSave)
+          .eq('id', revenue.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        result = data;
+      } else {
+        // Insert new
+        const { data, error } = await supabase
+          .from('daily_revenue')
+          .insert([dataToSave])
+          .select()
+          .single();
+
+        if (error) throw error;
+        result = data;
+      }
+
+      setRevenue(result);
+      toast.success('Napi forgalom sikeresen mentve!');
+      return result;
+    } catch (error) {
+      console.error('Error saving daily revenue:', error);
+      toast.error('Hiba a napi forgalom mentésekor');
+      throw error;
+    }
+  };
+
+  return {
+    revenue,
+    loading,
+    refetch: fetchRevenue,
+    saveRevenue,
+  };
+}
+
+export function useHouseCash(unitId, date) {
+  const [houseCash, setHouseCash] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchHouseCash = useCallback(async () => {
+    if (!unitId || !date) {
+      setHouseCash(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('house_cash')
+        .select('*')
+        .eq('unit_id', unitId)
+        .eq('date', date)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
+      setHouseCash(data || null);
+    } catch (error) {
+      console.error('Error fetching house cash:', error);
+      toast.error('Hiba a házipénztár betöltésekor');
+    } finally {
+      setLoading(false);
+    }
+  }, [unitId, date]);
+
+  useEffect(() => {
+    fetchHouseCash();
+  }, [fetchHouseCash]);
+
+  const saveHouseCash = async (cashData) => {
+    try {
+      const dataToSave = {
+        ...cashData,
+        unit_id: unitId,
+        date: date,
+      };
+
+      let result;
+      if (houseCash?.id) {
+        const { data, error } = await supabase
+          .from('house_cash')
+          .update(dataToSave)
+          .eq('id', houseCash.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        result = data;
+      } else {
+        const { data, error } = await supabase
+          .from('house_cash')
+          .insert([dataToSave])
+          .select()
+          .single();
+
+        if (error) throw error;
+        result = data;
+      }
+
+      setHouseCash(result);
+      toast.success('Házipénztár sikeresen mentve!');
+      return result;
+    } catch (error) {
+      console.error('Error saving house cash:', error);
+      toast.error('Hiba a házipénztár mentésekor');
+      throw error;
+    }
+  };
+
+  return {
+    houseCash,
+    loading,
+    refetch: fetchHouseCash,
+    saveHouseCash,
+  };
+}
+
+export function useDailyRevenueList(unitId, startDate, endDate) {
+  const [revenues, setRevenues] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchRevenues = useCallback(async () => {
+    try {
+      let query = supabase
+        .from('daily_revenue')
+        .select(`
+          *,
+          units (
+            id,
+            name
+          )
+        `)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date', { ascending: false });
+
+      if (unitId) {
+        query = query.eq('unit_id', unitId);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      setRevenues(data || []);
+    } catch (error) {
+      console.error('Error fetching revenues:', error);
+      toast.error('Hiba az adatok betöltésekor');
+    } finally {
+      setLoading(false);
+    }
+  }, [unitId, startDate, endDate]);
+
+  useEffect(() => {
+    fetchRevenues();
+  }, [fetchRevenues]);
+
+  return {
+    revenues,
+    loading,
+    refetch: fetchRevenues,
+  };
+}

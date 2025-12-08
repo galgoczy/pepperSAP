@@ -1,0 +1,355 @@
+import { useState, useEffect } from 'react';
+import { Card, LoadingSpinner, Badge } from '../common';
+import { supabase } from '../../lib/supabase';
+import { formatCurrency, formatDate } from '../../lib/utils';
+
+export default function MonthlyReport({ startDate, endDate, reportType, unitId }) {
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState([]);
+  const [totals, setTotals] = useState({});
+
+  useEffect(() => {
+    async function fetchReportData() {
+      setLoading(true);
+
+      try {
+        let reportData = [];
+        let reportTotals = {};
+
+        if (reportType === 'cash_register' || reportType === 'full_monthly') {
+          // Fetch daily revenue data
+          let query = supabase
+            .from('daily_revenue')
+            .select('*, units(name)')
+            .gte('date', startDate)
+            .lte('date', endDate)
+            .order('date', { ascending: true });
+
+          if (unitId) {
+            query = query.eq('unit_id', unitId);
+          }
+
+          const { data: revenues } = await query;
+
+          reportData = revenues || [];
+
+          // Calculate totals
+          reportTotals = {
+            total_revenue: reportData.reduce((sum, r) => sum + (parseFloat(r.total_revenue) || 0), 0),
+            vat_0: reportData.reduce((sum, r) => sum + (parseFloat(r.vat_0_percent) || 0), 0),
+            vat_5: reportData.reduce((sum, r) => sum + (parseFloat(r.vat_5_percent) || 0), 0),
+            vat_18: reportData.reduce((sum, r) => sum + (parseFloat(r.vat_18_percent) || 0), 0),
+            vat_27: reportData.reduce((sum, r) => sum + (parseFloat(r.vat_27_percent) || 0), 0),
+            tips: reportData.reduce((sum, r) => sum + (parseFloat(r.tips) || 0), 0),
+            cash: reportData.reduce((sum, r) => sum + (parseFloat(r.cash_payment) || 0), 0),
+            card: reportData.reduce((sum, r) => sum + (parseFloat(r.card_payment) || 0), 0),
+            szep: reportData.reduce((sum, r) => sum + (parseFloat(r.szep_card_payment) || 0), 0),
+            terminal_card: reportData.reduce((sum, r) => sum + (parseFloat(r.terminal_card) || 0), 0),
+            terminal_szep: reportData.reduce((sum, r) => sum + (parseFloat(r.terminal_szep) || 0), 0),
+          };
+        } else if (reportType === 'cash_revenue') {
+          // Fetch house cash data
+          let query = supabase
+            .from('house_cash')
+            .select('*, units(name)')
+            .gte('date', startDate)
+            .lte('date', endDate)
+            .order('date', { ascending: true });
+
+          if (unitId) {
+            query = query.eq('unit_id', unitId);
+          }
+
+          const { data: cashData } = await query;
+
+          reportData = cashData || [];
+
+          reportTotals = {
+            official_total: reportData.reduce((sum, r) => sum + (parseFloat(r.official_total) || 0), 0),
+            other_total: reportData.reduce((sum, r) => sum + (parseFloat(r.other_total) || 0), 0),
+          };
+        } else if (reportType === 'events') {
+          // Fetch events data
+          let query = supabase
+            .from('events')
+            .select('*, units(name)')
+            .gte('event_date', startDate)
+            .lte('event_date', endDate)
+            .order('event_date', { ascending: true });
+
+          if (unitId) {
+            query = query.eq('unit_id', unitId);
+          }
+
+          const { data: events } = await query;
+
+          if (events?.length) {
+            const eventIds = events.map((e) => e.id);
+
+            const [revenuesResult, expensesResult] = await Promise.all([
+              supabase.from('event_revenues').select('event_id, amount').in('event_id', eventIds),
+              supabase.from('event_expenses').select('event_id, amount').in('event_id', eventIds),
+            ]);
+
+            const revenueByEvent = {};
+            const expenseByEvent = {};
+
+            (revenuesResult.data || []).forEach((r) => {
+              revenueByEvent[r.event_id] = (revenueByEvent[r.event_id] || 0) + parseFloat(r.amount);
+            });
+
+            (expensesResult.data || []).forEach((e) => {
+              expenseByEvent[e.event_id] = (expenseByEvent[e.event_id] || 0) + parseFloat(e.amount);
+            });
+
+            reportData = events.map((event) => ({
+              ...event,
+              total_revenue: revenueByEvent[event.id] || 0,
+              total_expenses: expenseByEvent[event.id] || 0,
+              profit: (revenueByEvent[event.id] || 0) - (expenseByEvent[event.id] || 0),
+            }));
+
+            reportTotals = {
+              total_revenue: reportData.reduce((sum, e) => sum + e.total_revenue, 0),
+              total_expenses: reportData.reduce((sum, e) => sum + e.total_expenses, 0),
+              profit: reportData.reduce((sum, e) => sum + e.profit, 0),
+            };
+          }
+        }
+
+        setData(reportData);
+        setTotals(reportTotals);
+      } catch (error) {
+        console.error('Error fetching report data:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchReportData();
+  }, [startDate, endDate, reportType, unitId]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (data.length === 0) {
+    return (
+      <Card>
+        <p className="text-center text-gray-500 py-8">
+          Nincs adat a megadott időszakra
+        </p>
+      </Card>
+    );
+  }
+
+  // Render based on report type
+  if (reportType === 'cash_register') {
+    return <CashRegisterReport data={data} totals={totals} />;
+  }
+
+  if (reportType === 'cash_revenue') {
+    return <CashRevenueReport data={data} totals={totals} />;
+  }
+
+  if (reportType === 'full_monthly') {
+    return <FullMonthlyReport data={data} totals={totals} />;
+  }
+
+  if (reportType === 'events') {
+    return <EventsReport data={data} totals={totals} />;
+  }
+
+  return null;
+}
+
+function CashRegisterReport({ data, totals }) {
+  return (
+    <Card title="Pénztárgép és bankkártya forgalom">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left">Dátum</th>
+              <th className="px-4 py-2 text-right">0%</th>
+              <th className="px-4 py-2 text-right">5%</th>
+              <th className="px-4 py-2 text-right">18%</th>
+              <th className="px-4 py-2 text-right">27%</th>
+              <th className="px-4 py-2 text-right">Borr.</th>
+              <th className="px-4 py-2 text-right">Term. kártya</th>
+              <th className="px-4 py-2 text-right">Term. SZÉP</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {data.map((row) => (
+              <tr key={row.id} className="hover:bg-gray-50">
+                <td className="px-4 py-2">{formatDate(row.date)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.vat_0_percent)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.vat_5_percent)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.vat_18_percent)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.vat_27_percent)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.tips)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.terminal_card)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.terminal_szep)}</td>
+              </tr>
+            ))}
+            <tr className="bg-gray-100 font-bold">
+              <td className="px-4 py-2">Összesen</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.vat_0)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.vat_5)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.vat_18)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.vat_27)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.tips)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.terminal_card)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.terminal_szep)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function CashRevenueReport({ data, totals }) {
+  return (
+    <Card title="Készpénz bevételek">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left">Dátum</th>
+              <th className="px-4 py-2 text-left">Egység</th>
+              <th className="px-4 py-2 text-right">Hivatalos zseb</th>
+              <th className="px-4 py-2 text-right">Egyéb zseb</th>
+              <th className="px-4 py-2 text-right">Összesen</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {data.map((row) => (
+              <tr key={row.id} className="hover:bg-gray-50">
+                <td className="px-4 py-2">{formatDate(row.date)}</td>
+                <td className="px-4 py-2">{row.units?.name}</td>
+                <td className="px-4 py-2 text-right text-green-600">
+                  {formatCurrency(row.official_total)}
+                </td>
+                <td className="px-4 py-2 text-right text-blue-600">
+                  {formatCurrency(row.other_total)}
+                </td>
+                <td className="px-4 py-2 text-right font-semibold">
+                  {formatCurrency((row.official_total || 0) + (row.other_total || 0))}
+                </td>
+              </tr>
+            ))}
+            <tr className="bg-gray-100 font-bold">
+              <td className="px-4 py-2" colSpan={2}>Összesen</td>
+              <td className="px-4 py-2 text-right text-green-700">
+                {formatCurrency(totals.official_total)}
+              </td>
+              <td className="px-4 py-2 text-right text-blue-700">
+                {formatCurrency(totals.other_total)}
+              </td>
+              <td className="px-4 py-2 text-right">
+                {formatCurrency(totals.official_total + totals.other_total)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function FullMonthlyReport({ data, totals }) {
+  return (
+    <Card title="Teljes havi forgalom">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left">Dátum</th>
+              <th className="px-4 py-2 text-left">Egység</th>
+              <th className="px-4 py-2 text-right">Szoftver</th>
+              <th className="px-4 py-2 text-right">Készpénz</th>
+              <th className="px-4 py-2 text-right">Kártya</th>
+              <th className="px-4 py-2 text-right">SZÉP</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {data.map((row) => (
+              <tr key={row.id} className="hover:bg-gray-50">
+                <td className="px-4 py-2">{formatDate(row.date)}</td>
+                <td className="px-4 py-2">{row.units?.name}</td>
+                <td className="px-4 py-2 text-right font-semibold">
+                  {formatCurrency(row.total_revenue)}
+                </td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.cash_payment)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.card_payment)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.szep_card_payment)}</td>
+              </tr>
+            ))}
+            <tr className="bg-gray-100 font-bold">
+              <td className="px-4 py-2" colSpan={2}>Összesen</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.total_revenue)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.cash)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.card)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.szep)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function EventsReport({ data, totals }) {
+  return (
+    <Card title="Rendezvény összesítő">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left">Dátum</th>
+              <th className="px-4 py-2 text-left">Rendezvény</th>
+              <th className="px-4 py-2 text-right">Bevétel</th>
+              <th className="px-4 py-2 text-right">Költség</th>
+              <th className="px-4 py-2 text-right">Eredmény</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {data.map((row) => (
+              <tr key={row.id} className="hover:bg-gray-50">
+                <td className="px-4 py-2">{formatDate(row.event_date)}</td>
+                <td className="px-4 py-2">{row.name}</td>
+                <td className="px-4 py-2 text-right text-green-600">
+                  {formatCurrency(row.total_revenue)}
+                </td>
+                <td className="px-4 py-2 text-right text-red-600">
+                  {formatCurrency(row.total_expenses)}
+                </td>
+                <td className={`px-4 py-2 text-right font-semibold ${row.profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                  {formatCurrency(row.profit)}
+                </td>
+              </tr>
+            ))}
+            <tr className="bg-gray-100 font-bold">
+              <td className="px-4 py-2" colSpan={2}>Összesen</td>
+              <td className="px-4 py-2 text-right text-green-700">
+                {formatCurrency(totals.total_revenue)}
+              </td>
+              <td className="px-4 py-2 text-right text-red-700">
+                {formatCurrency(totals.total_expenses)}
+              </td>
+              <td className={`px-4 py-2 text-right ${totals.profit >= 0 ? 'text-green-800' : 'text-red-800'}`}>
+                {formatCurrency(totals.profit)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
