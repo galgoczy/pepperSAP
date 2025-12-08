@@ -13,7 +13,10 @@ import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
 
 export default function Sidebar({ isOpen, onClose }) {
-  const { isAdmin, isEvents } = useAuth();
+  const { isAdmin, isEvents, profile } = useAuth();
+
+  // If no profile exists (database not set up), show all menu items for development
+  const noProfileYet = !profile;
 
   const navItems = [
     {
@@ -26,19 +29,19 @@ export default function Sidebar({ isOpen, onClose }) {
       label: 'Napi adatok',
       icon: CalendarDays,
       to: '/daily',
-      show: !isEvents,
+      show: noProfileYet || !isEvents,
     },
     {
       label: 'Kifizetések',
       icon: Receipt,
       to: '/expenses',
-      show: !isEvents,
+      show: noProfileYet || !isEvents,
     },
     {
       label: 'Rendezvények',
       icon: PartyPopper,
       to: '/events',
-      show: isAdmin || isEvents,
+      show: noProfileYet || isAdmin || isEvents,
     },
     {
       label: 'Riportok',
@@ -51,13 +54,13 @@ export default function Sidebar({ isOpen, onClose }) {
       label: 'Egységek',
       icon: Building2,
       to: '/units',
-      show: isAdmin,
+      show: noProfileYet || isAdmin,
     },
     {
       label: 'Felhasználók',
       icon: Users,
       to: '/users',
-      show: isAdmin,
+      show: noProfileYet || isAdmin,
     },
     {
       label: 'Beállítások',

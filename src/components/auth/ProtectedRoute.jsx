@@ -7,7 +7,7 @@ export default function ProtectedRoute({
   allowedRoles = null,
   requireAdmin = false,
 }) {
-  const { isAuthenticated, loading, role, isAdmin } = useAuth();
+  const { isAuthenticated, loading, role, isAdmin, profile } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -16,6 +16,13 @@ export default function ProtectedRoute({
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // If profile doesn't exist yet (database not set up), allow access
+  // This is a development convenience - in production, profiles should always exist
+  if (!profile) {
+    console.warn('User profile not found - allowing access for development');
+    return children;
   }
 
   // Check for admin requirement
