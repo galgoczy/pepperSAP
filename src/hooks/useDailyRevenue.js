@@ -40,10 +40,13 @@ export function useDailyRevenue(unitId, date) {
 
   const saveRevenue = async (revenueData) => {
     try {
+      // Remove mark_color if null to avoid errors when column doesn't exist
+      const { mark_color, ...restData } = revenueData;
       const dataToSave = {
-        ...revenueData,
+        ...restData,
         unit_id: unitId,
         date: date,
+        ...(mark_color !== null && mark_color !== undefined && { mark_color }),
       };
 
       let result;
