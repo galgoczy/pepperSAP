@@ -18,6 +18,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     todayRevenue: 0,
+    monthlyRevenue: 0,
     yesterdayDiscrepancies: [],
     missingData: [],
     houseCash: [],
@@ -31,6 +32,11 @@ export default function AdminDashboard() {
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+        // Get first day of current month
+        const now = new Date();
+        const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+          .toISOString().split('T')[0];
 
         // Fetch all units
         const { data: units } = await supabase
@@ -46,6 +52,19 @@ export default function AdminDashboard() {
 
         // Calculate total today revenue
         const todayTotal = (todayRevenues || []).reduce(
+          (sum, r) => sum + (parseFloat(r.total_revenue) || 0),
+          0
+        );
+
+        // Fetch monthly revenue
+        const { data: monthlyRevenues } = await supabase
+          .from('daily_revenue')
+          .select('total_revenue')
+          .gte('date', firstDayOfMonth)
+          .lte('date', today);
+
+        // Calculate monthly total
+        const monthlyTotal = (monthlyRevenues || []).reduce(
           (sum, r) => sum + (parseFloat(r.total_revenue) || 0),
           0
         );
@@ -77,6 +96,7 @@ export default function AdminDashboard() {
 
         setStats({
           todayRevenue: todayTotal,
+          monthlyRevenue: monthlyTotal,
           yesterdayDiscrepancies: yesterdayRevenues || [],
           missingData: missingUnits,
           houseCash: houseCashData || [],
@@ -123,6 +143,20 @@ export default function AdminDashboard() {
               <p className="text-sm text-green-600 font-medium">Mai forgalom</p>
               <p className="text-2xl font-bold text-green-800">
                 {formatCurrency(stats.todayRevenue)}
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-purple-200 rounded-lg">
+              <CalendarDays className="h-6 w-6 text-purple-700" />
+            </div>
+            <div>
+              <p className="text-sm text-purple-600 font-medium">Havi forgalom</p>
+              <p className="text-2xl font-bold text-purple-800">
+                {formatCurrency(stats.monthlyRevenue)}
               </p>
             </div>
           </div>
