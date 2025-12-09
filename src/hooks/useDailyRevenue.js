@@ -39,16 +39,18 @@ export function useDailyRevenue(unitId, date) {
   }, [fetchRevenue]);
 
   const saveRevenue = async (revenueData) => {
-    try {
-      // Remove mark_color if null to avoid errors when column doesn't exist
-      const { mark_color, ...restData } = revenueData;
-      const dataToSave = {
-        ...restData,
-        unit_id: unitId,
-        date: date,
-        ...(mark_color !== null && mark_color !== undefined && { mark_color }),
-      };
+    // Remove mark_color if null to avoid errors when column doesn't exist
+    const { mark_color, ...restData } = revenueData;
+    const dataToSave = {
+      ...restData,
+      unit_id: unitId,
+      date: date,
+      ...(mark_color !== null && mark_color !== undefined && { mark_color }),
+    };
 
+    console.log('Attempting to save:', dataToSave);
+
+    try {
       let result;
       if (revenue?.id) {
         // Update existing
@@ -78,7 +80,9 @@ export function useDailyRevenue(unitId, date) {
       return result;
     } catch (error) {
       console.error('Error saving daily revenue:', error);
-      toast.error('Hiba a napi forgalom mentésekor');
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      console.error('Data attempted to save:', dataToSave);
+      toast.error(`Hiba: ${error.message || error.code || 'Ismeretlen hiba'}`);
       throw error;
     }
   };
