@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 export const AuthContext = createContext(null);
@@ -7,93 +7,14 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const userRef = useRef(null);
 
-  // Session refresh function
-  const refreshSession = useCallback(async () => {
-    try {
-      const { data: { session }, error } = await supabase.auth.refreshSession();
-      if (error) {
-        console.error('Session refresh error:', error);
-        // If refresh fails, sign out
-        await supabase.auth.signOut();
-        setUser(null);
-        setProfile(null);
-        return null;
-      }
-      return session;
-    } catch (error) {
-      console.error('Session refresh failed:', error);
-      return null;
-    }
-  }, []);
-
+  // Keep userRef in sync with user state
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    });
+    userRef.current = user;
+  }, [user]);
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth event:', event);
-
-      if (event === 'TOKEN_REFRESHED') {
-        console.log('Token refreshed successfully');
-      }
-
-      if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setProfile(null);
-        setLoading(false);
-        return;
-      }
-
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await fetchProfile(session.user.id);
-      } else {
-        setProfile(null);
-        setLoading(false);
-      }
-    });
-
-    // Set up periodic session check (every 4 minutes)
-    const sessionCheckInterval = setInterval(async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session && user) {
-        // Session expired, try to refresh
-        console.log('Session expired, attempting refresh...');
-        await refreshSession();
-      }
-    }, 4 * 60 * 1000);
-
-    // Set up visibility change handler to refresh on tab focus
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible' && user) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          console.log('Tab focused but session expired, refreshing...');
-          await refreshSession();
-        }
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      subscription.unsubscribe();
-      clearInterval(sessionCheckInterval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [user, refreshSession]);
-
-  const fetchProfile = async (userId) => {
+  const fetchProfile = useCallback(async (userId) => {
     try {
       const { data, error } = await supabase
         .from('user_profiles')
@@ -121,7 +42,89 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Session refresh function
+  const refreshSession = useCallback(async () => {
+    try {
+      const { data: { session }, error } = await supabase.auth.refreshSession();
+      if (error) {
+        console.error('Session refresh error:', error);
+        await supabase.auth.signOut();
+        setUser(null);
+        setProfile(null);
+        return null;
+      }
+      return session;
+    } catch (error) {
+      console.error('Session refresh failed:', error);
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          await fetchProfile(session.user.id);
+        }
+      }
+    });
+
+    // Set up periodic session check (every 4 minutes)
+    const sessionCheckInterval = setInterval(async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session && userRef.current) {
+        console.log('Session expired, attempting refresh...');
+        await refreshSession();
+      }
+    }, 4 * 60 * 1000);
+
+    // Set up visibility change handler to refresh on tab focus
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && userRef.current) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          console.log('Tab focused but session expired, refreshing...');
+          await refreshSession();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+      clearInterval(sessionCheckInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchProfile, refreshSession]);
 
   const signIn = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({
