@@ -26,7 +26,7 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
         let reportData = [];
         let reportTotals = {};
 
-        if (reportType === 'cash_register' || reportType === 'full_monthly') {
+        if (reportType === 'cash_register' || reportType === 'full_monthly' || reportType === 'cash_register_report') {
           // Fetch daily revenue data
           let query = supabase
             .from('daily_revenue')
@@ -218,6 +218,10 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
     return <CashRegisterReport data={data} totals={totals} />;
   }
 
+  if (reportType === 'cash_register_report') {
+    return <CashRegisterFullReport data={data} totals={totals} />;
+  }
+
   if (reportType === 'cash_revenue') {
     return <CashRevenueReport data={data} totals={totals} />;
   }
@@ -339,6 +343,85 @@ function CashRevenueReport({ data, totals }) {
               <td className="px-4 py-2 text-right">
                 {formatCurrency(totals.official_revenue + totals.other_revenue)}
               </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function CashRegisterFullReport({ data, totals }) {
+  const navigate = useNavigate();
+
+  // Calculate cash register total (sum of VAT amounts + tips)
+  const cashRegisterTotal = (row) =>
+    (parseFloat(row.vat_0_percent) || 0) +
+    (parseFloat(row.vat_5_percent) || 0) +
+    (parseFloat(row.vat_18_percent) || 0) +
+    (parseFloat(row.vat_27_percent) || 0) +
+    (parseFloat(row.tips) || 0);
+
+  const totalCashRegister =
+    (totals.vat_0 || 0) +
+    (totals.vat_5 || 0) +
+    (totals.vat_18 || 0) +
+    (totals.vat_27 || 0) +
+    (totals.tips || 0);
+
+  return (
+    <Card title="Pénztárgép jelentés">
+      <p className="text-sm text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez</p>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left">Dátum</th>
+              <th className="px-4 py-2 text-left">Egység</th>
+              <th className="px-4 py-2 text-right">0%</th>
+              <th className="px-4 py-2 text-right">5%</th>
+              <th className="px-4 py-2 text-right">18%</th>
+              <th className="px-4 py-2 text-right">27%</th>
+              <th className="px-4 py-2 text-right">Borr.</th>
+              <th className="px-4 py-2 text-right font-semibold">Összesen</th>
+              <th className="px-4 py-2 text-right">Készpénz</th>
+              <th className="px-4 py-2 text-right">Kártya</th>
+              <th className="px-4 py-2 text-right">SZÉP</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {data.map((row) => (
+              <tr
+                key={row.id}
+                onClick={() => navigate(`/daily?date=${row.date}`)}
+                className={`hover:bg-gray-100 cursor-pointer transition-colors ${
+                  row.mark_color ? MARK_COLORS[row.mark_color] : ''
+                }`}
+              >
+                <td className="px-4 py-2">{formatDate(row.date)}</td>
+                <td className="px-4 py-2">{row.units?.name}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.vat_0_percent)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.vat_5_percent)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.vat_18_percent)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.vat_27_percent)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.tips)}</td>
+                <td className="px-4 py-2 text-right font-semibold">{formatCurrency(cashRegisterTotal(row))}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.cash_payment)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.card_payment)}</td>
+                <td className="px-4 py-2 text-right">{formatCurrency(row.szep_card_payment)}</td>
+              </tr>
+            ))}
+            <tr className="bg-gray-100 font-bold">
+              <td className="px-4 py-2" colSpan={2}>Összesen</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.vat_0)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.vat_5)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.vat_18)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.vat_27)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.tips)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totalCashRegister)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.cash)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.card)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.szep)}</td>
             </tr>
           </tbody>
         </table>

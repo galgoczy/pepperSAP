@@ -21,8 +21,12 @@ CREATE TABLE units (
 ```
 **Meglévő egységek:**
 - Knorr 105 (restaurant)
+- Knorr 86 (restaurant)
+- Knorr 69 (restaurant)
 - RSR (restaurant)
 - Szentkirályi (restaurant)
+- KTI (restaurant)
+- Államkincstár (restaurant)
 - Rendezvény Egység (events)
 
 ### 2. USER_PROFILES (Felhasználói profilok)
@@ -69,6 +73,9 @@ CREATE TABLE daily_revenue (
   terminal_szep DECIMAL(12,2) DEFAULT 0,
   terminal_discrepancy_note TEXT,
 
+  -- Megjelölés
+  mark_color TEXT,                         -- 'red', 'yellow', 'green', 'blue', 'purple' vagy NULL
+
   created_by UUID,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -99,6 +106,9 @@ CREATE TABLE house_cash (
   other_expenses DECIMAL(12,2) DEFAULT 0,
   other_total DECIMAL(12,2) DEFAULT 0,
 
+  -- Megjelölés
+  mark_color TEXT,                         -- 'red', 'yellow', 'green', 'blue', 'purple' vagy NULL
+
   created_by UUID,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -126,6 +136,9 @@ CREATE TABLE expenses (
 
   is_official BOOLEAN DEFAULT true,                -- Hivatalos-e
   notes TEXT,
+
+  -- Megjelölés
+  mark_color TEXT,                         -- 'red', 'yellow', 'green', 'blue', 'purple' vagy NULL
 
   created_by UUID,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -297,6 +310,7 @@ GROUP BY u.name;
 6. **Egység típusok:** 'restaurant', 'events'
 7. **User role-ok:** 'admin', 'unit', 'events'
 8. **Rendezvény típusok:** 'protocol', 'event', 'lunch_service', 'delivery', 'other'
+9. **Megjelölés színek:** 'red', 'yellow', 'green', 'blue', 'purple' vagy NULL
 
 ---
 
