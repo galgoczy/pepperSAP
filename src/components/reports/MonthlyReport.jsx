@@ -58,34 +58,74 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
             terminal_szep: reportData.reduce((sum, r) => sum + (parseFloat(r.terminal_szep) || 0), 0),
           };
         } else if (reportType === 'cash_revenue') {
-          // Fetch house cash data
-          let query = supabase
-            .from('house_cash')
+          // Fetch daily revenue (for cash_payment), expenses, and house_cash in parallel
+          let revenueQuery = supabase
+            .from('daily_revenue')
             .select('*, units(name)')
             .gte('date', startDate)
             .lte('date', endDate)
             .order('date', { ascending: true });
 
+          let expensesQuery = supabase
+            .from('expenses')
+            .select('*')
+            .gte('invoice_date', startDate)
+            .lte('invoice_date', endDate)
+            .eq('is_official', true)
+            .eq('payment_method', 'cash');
+
+          let houseCashQuery = supabase
+            .from('house_cash')
+            .select('*')
+            .gte('date', startDate)
+            .lte('date', endDate);
+
           if (unitId) {
-            query = query.eq('unit_id', unitId);
+            revenueQuery = revenueQuery.eq('unit_id', unitId);
+            expensesQuery = expensesQuery.eq('unit_id', unitId);
+            houseCashQuery = houseCashQuery.eq('unit_id', unitId);
           }
 
-          const { data: cashData } = await query;
+          const [revenueResult, expensesResult, houseCashResult] = await Promise.all([
+            revenueQuery,
+            expensesQuery,
+            houseCashQuery,
+          ]);
 
-          // Calculate revenue (without change_amount) for each row
-          reportData = (cashData || []).map((row) => {
-            const officialRevenue =
-              (parseFloat(row.official_daily_cash) || 0) +
-              (parseFloat(row.official_other_income) || 0) -
-              (parseFloat(row.official_cash_expenses) || 0) -
-              (parseFloat(row.official_employment_expenses) || 0);
-            const otherRevenue =
-              (parseFloat(row.other_difference) || 0) +
-              (parseFloat(row.other_extra_income) || 0) -
-              (parseFloat(row.other_expenses) || 0);
+          const revenues = revenueResult.data || [];
+          const expenses = expensesResult.data || [];
+          const houseCashData = houseCashResult.data || [];
+
+          // Group expenses by date
+          const expensesByDate = {};
+          expenses.forEach((exp) => {
+            const date = exp.invoice_date;
+            expensesByDate[date] = (expensesByDate[date] || 0) + (parseFloat(exp.amount) || 0);
+          });
+
+          // Group house_cash by date for other pocket
+          const houseCashByDate = {};
+          houseCashData.forEach((hc) => {
+            houseCashByDate[hc.date] = hc;
+          });
+
+          // Calculate revenue for each day
+          reportData = revenues.map((row) => {
+            const officialExpenses = expensesByDate[row.date] || 0;
+            const officialRevenue = (parseFloat(row.cash_payment) || 0) - officialExpenses;
+
+            // Other pocket from house_cash
+            const hc = houseCashByDate[row.date];
+            const otherRevenue = hc
+              ? (parseFloat(hc.other_difference) || 0) +
+                (parseFloat(hc.other_extra_income) || 0) -
+                (parseFloat(hc.other_expenses) || 0)
+              : 0;
+
             return {
               ...row,
               official_revenue: officialRevenue,
+              official_expenses: officialExpenses,
               other_revenue: otherRevenue,
             };
           });

@@ -59,14 +59,14 @@ export default function UnitDashboard() {
             .select('*')
             .eq('unit_id', unitId)
             .eq('date', today)
-            .single(),
+            .maybeSingle(),
           // Today's house cash
           supabase
             .from('house_cash')
             .select('*')
             .eq('unit_id', unitId)
             .eq('date', today)
-            .single(),
+            .maybeSingle(),
           // Weekly revenue total
           supabase
             .from('daily_revenue')
