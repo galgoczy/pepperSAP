@@ -41,8 +41,17 @@ export function useDailyRevenue(unitId, date) {
   const saveRevenue = async (revenueData) => {
     // Remove mark_color if null to avoid errors when column doesn't exist
     const { mark_color, ...restData } = revenueData;
+
+    // Convert empty strings to null for numeric fields
+    const cleanedData = Object.fromEntries(
+      Object.entries(restData).map(([key, value]) => [
+        key,
+        value === '' ? null : value
+      ])
+    );
+
     const dataToSave = {
-      ...restData,
+      ...cleanedData,
       unit_id: unitId,
       date: date,
       ...(mark_color !== null && mark_color !== undefined && { mark_color }),
