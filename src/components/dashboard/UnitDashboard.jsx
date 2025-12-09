@@ -45,57 +45,62 @@ export default function UnitDashboard() {
         weekAgo.setDate(weekAgo.getDate() - 7);
         const weekAgoStr = weekAgo.toISOString().split('T')[0];
 
-        // Fetch today's revenue
-        const { data: todayRevenue } = await supabase
-          .from('daily_revenue')
-          .select('*')
-          .eq('unit_id', unitId)
-          .eq('date', today)
-          .single();
+        // Fetch all data in parallel for better performance
+        const [
+          todayRevenueResult,
+          todayHouseCashResult,
+          weeklyRevenuesResult,
+          recentExpensesResult,
+          recentEntriesResult,
+        ] = await Promise.all([
+          // Today's revenue
+          supabase
+            .from('daily_revenue')
+            .select('*')
+            .eq('unit_id', unitId)
+            .eq('date', today)
+            .single(),
+          // Today's house cash
+          supabase
+            .from('house_cash')
+            .select('*')
+            .eq('unit_id', unitId)
+            .eq('date', today)
+            .single(),
+          // Weekly revenue total
+          supabase
+            .from('daily_revenue')
+            .select('total_revenue')
+            .eq('unit_id', unitId)
+            .gte('date', weekAgoStr)
+            .lte('date', today),
+          // Recent expenses
+          supabase
+            .from('expenses')
+            .select('*')
+            .eq('unit_id', unitId)
+            .order('created_at', { ascending: false })
+            .limit(5),
+          // Last 10 daily entries
+          supabase
+            .from('daily_revenue')
+            .select('*')
+            .eq('unit_id', unitId)
+            .order('date', { ascending: false })
+            .limit(10),
+        ]);
 
-        // Fetch today's house cash
-        const { data: todayHouseCash } = await supabase
-          .from('house_cash')
-          .select('*')
-          .eq('unit_id', unitId)
-          .eq('date', today)
-          .single();
-
-        // Fetch weekly revenue total
-        const { data: weeklyRevenues } = await supabase
-          .from('daily_revenue')
-          .select('total_revenue')
-          .eq('unit_id', unitId)
-          .gte('date', weekAgoStr)
-          .lte('date', today);
-
-        const weeklyTotal = (weeklyRevenues || []).reduce(
+        const weeklyTotal = (weeklyRevenuesResult.data || []).reduce(
           (sum, r) => sum + (parseFloat(r.total_revenue) || 0),
           0
         );
 
-        // Fetch recent expenses
-        const { data: recentExpenses } = await supabase
-          .from('expenses')
-          .select('*')
-          .eq('unit_id', unitId)
-          .order('created_at', { ascending: false })
-          .limit(5);
-
-        // Fetch last 10 daily entries
-        const { data: recentEntries } = await supabase
-          .from('daily_revenue')
-          .select('*')
-          .eq('unit_id', unitId)
-          .order('date', { ascending: false })
-          .limit(10);
-
         setStats({
-          todayRevenue,
-          todayHouseCash,
+          todayRevenue: todayRevenueResult.data,
+          todayHouseCash: todayHouseCashResult.data,
           weeklyRevenue: weeklyTotal,
-          recentExpenses: recentExpenses || [],
-          recentEntries: recentEntries || [],
+          recentExpenses: recentExpensesResult.data || [],
+          recentEntries: recentEntriesResult.data || [],
         });
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
