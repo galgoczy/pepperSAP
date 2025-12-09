@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
+
+// Color options for marking
+const MARK_COLORS = {
+  red: 'bg-red-50 border-l-4 border-l-red-500',
+  yellow: 'bg-yellow-50 border-l-4 border-l-yellow-500',
+  green: 'bg-green-50 border-l-4 border-l-green-500',
+  blue: 'bg-blue-50 border-l-4 border-l-blue-500',
+  purple: 'bg-purple-50 border-l-4 border-l-purple-500',
+};
 
 export default function MonthlyReport({ startDate, endDate, reportType, unitId }) {
   const [loading, setLoading] = useState(true);
@@ -62,11 +72,27 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
 
           const { data: cashData } = await query;
 
-          reportData = cashData || [];
+          // Calculate revenue (without change_amount) for each row
+          reportData = (cashData || []).map((row) => {
+            const officialRevenue =
+              (parseFloat(row.official_daily_cash) || 0) +
+              (parseFloat(row.official_other_income) || 0) -
+              (parseFloat(row.official_cash_expenses) || 0) -
+              (parseFloat(row.official_employment_expenses) || 0);
+            const otherRevenue =
+              (parseFloat(row.other_difference) || 0) +
+              (parseFloat(row.other_extra_income) || 0) -
+              (parseFloat(row.other_expenses) || 0);
+            return {
+              ...row,
+              official_revenue: officialRevenue,
+              other_revenue: otherRevenue,
+            };
+          });
 
           reportTotals = {
-            official_total: reportData.reduce((sum, r) => sum + (parseFloat(r.official_total) || 0), 0),
-            other_total: reportData.reduce((sum, r) => sum + (parseFloat(r.other_total) || 0), 0),
+            official_revenue: reportData.reduce((sum, r) => sum + (r.official_revenue || 0), 0),
+            other_revenue: reportData.reduce((sum, r) => sum + (r.other_revenue || 0), 0),
           };
         } else if (reportType === 'events') {
           // Fetch events data
@@ -168,8 +194,11 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
 }
 
 function CashRegisterReport({ data, totals }) {
+  const navigate = useNavigate();
+
   return (
     <Card title="Pénztárgép és bankkártya forgalom">
+      <p className="text-sm text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez</p>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
@@ -186,7 +215,13 @@ function CashRegisterReport({ data, totals }) {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {data.map((row) => (
-              <tr key={row.id} className="hover:bg-gray-50">
+              <tr
+                key={row.id}
+                onClick={() => navigate(`/daily?date=${row.date}`)}
+                className={`hover:bg-gray-100 cursor-pointer transition-colors ${
+                  row.mark_color ? MARK_COLORS[row.mark_color] : ''
+                }`}
+              >
                 <td className="px-4 py-2">{formatDate(row.date)}</td>
                 <td className="px-4 py-2 text-right">{formatCurrency(row.vat_0_percent)}</td>
                 <td className="px-4 py-2 text-right">{formatCurrency(row.vat_5_percent)}</td>
@@ -215,8 +250,11 @@ function CashRegisterReport({ data, totals }) {
 }
 
 function CashRevenueReport({ data, totals }) {
+  const navigate = useNavigate();
+
   return (
     <Card title="Készpénz bevételek">
+      <p className="text-sm text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez</p>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
@@ -230,30 +268,36 @@ function CashRevenueReport({ data, totals }) {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {data.map((row) => (
-              <tr key={row.id} className="hover:bg-gray-50">
+              <tr
+                key={row.id}
+                onClick={() => navigate(`/daily?date=${row.date}`)}
+                className={`hover:bg-gray-100 cursor-pointer transition-colors ${
+                  row.mark_color ? MARK_COLORS[row.mark_color] : ''
+                }`}
+              >
                 <td className="px-4 py-2">{formatDate(row.date)}</td>
                 <td className="px-4 py-2">{row.units?.name}</td>
                 <td className="px-4 py-2 text-right text-green-600">
-                  {formatCurrency(row.official_total)}
+                  {formatCurrency(row.official_revenue)}
                 </td>
                 <td className="px-4 py-2 text-right text-blue-600">
-                  {formatCurrency(row.other_total)}
+                  {formatCurrency(row.other_revenue)}
                 </td>
                 <td className="px-4 py-2 text-right font-semibold">
-                  {formatCurrency((row.official_total || 0) + (row.other_total || 0))}
+                  {formatCurrency((row.official_revenue || 0) + (row.other_revenue || 0))}
                 </td>
               </tr>
             ))}
             <tr className="bg-gray-100 font-bold">
               <td className="px-4 py-2" colSpan={2}>Összesen</td>
               <td className="px-4 py-2 text-right text-green-700">
-                {formatCurrency(totals.official_total)}
+                {formatCurrency(totals.official_revenue)}
               </td>
               <td className="px-4 py-2 text-right text-blue-700">
-                {formatCurrency(totals.other_total)}
+                {formatCurrency(totals.other_revenue)}
               </td>
               <td className="px-4 py-2 text-right">
-                {formatCurrency(totals.official_total + totals.other_total)}
+                {formatCurrency(totals.official_revenue + totals.other_revenue)}
               </td>
             </tr>
           </tbody>
@@ -264,8 +308,11 @@ function CashRevenueReport({ data, totals }) {
 }
 
 function FullMonthlyReport({ data, totals }) {
+  const navigate = useNavigate();
+
   return (
     <Card title="Teljes havi forgalom">
+      <p className="text-sm text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez</p>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
@@ -284,7 +331,13 @@ function FullMonthlyReport({ data, totals }) {
           </thead>
           <tbody className="divide-y divide-gray-200">
             {data.map((row) => (
-              <tr key={row.id} className="hover:bg-gray-50">
+              <tr
+                key={row.id}
+                onClick={() => navigate(`/daily?date=${row.date}`)}
+                className={`hover:bg-gray-100 cursor-pointer transition-colors ${
+                  row.mark_color ? MARK_COLORS[row.mark_color] : ''
+                }`}
+              >
                 <td className="px-4 py-2">{formatDate(row.date)}</td>
                 <td className="px-4 py-2">{row.units?.name}</td>
                 <td className="px-4 py-2 text-right font-semibold">

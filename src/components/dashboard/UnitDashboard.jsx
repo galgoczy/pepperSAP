@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
   Wallet,
@@ -7,20 +7,32 @@ import {
   Receipt,
   ChevronRight,
   Plus,
+  Clock,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { Card, Button, LoadingSpinner } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate, getToday } from '../../lib/utils';
 
+// Color options for marking
+const MARK_COLORS = {
+  red: 'bg-red-100 border-l-4 border-l-red-500',
+  yellow: 'bg-yellow-100 border-l-4 border-l-yellow-500',
+  green: 'bg-green-100 border-l-4 border-l-green-500',
+  blue: 'bg-blue-100 border-l-4 border-l-blue-500',
+  purple: 'bg-purple-100 border-l-4 border-l-purple-500',
+};
+
 export default function UnitDashboard() {
   const { unitId, profile } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     todayRevenue: null,
     todayHouseCash: null,
     weeklyRevenue: 0,
     recentExpenses: [],
+    recentEntries: [],
   });
 
   useEffect(() => {
@@ -70,11 +82,20 @@ export default function UnitDashboard() {
           .order('created_at', { ascending: false })
           .limit(5);
 
+        // Fetch last 10 daily entries
+        const { data: recentEntries } = await supabase
+          .from('daily_revenue')
+          .select('*')
+          .eq('unit_id', unitId)
+          .order('date', { ascending: false })
+          .limit(10);
+
         setStats({
           todayRevenue,
           todayHouseCash,
           weeklyRevenue: weeklyTotal,
           recentExpenses: recentExpenses || [],
+          recentEntries: recentEntries || [],
         });
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -271,6 +292,49 @@ export default function UnitDashboard() {
           </Card>
         </Link>
       </div>
+
+      {/* Recent entries - last 10 days */}
+      <Card title="Legutóbbi 10 rögzítés">
+        {stats.recentEntries.length === 0 ? (
+          <div className="text-center py-6 text-gray-500">
+            <Clock className="h-10 w-10 mx-auto mb-2 text-gray-300" />
+            <p>Még nincsenek rögzített napok</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-gray-500 mb-3">
+              Kattints egy sorra a szerkesztéshez
+            </p>
+            {stats.recentEntries.map((entry) => (
+              <button
+                key={entry.id}
+                onClick={() => navigate(`/daily?date=${entry.date}`)}
+                className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors text-left group hover:bg-gray-100 ${
+                  entry.mark_color ? MARK_COLORS[entry.mark_color] : 'bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <CalendarDays className="h-5 w-5 text-pepper-red" />
+                  <div>
+                    <p className="font-medium text-gray-900">{formatDate(entry.date)}</p>
+                    <p className="text-sm text-gray-500">
+                      Forgalom: {formatCurrency(entry.total_revenue)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="text-right hidden sm:block">
+                    <p className="text-sm text-gray-600">
+                      KP: {formatCurrency(entry.cash_payment)} | Kártya: {formatCurrency(entry.card_payment)}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-pepper-red" />
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {/* Recent expenses */}
       <Card title="Legutóbbi kifizetések">

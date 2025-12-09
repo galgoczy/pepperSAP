@@ -1,10 +1,20 @@
 import { useState, useEffect } from 'react';
-import { Save, AlertTriangle } from 'lucide-react';
+import { Save, AlertTriangle, Palette } from 'lucide-react';
 import { useDailyRevenue } from '../../hooks/useDailyRevenue';
 import { Card, Button, Input, Select, LoadingSpinner } from '../common';
 import { Textarea } from '../common/Input';
 import { formatCurrency } from '../../lib/utils';
 import { validateCardPayments, validateSzepPayments } from '../../lib/validations';
+
+// Color options for marking entries
+const MARK_COLORS = [
+  { value: null, label: 'Nincs', className: 'bg-gray-100 border-gray-300' },
+  { value: 'red', label: 'Piros', className: 'bg-red-500 border-red-600' },
+  { value: 'yellow', label: 'Sárga', className: 'bg-yellow-400 border-yellow-500' },
+  { value: 'green', label: 'Zöld', className: 'bg-green-500 border-green-600' },
+  { value: 'blue', label: 'Kék', className: 'bg-blue-500 border-blue-600' },
+  { value: 'purple', label: 'Lila', className: 'bg-purple-500 border-purple-600' },
+];
 
 export default function DailyRevenueForm({ date, unitId }) {
   const { revenue, loading, saveRevenue } = useDailyRevenue(unitId, date);
@@ -25,6 +35,7 @@ export default function DailyRevenueForm({ date, unitId }) {
     terminal_card: '',
     terminal_szep: '',
     terminal_discrepancy_note: '',
+    mark_color: null,
   });
 
   useEffect(() => {
@@ -45,6 +56,7 @@ export default function DailyRevenueForm({ date, unitId }) {
         terminal_card: revenue.terminal_card || '',
         terminal_szep: revenue.terminal_szep || '',
         terminal_discrepancy_note: revenue.terminal_discrepancy_note || '',
+        mark_color: revenue.mark_color || null,
       });
     } else {
       // Reset form for new date
@@ -64,6 +76,7 @@ export default function DailyRevenueForm({ date, unitId }) {
         terminal_card: '',
         terminal_szep: '',
         terminal_discrepancy_note: '',
+        mark_color: null,
       });
     }
   }, [revenue, date]);
@@ -313,6 +326,49 @@ export default function DailyRevenueForm({ date, unitId }) {
               required={!cardValidation.isValid || !szepValidation.isValid}
             />
           </div>
+        )}
+      </Card>
+
+      {/* Color marking */}
+      <Card
+        title={
+          <div className="flex items-center gap-2">
+            <Palette className="h-5 w-5 text-gray-600" />
+            Megjelölés színnel
+          </div>
+        }
+      >
+        <p className="text-sm text-gray-500 mb-3">
+          Jelöld meg ezt a napot egy színnel a könnyebb áttekinthetőség érdekében
+        </p>
+        <div className="flex flex-wrap gap-3">
+          {MARK_COLORS.map((color) => (
+            <button
+              key={color.value || 'none'}
+              type="button"
+              onClick={() => handleChange('mark_color', color.value)}
+              className={`
+                w-12 h-12 rounded-lg border-2 transition-all flex items-center justify-center
+                ${color.className}
+                ${formData.mark_color === color.value
+                  ? 'ring-2 ring-offset-2 ring-pepper-red scale-110'
+                  : 'hover:scale-105'
+                }
+              `}
+              title={color.label}
+            >
+              {formData.mark_color === color.value && (
+                <svg className="w-6 h-6 text-white drop-shadow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
+        {formData.mark_color && (
+          <p className="mt-3 text-sm text-gray-600">
+            Kiválasztott szín: <span className="font-medium">{MARK_COLORS.find(c => c.value === formData.mark_color)?.label}</span>
+          </p>
         )}
       </Card>
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Select, LoadingSpinner } from '../components/common';
@@ -22,10 +23,19 @@ const tabs = [
 export default function DailyEntryPage() {
   const { isAdmin, unitId, profile } = useAuth();
   const { units, loading: unitsLoading } = useUnits();
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('all');
-  const [selectedDate, setSelectedDate] = useState(getToday());
+  const [selectedDate, setSelectedDate] = useState(searchParams.get('date') || getToday());
   const [selectedUnit, setSelectedUnit] = useState(unitId || '');
   const [showExpenseForm, setShowExpenseForm] = useState(false);
+
+  // Update date when URL param changes
+  useEffect(() => {
+    const dateParam = searchParams.get('date');
+    if (dateParam) {
+      setSelectedDate(dateParam);
+    }
+  }, [searchParams]);
 
   // Get restaurant units only
   const restaurantUnits = units.filter(u => u.type === 'restaurant');
