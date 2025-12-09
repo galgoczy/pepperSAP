@@ -6,14 +6,16 @@ import DailyRevenueForm from '../components/daily/DailyRevenueForm';
 import HouseCashForm from '../components/daily/HouseCashForm';
 import DailyReport from '../components/daily/DailyReport';
 import ExpenseForm from '../components/expenses/ExpenseForm';
-import { getToday } from '../lib/utils';
-import { CalendarDays, Printer, Plus, Receipt } from 'lucide-react';
+import { getToday, formatCurrency, formatDate } from '../lib/utils';
+import { supabase } from '../lib/supabase';
+import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronRight } from 'lucide-react';
 
 const tabs = [
   { id: 'all', label: 'Minden adat' },
   { id: 'revenue', label: 'Napi forgalom' },
   { id: 'cash', label: 'Házipénztár' },
   { id: 'expenses', label: 'Kifizetések' },
+  { id: 'history', label: 'Előzmények' },
   { id: 'report', label: 'Napi riport' },
 ];
 
@@ -216,6 +218,16 @@ export default function DailyEntryPage() {
           </div>
         )}
 
+        {activeTab === 'history' && (
+          <RecentEntriesList
+            unitId={effectiveUnitId}
+            onSelectDate={(date) => {
+              setSelectedDate(date);
+              setActiveTab('all');
+            }}
+          />
+        )}
+
         {activeTab === 'report' && (
           <DailyReport
             date={selectedDate}
@@ -224,6 +236,104 @@ export default function DailyEntryPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Component to show last 10 entries
+function RecentEntriesList({ unitId, onSelectDate }) {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchRecentEntries() {
+      if (!unitId) {
+        setEntries([]);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('daily_revenue')
+          .select('*')
+          .eq('unit_id', unitId)
+          .order('date', { ascending: false })
+          .limit(10);
+
+        if (error) throw error;
+        setEntries(data || []);
+      } catch (error) {
+        console.error('Error fetching recent entries:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchRecentEntries();
+  }, [unitId]);
+
+  if (loading) {
+    return (
+      <Card>
+        <div className="flex justify-center py-8">
+          <LoadingSpinner />
+        </div>
+      </Card>
+    );
+  }
+
+  if (entries.length === 0) {
+    return (
+      <Card>
+        <div className="text-center py-8 text-gray-500">
+          <Clock className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+          <p>Még nincsenek rögzített napok</p>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card title="Legutóbbi 10 rögzítés">
+      <p className="text-sm text-gray-500 mb-4">
+        Kattints egy sorra a nap szerkesztéséhez
+      </p>
+      <div className="space-y-2">
+        {entries.map((entry) => (
+          <button
+            key={entry.id}
+            onClick={() => onSelectDate(entry.date)}
+            className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors text-left group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center shadow-sm">
+                <CalendarDays className="h-6 w-6 text-pepper-red" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900">{formatDate(entry.date)}</p>
+                <div className="flex gap-4 text-sm text-gray-500">
+                  <span>Szoftver: {formatCurrency(entry.total_revenue)}</span>
+                  <span className="hidden sm:inline">KP: {formatCurrency(entry.cash_payment)}</span>
+                  <span className="hidden sm:inline">Kártya: {formatCurrency(entry.card_payment)}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-right hidden md:block">
+                <p className="text-xs text-gray-400">ÁFA bontás</p>
+                <p className="text-sm text-gray-600">
+                  0%: {formatCurrency(entry.vat_0_percent)} |
+                  5%: {formatCurrency(entry.vat_5_percent)} |
+                  18%: {formatCurrency(entry.vat_18_percent)} |
+                  27%: {formatCurrency(entry.vat_27_percent)}
+                </p>
+              </div>
+              <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-pepper-red transition-colors" />
+            </div>
+          </button>
+        ))}
+      </div>
+    </Card>
   );
 }
 

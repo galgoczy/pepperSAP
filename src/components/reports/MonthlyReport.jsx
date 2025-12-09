@@ -273,6 +273,10 @@ function FullMonthlyReport({ data, totals }) {
               <th className="px-4 py-2 text-left">Dátum</th>
               <th className="px-4 py-2 text-left">Egység</th>
               <th className="px-4 py-2 text-right">Szoftver</th>
+              <th className="px-4 py-2 text-right hidden lg:table-cell">0%</th>
+              <th className="px-4 py-2 text-right hidden lg:table-cell">5%</th>
+              <th className="px-4 py-2 text-right hidden lg:table-cell">18%</th>
+              <th className="px-4 py-2 text-right hidden lg:table-cell">27%</th>
               <th className="px-4 py-2 text-right">Készpénz</th>
               <th className="px-4 py-2 text-right">Kártya</th>
               <th className="px-4 py-2 text-right">SZÉP</th>
@@ -286,6 +290,10 @@ function FullMonthlyReport({ data, totals }) {
                 <td className="px-4 py-2 text-right font-semibold">
                   {formatCurrency(row.total_revenue)}
                 </td>
+                <td className="px-4 py-2 text-right hidden lg:table-cell text-gray-500">{formatCurrency(row.vat_0_percent)}</td>
+                <td className="px-4 py-2 text-right hidden lg:table-cell text-gray-500">{formatCurrency(row.vat_5_percent)}</td>
+                <td className="px-4 py-2 text-right hidden lg:table-cell text-gray-500">{formatCurrency(row.vat_18_percent)}</td>
+                <td className="px-4 py-2 text-right hidden lg:table-cell text-gray-500">{formatCurrency(row.vat_27_percent)}</td>
                 <td className="px-4 py-2 text-right">{formatCurrency(row.cash_payment)}</td>
                 <td className="px-4 py-2 text-right">{formatCurrency(row.card_payment)}</td>
                 <td className="px-4 py-2 text-right">{formatCurrency(row.szep_card_payment)}</td>
@@ -294,6 +302,10 @@ function FullMonthlyReport({ data, totals }) {
             <tr className="bg-gray-100 font-bold">
               <td className="px-4 py-2" colSpan={2}>Összesen</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.total_revenue)}</td>
+              <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(totals.vat_0)}</td>
+              <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(totals.vat_5)}</td>
+              <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(totals.vat_18)}</td>
+              <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(totals.vat_27)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.cash)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.card)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.szep)}</td>
