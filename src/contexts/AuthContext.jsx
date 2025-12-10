@@ -1,5 +1,5 @@
 import { createContext, useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, onAuthError } from '../lib/supabase';
 
 export const AuthContext = createContext(null);
 
@@ -7,7 +7,9 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sessionError, setSessionError] = useState(false);
   const userRef = useRef(null);
+  const isSigningOut = useRef(false);
 
   // Keep userRef in sync with user state
   useEffect(() => {
@@ -109,20 +111,45 @@ export function AuthProvider({ children }) {
     // Set up visibility change handler to refresh on tab focus
     const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible' && userRef.current) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          console.log('Tab focused but session expired, refreshing...');
-          await refreshSession();
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+            console.log('Tab focused but session expired, refreshing...');
+            const newSession = await refreshSession();
+            if (!newSession) {
+              console.log('Could not refresh session, forcing logout');
+              setUser(null);
+              setProfile(null);
+              setSessionError(true);
+              setLoading(false);
+            }
+          }
+        } catch (error) {
+          console.error('Error checking session on visibility change:', error);
         }
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Listen for auth errors from API calls
+    const unsubscribeAuthError = onAuthError((error) => {
+      console.log('Auth error detected in API call:', error);
+      if (userRef.current && !isSigningOut.current) {
+        // Session is invalid, force logout
+        setUser(null);
+        setProfile(null);
+        setSessionError(true);
+        setLoading(false);
+        supabase.auth.signOut().catch(() => {});
+      }
+    });
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
       clearInterval(sessionCheckInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      unsubscribeAuthError();
     };
   }, [fetchProfile, refreshSession]);
 
@@ -134,21 +161,50 @@ export function AuthProvider({ children }) {
     return { data, error };
   };
 
-  const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (!error) {
+  const signOut = useCallback(async () => {
+    // Prevent multiple simultaneous signout attempts
+    if (isSigningOut.current) return { error: null };
+    isSigningOut.current = true;
+
+    try {
+      // Always clear local state first, regardless of API response
       setUser(null);
       setProfile(null);
+      setSessionError(false);
+      setLoading(false);
+
+      // Then try to sign out from Supabase (might fail if session already expired)
+      await supabase.auth.signOut().catch(() => {
+        // Ignore errors - we've already cleared local state
+      });
+
+      // Clear any cached data
+      localStorage.removeItem('supabase.auth.token');
+
+      return { error: null };
+    } finally {
+      isSigningOut.current = false;
     }
-    return { error };
-  };
+  }, []);
+
+  // Force logout - used when session is completely invalid
+  const forceLogout = useCallback(() => {
+    setUser(null);
+    setProfile(null);
+    setSessionError(true);
+    setLoading(false);
+    // Try to clear Supabase session without waiting
+    supabase.auth.signOut().catch(() => {});
+  }, []);
 
   const value = {
     user,
     profile,
     loading,
+    sessionError,
     signIn,
     signOut,
+    forceLogout,
     isAuthenticated: !!user,
     isAdmin: profile?.role === 'admin',
     isUnit: profile?.role === 'unit',
