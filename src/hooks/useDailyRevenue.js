@@ -106,28 +106,47 @@ export function useDailyRevenue(unitId, date) {
 
 export function useHouseCash(unitId, date) {
   const [houseCash, setHouseCash] = useState(null);
+  const [previousDayClosing, setPreviousDayClosing] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const fetchHouseCash = useCallback(async () => {
     if (!unitId || !date) {
       setHouseCash(null);
+      setPreviousDayClosing(null);
       setLoading(false);
       return;
     }
 
     try {
-      const { data, error } = await supabase
-        .from('house_cash')
-        .select('*')
-        .eq('unit_id', unitId)
-        .eq('date', date)
-        .single();
+      // Calculate previous day
+      const currentDate = new Date(date);
+      currentDate.setDate(currentDate.getDate() - 1);
+      const previousDay = currentDate.toISOString().split('T')[0];
 
-      if (error && error.code !== 'PGRST116') {
-        throw error;
+      // Fetch both current day and previous day in parallel
+      const [currentResult, previousResult] = await Promise.all([
+        supabase
+          .from('house_cash')
+          .select('*')
+          .eq('unit_id', unitId)
+          .eq('date', date)
+          .maybeSingle(),
+        supabase
+          .from('house_cash')
+          .select('official_total')
+          .eq('unit_id', unitId)
+          .eq('date', previousDay)
+          .maybeSingle(),
+      ]);
+
+      if (currentResult.error) throw currentResult.error;
+      if (previousResult.error && previousResult.error.code !== 'PGRST116') {
+        // Ignore "no rows" error for previous day
+        console.error('Error fetching previous day:', previousResult.error);
       }
 
-      setHouseCash(data || null);
+      setHouseCash(currentResult.data || null);
+      setPreviousDayClosing(previousResult.data?.official_total || null);
     } catch (error) {
       console.error('Error fetching house cash:', error);
       toast.error('Hiba a házipénztár betöltésekor');
@@ -182,6 +201,7 @@ export function useHouseCash(unitId, date) {
 
   return {
     houseCash,
+    previousDayClosing,
     loading,
     refetch: fetchHouseCash,
     saveHouseCash,
