@@ -369,6 +369,12 @@ function CashRegisterFullReport({ data, totals }) {
     (totals.vat_27 || 0) +
     (totals.tips || 0);
 
+  // Calculate card discrepancy (cash register card vs terminal card)
+  const cardDiscrepancy = (totals.card || 0) - (totals.terminal_card || 0);
+  const szepDiscrepancy = (totals.szep || 0) - (totals.terminal_szep || 0);
+  const hasCardDiscrepancy = Math.abs(cardDiscrepancy) > 0.01;
+  const hasSzepDiscrepancy = Math.abs(szepDiscrepancy) > 0.01;
+
   return (
     <Card title="Pénztárgép jelentés">
       <p className="text-sm text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez</p>
@@ -383,7 +389,7 @@ function CashRegisterFullReport({ data, totals }) {
               <th className="px-4 py-2 text-right">18%</th>
               <th className="px-4 py-2 text-right">27%</th>
               <th className="px-4 py-2 text-right">Borr.</th>
-              <th className="px-4 py-2 text-right font-semibold">Összesen</th>
+              <th className="px-4 py-2 text-right font-semibold bg-gray-100">Összesen</th>
               <th className="px-4 py-2 text-right">Készpénz</th>
               <th className="px-4 py-2 text-right">Kártya</th>
               <th className="px-4 py-2 text-right">SZÉP</th>
@@ -405,7 +411,7 @@ function CashRegisterFullReport({ data, totals }) {
                 <td className="px-4 py-2 text-right">{formatCurrency(row.vat_18_percent)}</td>
                 <td className="px-4 py-2 text-right">{formatCurrency(row.vat_27_percent)}</td>
                 <td className="px-4 py-2 text-right">{formatCurrency(row.tips)}</td>
-                <td className="px-4 py-2 text-right font-semibold">{formatCurrency(cashRegisterTotal(row))}</td>
+                <td className="px-4 py-2 text-right font-semibold bg-gray-50">{formatCurrency(cashRegisterTotal(row))}</td>
                 <td className="px-4 py-2 text-right">{formatCurrency(row.cash_payment)}</td>
                 <td className="px-4 py-2 text-right">{formatCurrency(row.card_payment)}</td>
                 <td className="px-4 py-2 text-right">{formatCurrency(row.szep_card_payment)}</td>
@@ -418,13 +424,56 @@ function CashRegisterFullReport({ data, totals }) {
               <td className="px-4 py-2 text-right">{formatCurrency(totals.vat_18)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.vat_27)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.tips)}</td>
-              <td className="px-4 py-2 text-right">{formatCurrency(totalCashRegister)}</td>
+              <td className="px-4 py-2 text-right bg-gray-200">{formatCurrency(totalCashRegister)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.cash)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.card)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.szep)}</td>
             </tr>
           </tbody>
         </table>
+      </div>
+
+      {/* Terminal comparison */}
+      <div className="mt-4 pt-4 border-t border-gray-200">
+        <h4 className="text-sm font-medium text-gray-700 mb-2">Terminál egyeztetés</h4>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <span className="text-gray-500">Pénztárgép kártya:</span>
+            <span className="ml-2 font-medium">{formatCurrency(totals.card)}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Terminál kártya:</span>
+            <span className="ml-2 font-medium">{formatCurrency(totals.terminal_card)}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Pénztárgép SZÉP:</span>
+            <span className="ml-2 font-medium">{formatCurrency(totals.szep)}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Terminál SZÉP:</span>
+            <span className="ml-2 font-medium">{formatCurrency(totals.terminal_szep)}</span>
+          </div>
+        </div>
+
+        {/* Discrepancy warnings */}
+        {(hasCardDiscrepancy || hasSzepDiscrepancy) && (
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-center gap-2 text-red-800 font-medium">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              Eltérés a pénztárgép és terminál között!
+            </div>
+            <ul className="mt-2 text-sm text-red-700 space-y-1">
+              {hasCardDiscrepancy && (
+                <li>Bankkártya eltérés: <span className="font-semibold">{formatCurrency(cardDiscrepancy)}</span></li>
+              )}
+              {hasSzepDiscrepancy && (
+                <li>SZÉP kártya eltérés: <span className="font-semibold">{formatCurrency(szepDiscrepancy)}</span></li>
+              )}
+            </ul>
+          </div>
+        )}
       </div>
     </Card>
   );

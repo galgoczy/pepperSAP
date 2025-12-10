@@ -10,6 +10,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useAnimatedNumber } from '../../hooks/useAnimatedNumber';
 import { Card, Button, LoadingSpinner } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate, getToday } from '../../lib/utils';
@@ -22,6 +23,17 @@ const MARK_COLORS = {
   blue: 'bg-blue-100 border-l-4 border-l-blue-500',
   purple: 'bg-purple-100 border-l-4 border-l-purple-500',
 };
+
+// Animated currency display component
+function AnimatedCurrency({ value, hasData = true }) {
+  const animatedValue = useAnimatedNumber(value || 0, 1200);
+
+  if (!hasData) {
+    return 'Nincs adat';
+  }
+
+  return formatCurrency(animatedValue);
+}
 
 export default function UnitDashboard() {
   const { unitId, profile } = useAuth();
@@ -151,9 +163,10 @@ export default function UnitDashboard() {
             <div>
               <p className="text-sm text-green-600 font-medium">Mai forgalom</p>
               <p className="text-2xl font-bold text-green-800">
-                {stats.todayRevenue
-                  ? formatCurrency(stats.todayRevenue.total_revenue)
-                  : 'Nincs adat'}
+                <AnimatedCurrency
+                  value={stats.todayRevenue?.total_revenue}
+                  hasData={!!stats.todayRevenue}
+                />
               </p>
             </div>
           </div>
@@ -167,9 +180,10 @@ export default function UnitDashboard() {
             <div>
               <p className="text-sm text-blue-600 font-medium">Házipénztár (hivatalos)</p>
               <p className="text-2xl font-bold text-blue-800">
-                {stats.todayHouseCash
-                  ? formatCurrency(stats.todayHouseCash.official_total)
-                  : 'Nincs adat'}
+                <AnimatedCurrency
+                  value={stats.todayHouseCash?.official_total}
+                  hasData={!!stats.todayHouseCash}
+                />
               </p>
             </div>
           </div>
@@ -183,7 +197,7 @@ export default function UnitDashboard() {
             <div>
               <p className="text-sm text-purple-600 font-medium">Heti forgalom</p>
               <p className="text-2xl font-bold text-purple-800">
-                {formatCurrency(stats.weeklyRevenue)}
+                <AnimatedCurrency value={stats.weeklyRevenue} />
               </p>
             </div>
           </div>

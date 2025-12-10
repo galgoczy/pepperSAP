@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { FileText, Download, Calendar, ChevronLeft } from 'lucide-react';
+import { Download, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { Card, Button, Select, Modal } from '../components/common';
+import { useUnits } from '../hooks/useSupabase';
+import { Card, Button, Select } from '../components/common';
 import MonthlyReport from '../components/reports/MonthlyReport';
 import ExportModal from '../components/reports/ExportModal';
 import { getFirstDayOfMonth, getLastDayOfMonth } from '../lib/utils';
@@ -27,6 +28,7 @@ function getPreviousMonthDates() {
 
 export default function ReportsPage() {
   const { isAdmin, isEvents, unitId } = useAuth();
+  const { units } = useUnits();
   const [startDate, setStartDate] = useState(getFirstDayOfMonth());
   const [endDate, setEndDate] = useState(getLastDayOfMonth());
   const [reportType, setReportType] = useState('full_monthly');
@@ -39,6 +41,12 @@ export default function ReportsPage() {
     }
     return true;
   });
+
+  // Build unit options for admin dropdown
+  const unitOptions = [
+    { value: '', label: 'Összes egység' },
+    ...units.map((unit) => ({ value: unit.id, label: unit.name })),
+  ];
 
   return (
     <div className="space-y-6">
@@ -119,10 +127,7 @@ export default function ReportsPage() {
               label="Egység"
               value={selectedUnit}
               onChange={(e) => setSelectedUnit(e.target.value)}
-              options={[
-                { value: '', label: 'Összes egység' },
-              ]}
-              placeholder="Összes egység"
+              options={unitOptions}
             />
           )}
         </div>
