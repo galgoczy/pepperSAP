@@ -509,8 +509,8 @@ function CashRevenueReport({ data, totals }) {
             <tr>
               <th className="px-4 py-2 text-left">Dátum</th>
               <th className="px-4 py-2 text-left">Egység</th>
-              <th className="px-4 py-2 text-right">Hivatalos zseb</th>
-              <th className="px-4 py-2 text-right">Egyéb zseb</th>
+              <th className="px-4 py-2 text-right">Pénztár zseb</th>
+              <th className="px-4 py-2 text-right">Tartalék</th>
               <th className="px-4 py-2 text-right">Összesen</th>
             </tr>
           </thead>

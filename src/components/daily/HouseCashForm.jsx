@@ -117,7 +117,7 @@ export default function HouseCashForm({ date, unitId }) {
         title={
           <div className="flex items-center gap-2">
             <Wallet className="h-5 w-5 text-green-600" />
-            Hivatalos zseb
+            Pénztár zseb
           </div>
         }
       >
@@ -162,7 +162,7 @@ export default function HouseCashForm({ date, unitId }) {
         <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
           <div className="flex justify-between items-center">
             <span className="font-medium text-green-700">
-              Hivatalos zseb összesen:
+              Pénztár zseb összesen:
             </span>
             <span className="text-xl font-bold text-green-800">
               {formatCurrency(officialTotal)}
@@ -176,7 +176,7 @@ export default function HouseCashForm({ date, unitId }) {
         title={
           <div className="flex items-center gap-2">
             <Banknote className="h-5 w-5 text-blue-600" />
-            Egyéb zseb
+            Tartalék
           </div>
         }
       >
@@ -212,7 +212,7 @@ export default function HouseCashForm({ date, unitId }) {
         <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="flex justify-between items-center">
             <span className="font-medium text-blue-700">
-              Egyéb zseb összesen:
+              Tartalék összesen:
             </span>
             <span className="text-xl font-bold text-blue-800">
               {formatCurrency(otherTotal)}

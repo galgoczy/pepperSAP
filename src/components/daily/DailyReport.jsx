@@ -188,7 +188,7 @@ export default function DailyReport({ date, unitId }) {
         ) : (
           <div className="grid md:grid-cols-2 gap-6">
             <div>
-              <h4 className="font-medium text-green-700 mb-2">Hivatalos zseb</h4>
+              <h4 className="font-medium text-green-700 mb-2">Pénztár zseb</h4>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Váltópénz:</span>
@@ -220,7 +220,7 @@ export default function DailyReport({ date, unitId }) {
             </div>
 
             <div>
-              <h4 className="font-medium text-blue-700 mb-2">Egyéb zseb</h4>
+              <h4 className="font-medium text-blue-700 mb-2">Tartalék</h4>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Különbözet:</span>

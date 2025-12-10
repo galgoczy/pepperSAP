@@ -53,14 +53,19 @@ export default function UnitDashboard() {
 
       try {
         const today = getToday();
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        const weekAgoStr = weekAgo.toISOString().split('T')[0];
+        const now = new Date();
+
+        // Get Monday of current week (for weekly revenue)
+        const dayOfWeek = now.getDay();
+        const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() - diffToMonday);
+        const mondayStr = monday.toISOString().split('T')[0];
 
         // Fetch all data in parallel for better performance
         const [
           todayRevenueResult,
-          todayHouseCashResult,
+          latestHouseCashResult,
           weeklyRevenuesResult,
           recentExpensesResult,
           recentEntriesResult,
@@ -72,19 +77,20 @@ export default function UnitDashboard() {
             .eq('unit_id', unitId)
             .eq('date', today)
             .maybeSingle(),
-          // Today's house cash
+          // Latest house cash (not just today's)
           supabase
             .from('house_cash')
             .select('*')
             .eq('unit_id', unitId)
-            .eq('date', today)
+            .order('date', { ascending: false })
+            .limit(1)
             .maybeSingle(),
-          // Weekly revenue total
+          // Weekly revenue (Monday to today)
           supabase
             .from('daily_revenue')
             .select('total_revenue')
             .eq('unit_id', unitId)
-            .gte('date', weekAgoStr)
+            .gte('date', mondayStr)
             .lte('date', today),
           // Recent expenses
           supabase
@@ -109,7 +115,7 @@ export default function UnitDashboard() {
 
         setStats({
           todayRevenue: todayRevenueResult.data,
-          todayHouseCash: todayHouseCashResult.data,
+          todayHouseCash: latestHouseCashResult.data,
           weeklyRevenue: weeklyTotal,
           recentExpenses: recentExpensesResult.data || [],
           recentEntries: recentEntriesResult.data || [],

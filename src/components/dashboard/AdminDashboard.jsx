@@ -36,6 +36,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     todayRevenue: 0,
+    weeklyRevenue: 0,
     monthlyRevenue: 0,
     yesterdayDiscrepancies: [],
     missingData: [],
@@ -57,6 +58,13 @@ export default function AdminDashboard() {
         const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
           .toISOString().split('T')[0];
 
+        // Get Monday of current week (for weekly revenue)
+        const dayOfWeek = now.getDay();
+        const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() - diffToMonday);
+        const mondayStr = monday.toISOString().split('T')[0];
+
         // Fetch all units
         const { data: units } = await supabase
           .from('units')
@@ -71,6 +79,19 @@ export default function AdminDashboard() {
 
         // Calculate total today revenue
         const todayTotal = (todayRevenues || []).reduce(
+          (sum, r) => sum + (parseFloat(r.total_revenue) || 0),
+          0
+        );
+
+        // Fetch weekly revenue (from Monday to today)
+        const { data: weeklyRevenues } = await supabase
+          .from('daily_revenue')
+          .select('total_revenue')
+          .gte('date', mondayStr)
+          .lte('date', today);
+
+        // Calculate weekly total
+        const weeklyTotal = (weeklyRevenues || []).reduce(
           (sum, r) => sum + (parseFloat(r.total_revenue) || 0),
           0
         );
@@ -95,16 +116,30 @@ export default function AdminDashboard() {
           .eq('date', yesterdayStr)
           .gt('discrepancy_amount', 0);
 
-        // Find units missing today's data
-        const unitsWithData = new Set((todayRevenues || []).map((r) => r.unit_id));
-        const restaurantUnits = (units || []).filter((u) => u.type === 'restaurant');
-        const missingUnits = restaurantUnits.filter((u) => !unitsWithData.has(u.id));
+        // Find units missing YESTERDAY's data (not today's)
+        const { data: yesterdayData } = await supabase
+          .from('daily_revenue')
+          .select('unit_id')
+          .eq('date', yesterdayStr);
 
-        // Fetch house cash for all units
-        const { data: houseCashData } = await supabase
+        const unitsWithYesterdayData = new Set((yesterdayData || []).map((r) => r.unit_id));
+        const restaurantUnits = (units || []).filter((u) => u.type === 'restaurant');
+        const missingUnits = restaurantUnits.filter((u) => !unitsWithYesterdayData.has(u.id));
+
+        // Fetch LATEST house cash for each unit (not just today's)
+        const { data: latestHouseCash } = await supabase
           .from('house_cash')
           .select('*, units(name)')
-          .eq('date', today);
+          .order('date', { ascending: false });
+
+        // Get only the latest entry per unit
+        const latestHouseCashByUnit = {};
+        (latestHouseCash || []).forEach((hc) => {
+          if (!latestHouseCashByUnit[hc.unit_id]) {
+            latestHouseCashByUnit[hc.unit_id] = hc;
+          }
+        });
+        const houseCashData = Object.values(latestHouseCashByUnit);
 
         // Fetch recent expenses
         const { data: recentExpenses } = await supabase
@@ -123,10 +158,11 @@ export default function AdminDashboard() {
 
         setStats({
           todayRevenue: todayTotal,
+          weeklyRevenue: weeklyTotal,
           monthlyRevenue: monthlyTotal,
           yesterdayDiscrepancies: yesterdayRevenues || [],
           missingData: missingUnits,
-          houseCash: houseCashData || [],
+          houseCash: houseCashData,
           recentExpenses: recentExpenses || [],
           recentEntries: recentEntries || [],
           units: units || [],
@@ -161,7 +197,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-green-200 rounded-lg">
@@ -171,6 +207,20 @@ export default function AdminDashboard() {
               <p className="text-sm text-green-600 font-medium">Mai forgalom</p>
               <p className="text-2xl font-bold text-green-800">
                 <AnimatedCurrency value={stats.todayRevenue} />
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-blue-200 rounded-lg">
+              <CalendarDays className="h-6 w-6 text-blue-700" />
+            </div>
+            <div>
+              <p className="text-sm text-blue-600 font-medium">Heti forgalom</p>
+              <p className="text-2xl font-bold text-blue-800">
+                <AnimatedCurrency value={stats.weeklyRevenue} />
               </p>
             </div>
           </div>
@@ -190,14 +240,14 @@ export default function AdminDashboard() {
           </div>
         </Card>
 
-        <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+        <Card className="bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-200 rounded-lg">
-              <Building2 className="h-6 w-6 text-blue-700" />
+            <div className="p-3 bg-gray-200 rounded-lg">
+              <Building2 className="h-6 w-6 text-gray-700" />
             </div>
             <div>
-              <p className="text-sm text-blue-600 font-medium">Aktív egységek</p>
-              <p className="text-2xl font-bold text-blue-800">
+              <p className="text-sm text-gray-600 font-medium">Aktív egységek</p>
+              <p className="text-2xl font-bold text-gray-800">
                 {stats.units?.length || 0}
               </p>
             </div>
@@ -243,9 +293,9 @@ export default function AdminDashboard() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
             <div>
-              <h3 className="font-medium text-yellow-800">Hiányzó mai adatok</h3>
+              <h3 className="font-medium text-yellow-800">Hiányzó tegnapi adatok</h3>
               <p className="text-sm text-yellow-700 mt-1">
-                Az alábbi egységeknél még nem rögzítettek mai forgalmi adatokat:
+                Az alábbi egységeknél még nem rögzítettek tegnapi forgalmi adatokat:
               </p>
               <div className="flex flex-wrap gap-2 mt-2">
                 {stats.missingData.map((unit) => (
@@ -315,7 +365,7 @@ export default function AdminDashboard() {
                     <p className="font-medium text-gray-900">
                       {cash.units?.name}
                     </p>
-                    <p className="text-sm text-gray-500">Hivatalos zseb</p>
+                    <p className="text-sm text-gray-500">Pénztár zseb</p>
                   </div>
                   <p className="font-semibold text-gray-900">
                     {formatCurrency(cash.official_total || 0)}

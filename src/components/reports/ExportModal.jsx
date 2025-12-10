@@ -126,15 +126,15 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
           Dátum: formatDate(c.date),
           Egység: c.units?.name || '',
           Váltópénz: c.change_amount || 0,
-          'Hivatalos napi': c.official_daily_cash || 0,
-          'Hivatalos egyéb': c.official_other_income || 0,
-          'Hivatalos kifizetés': c.official_cash_expenses || 0,
+          'Pénztár napi': c.official_daily_cash || 0,
+          'Pénztár egyéb': c.official_other_income || 0,
+          'Pénztár kifizetés': c.official_cash_expenses || 0,
           'EFO kifizetés': c.official_employment_expenses || 0,
-          'Hivatalos összesen': c.official_total || 0,
-          'Egyéb különbözet': c.other_difference || 0,
-          'Egyéb bevétel': c.other_extra_income || 0,
-          'Egyéb kiadás': c.other_expenses || 0,
-          'Egyéb összesen': c.other_total || 0,
+          'Pénztár összesen': c.official_total || 0,
+          'Tartalék különbözet': c.other_difference || 0,
+          'Tartalék bevétel': c.other_extra_income || 0,
+          'Tartalék kiadás': c.other_expenses || 0,
+          'Tartalék összesen': c.other_total || 0,
         }));
 
         filename = `hazipenztar_${startDate}_${endDate}`;
