@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
   TrendingDown,
@@ -9,12 +9,30 @@ import {
   Receipt,
   PartyPopper,
   ChevronRight,
+  Clock,
 } from 'lucide-react';
 import { Card, Badge, LoadingSpinner } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate, getToday } from '../../lib/utils';
+import { useAnimatedNumber } from '../../hooks/useAnimatedNumber';
+
+// Animated currency display component
+function AnimatedCurrency({ value }) {
+  const animatedValue = useAnimatedNumber(value || 0, 1200);
+  return formatCurrency(animatedValue);
+}
+
+// Color options for marking
+const MARK_COLORS = {
+  red: 'bg-red-100 border-l-4 border-l-red-500',
+  yellow: 'bg-yellow-100 border-l-4 border-l-yellow-500',
+  green: 'bg-green-100 border-l-4 border-l-green-500',
+  blue: 'bg-blue-100 border-l-4 border-l-blue-500',
+  purple: 'bg-purple-100 border-l-4 border-l-purple-500',
+};
 
 export default function AdminDashboard() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     todayRevenue: 0,
@@ -23,6 +41,7 @@ export default function AdminDashboard() {
     missingData: [],
     houseCash: [],
     recentExpenses: [],
+    recentEntries: [],
   });
 
   useEffect(() => {
@@ -94,6 +113,14 @@ export default function AdminDashboard() {
           .order('created_at', { ascending: false })
           .limit(5);
 
+        // Fetch last 20 daily entries across all units
+        const { data: recentEntries } = await supabase
+          .from('daily_revenue')
+          .select('*, units(name)')
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(20);
+
         setStats({
           todayRevenue: todayTotal,
           monthlyRevenue: monthlyTotal,
@@ -101,6 +128,7 @@ export default function AdminDashboard() {
           missingData: missingUnits,
           houseCash: houseCashData || [],
           recentExpenses: recentExpenses || [],
+          recentEntries: recentEntries || [],
           units: units || [],
           todayRevenues: todayRevenues || [],
         });
@@ -142,7 +170,7 @@ export default function AdminDashboard() {
             <div>
               <p className="text-sm text-green-600 font-medium">Mai forgalom</p>
               <p className="text-2xl font-bold text-green-800">
-                {formatCurrency(stats.todayRevenue)}
+                <AnimatedCurrency value={stats.todayRevenue} />
               </p>
             </div>
           </div>
@@ -156,7 +184,7 @@ export default function AdminDashboard() {
             <div>
               <p className="text-sm text-purple-600 font-medium">Havi forgalom</p>
               <p className="text-2xl font-bold text-purple-800">
-                {formatCurrency(stats.monthlyRevenue)}
+                <AnimatedCurrency value={stats.monthlyRevenue} />
               </p>
             </div>
           </div>
@@ -298,6 +326,51 @@ export default function AdminDashboard() {
           )}
         </Card>
       </div>
+
+      {/* Recent entries - last 20 days across all units */}
+      <Card title="Legutóbbi 20 rögzítés">
+        {stats.recentEntries.length === 0 ? (
+          <div className="text-center py-6 text-gray-500">
+            <Clock className="h-10 w-10 mx-auto mb-2 text-gray-300" />
+            <p>Még nincsenek rögzített napok</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-gray-500 mb-3">
+              Kattints egy sorra a szerkesztéshez
+            </p>
+            {stats.recentEntries.map((entry) => (
+              <button
+                key={entry.id}
+                onClick={() => navigate(`/daily?date=${entry.date}&unit=${entry.unit_id}`)}
+                className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors text-left group hover:bg-gray-100 ${
+                  entry.mark_color ? MARK_COLORS[entry.mark_color] : 'bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <CalendarDays className="h-5 w-5 text-pepper-red" />
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      {entry.units?.name} - {formatDate(entry.date)}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Forgalom: {formatCurrency(entry.total_revenue)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="text-right hidden sm:block">
+                    <p className="text-sm text-gray-600">
+                      KP: {formatCurrency(entry.cash_payment)} | Kártya: {formatCurrency(entry.card_payment)}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-pepper-red" />
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {/* Quick links */}
       <div className="grid gap-4 md:grid-cols-3">

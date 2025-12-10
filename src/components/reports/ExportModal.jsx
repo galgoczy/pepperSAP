@@ -27,7 +27,7 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
       let filename = '';
 
       // Fetch data based on export type
-      if (exportType === 'cash_register' || exportType === 'full_monthly') {
+      if (exportType === 'cash_register') {
         let query = supabase
           .from('daily_revenue')
           .select('*, units(name)')
@@ -44,7 +44,6 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         data = (revenues || []).map((r) => ({
           Dátum: formatDate(r.date),
           Egység: r.units?.name || '',
-          'Szoftver forgalom': r.total_revenue || 0,
           '0% ÁFA': r.vat_0_percent || 0,
           '5% ÁFA': r.vat_5_percent || 0,
           '18% ÁFA': r.vat_18_percent || 0,
@@ -56,6 +55,57 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
           'Terminál kártya': r.terminal_card || 0,
           'Terminál SZÉP': r.terminal_szep || 0,
         }));
+
+        filename = `penztargep_${startDate}_${endDate}`;
+      } else if (exportType === 'full_monthly') {
+        // Fetch revenue and expenses for full monthly report
+        let revenueQuery = supabase
+          .from('daily_revenue')
+          .select('*, units(name)')
+          .gte('date', startDate)
+          .lte('date', endDate)
+          .order('date');
+
+        let expensesQuery = supabase
+          .from('expenses')
+          .select('*')
+          .gte('invoice_date', startDate)
+          .lte('invoice_date', endDate);
+
+        if (unitId) {
+          revenueQuery = revenueQuery.eq('unit_id', unitId);
+          expensesQuery = expensesQuery.eq('unit_id', unitId);
+        }
+
+        const [revenueResult, expensesResult] = await Promise.all([
+          revenueQuery,
+          expensesQuery,
+        ]);
+
+        const revenues = revenueResult.data || [];
+        const expenses = expensesResult.data || [];
+
+        // Group expenses by date
+        const expensesByDate = {};
+        expenses.forEach((exp) => {
+          const date = exp.invoice_date;
+          expensesByDate[date] = (expensesByDate[date] || 0) + (parseFloat(exp.amount) || 0);
+        });
+
+        data = revenues.map((r) => {
+          const dayExpenses = expensesByDate[r.date] || 0;
+          const dailyTotal = (r.total_revenue || 0) - dayExpenses;
+          return {
+            Dátum: formatDate(r.date),
+            Egység: r.units?.name || '',
+            Bevétel: r.total_revenue || 0,
+            Költség: dayExpenses,
+            'Napi összesen': dailyTotal,
+            Készpénz: r.cash_payment || 0,
+            Bankkártya: r.card_payment || 0,
+            'SZÉP kártya': r.szep_card_payment || 0,
+          };
+        });
 
         filename = `forgalom_${startDate}_${endDate}`;
       } else if (exportType === 'cash_revenue') {
@@ -172,12 +222,93 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
       // Export based on format
       if (format === 'xlsx') {
         const ws = XLSX.utils.json_to_sheet(data);
+
+        // Get the range of the worksheet
+        const range = XLSX.utils.decode_range(ws['!ref']);
+
+        // Set column widths
+        const colWidths = Object.keys(data[0]).map((key) => ({
+          wch: Math.max(key.length + 2, 15),
+        }));
+        ws['!cols'] = colWidths;
+
+        // Style header row with Pepper red background
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const headerCell = XLSX.utils.encode_cell({ r: 0, c: col });
+          if (ws[headerCell]) {
+            ws[headerCell].s = {
+              fill: { fgColor: { rgb: 'D32F2F' } },
+              font: { bold: true, color: { rgb: 'FFFFFF' } },
+              alignment: { horizontal: 'center' },
+            };
+          }
+        }
+
+        // Format number cells with currency format and add totals
+        const numericColumns = Object.keys(data[0]).filter(
+          (key) => typeof data[0][key] === 'number'
+        );
+
+        // Calculate totals
+        const totalsRow = {};
+        Object.keys(data[0]).forEach((key) => {
+          if (typeof data[0][key] === 'number') {
+            totalsRow[key] = data.reduce((sum, row) => sum + (row[key] || 0), 0);
+          } else if (key === 'Dátum') {
+            totalsRow[key] = 'Összesen';
+          } else {
+            totalsRow[key] = '';
+          }
+        });
+
+        // Add totals row
+        XLSX.utils.sheet_add_json(ws, [totalsRow], {
+          skipHeader: true,
+          origin: -1,
+        });
+
+        // Update range after adding totals row
+        const newRange = XLSX.utils.decode_range(ws['!ref']);
+
+        // Style totals row (last row)
+        const totalsRowIndex = newRange.e.r;
+        for (let col = newRange.s.c; col <= newRange.e.c; col++) {
+          const cell = XLSX.utils.encode_cell({ r: totalsRowIndex, c: col });
+          if (ws[cell]) {
+            ws[cell].s = {
+              font: { bold: true },
+              fill: { fgColor: { rgb: 'F3F4F6' } },
+            };
+          }
+        }
+
+        // Format numeric cells
+        for (let row = 1; row <= newRange.e.r; row++) {
+          for (let col = 0; col <= newRange.e.c; col++) {
+            const cell = XLSX.utils.encode_cell({ r: row, c: col });
+            if (ws[cell] && typeof ws[cell].v === 'number') {
+              ws[cell].z = '#,##0 Ft';
+            }
+          }
+        }
+
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Export');
         XLSX.writeFile(wb, `${filename}.xlsx`);
       } else {
-        // CSV export
+        // CSV export with totals
         const headers = Object.keys(data[0]);
+
+        // Calculate totals row
+        const totalsRow = headers.map((h) => {
+          if (typeof data[0][h] === 'number') {
+            return data.reduce((sum, row) => sum + (row[h] || 0), 0);
+          } else if (h === 'Dátum') {
+            return 'Összesen';
+          }
+          return '';
+        });
+
         const csvContent = [
           headers.join(','),
           ...data.map((row) =>
@@ -189,6 +320,12 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
               return val;
             }).join(',')
           ),
+          totalsRow.map((val) => {
+            if (typeof val === 'string' && val.includes(',')) {
+              return `"${val}"`;
+            }
+            return val;
+          }).join(','),
         ].join('\n');
 
         const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' });

@@ -17,6 +17,7 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   const [totals, setTotals] = useState({});
+  const [aggregateData, setAggregateData] = useState(null);
 
   useEffect(() => {
     async function fetchReportData() {
@@ -26,7 +27,7 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
         let reportData = [];
         let reportTotals = {};
 
-        if (reportType === 'cash_register' || reportType === 'full_monthly' || reportType === 'cash_register_report') {
+        if (reportType === 'cash_register' || reportType === 'cash_register_report') {
           // Fetch daily revenue data
           let query = supabase
             .from('daily_revenue')
@@ -56,6 +57,75 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
             szep: reportData.reduce((sum, r) => sum + (parseFloat(r.szep_card_payment) || 0), 0),
             terminal_card: reportData.reduce((sum, r) => sum + (parseFloat(r.terminal_card) || 0), 0),
             terminal_szep: reportData.reduce((sum, r) => sum + (parseFloat(r.terminal_szep) || 0), 0),
+          };
+        } else if (reportType === 'full_monthly') {
+          // Fetch daily revenue and expenses data
+          let revenueQuery = supabase
+            .from('daily_revenue')
+            .select('*, units(name)')
+            .gte('date', startDate)
+            .lte('date', endDate)
+            .order('date', { ascending: true });
+
+          let expensesQuery = supabase
+            .from('expenses')
+            .select('*')
+            .gte('invoice_date', startDate)
+            .lte('invoice_date', endDate);
+
+          if (unitId) {
+            revenueQuery = revenueQuery.eq('unit_id', unitId);
+            expensesQuery = expensesQuery.eq('unit_id', unitId);
+          }
+
+          const [revenueResult, expensesResult] = await Promise.all([
+            revenueQuery,
+            expensesQuery,
+          ]);
+
+          const revenues = revenueResult.data || [];
+          const expenses = expensesResult.data || [];
+
+          // Group expenses by date
+          const expensesByDate = {};
+          expenses.forEach((exp) => {
+            const date = exp.invoice_date;
+            if (!expensesByDate[date]) {
+              expensesByDate[date] = [];
+            }
+            expensesByDate[date].push(exp);
+          });
+
+          // Add expenses to each day
+          reportData = revenues.map((row) => {
+            const dayExpenses = expensesByDate[row.date] || [];
+            const totalExpenses = dayExpenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+            return {
+              ...row,
+              expenses: dayExpenses,
+              total_expenses: totalExpenses,
+              daily_total: (parseFloat(row.total_revenue) || 0) - totalExpenses,
+            };
+          });
+
+          // Calculate totals
+          const totalRevenue = reportData.reduce((sum, r) => sum + (parseFloat(r.total_revenue) || 0), 0);
+          const totalExpenses = reportData.reduce((sum, r) => sum + (r.total_expenses || 0), 0);
+
+          reportTotals = {
+            total_revenue: totalRevenue,
+            vat_0: reportData.reduce((sum, r) => sum + (parseFloat(r.vat_0_percent) || 0), 0),
+            vat_5: reportData.reduce((sum, r) => sum + (parseFloat(r.vat_5_percent) || 0), 0),
+            vat_18: reportData.reduce((sum, r) => sum + (parseFloat(r.vat_18_percent) || 0), 0),
+            vat_27: reportData.reduce((sum, r) => sum + (parseFloat(r.vat_27_percent) || 0), 0),
+            tips: reportData.reduce((sum, r) => sum + (parseFloat(r.tips) || 0), 0),
+            cash: reportData.reduce((sum, r) => sum + (parseFloat(r.cash_payment) || 0), 0),
+            card: reportData.reduce((sum, r) => sum + (parseFloat(r.card_payment) || 0), 0),
+            szep: reportData.reduce((sum, r) => sum + (parseFloat(r.szep_card_payment) || 0), 0),
+            terminal_card: reportData.reduce((sum, r) => sum + (parseFloat(r.terminal_card) || 0), 0),
+            terminal_szep: reportData.reduce((sum, r) => sum + (parseFloat(r.terminal_szep) || 0), 0),
+            total_expenses: totalExpenses,
+            grand_total: totalRevenue - totalExpenses,
           };
         } else if (reportType === 'cash_revenue') {
           // Fetch daily revenue (for cash_payment), expenses, and house_cash in parallel
@@ -185,6 +255,36 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
 
         setData(reportData);
         setTotals(reportTotals);
+
+        // Calculate aggregate data by unit if no specific unit selected
+        if (!unitId && reportData.length > 0 && (reportType === 'full_monthly' || reportType === 'cash_register' || reportType === 'cash_register_report')) {
+          const unitAggregates = {};
+          reportData.forEach((row) => {
+            const unitName = row.units?.name || 'Ismeretlen';
+            if (!unitAggregates[unitName]) {
+              unitAggregates[unitName] = {
+                name: unitName,
+                total_revenue: 0,
+                cash: 0,
+                card: 0,
+                szep: 0,
+                total_expenses: 0,
+                grand_total: 0,
+                days: 0,
+              };
+            }
+            unitAggregates[unitName].total_revenue += parseFloat(row.total_revenue) || 0;
+            unitAggregates[unitName].cash += parseFloat(row.cash_payment) || 0;
+            unitAggregates[unitName].card += parseFloat(row.card_payment) || 0;
+            unitAggregates[unitName].szep += parseFloat(row.szep_card_payment) || 0;
+            unitAggregates[unitName].total_expenses += row.total_expenses || 0;
+            unitAggregates[unitName].grand_total += row.daily_total || parseFloat(row.total_revenue) || 0;
+            unitAggregates[unitName].days += 1;
+          });
+          setAggregateData(Object.values(unitAggregates));
+        } else {
+          setAggregateData(null);
+        }
       } catch (error) {
         console.error('Error fetching report data:', error);
       } finally {
@@ -213,6 +313,24 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
     );
   }
 
+  // Show aggregate summary for "all units" view
+  if (aggregateData && !unitId) {
+    return (
+      <div className="space-y-6">
+        <AggregateReport data={aggregateData} totals={totals} reportType={reportType} />
+        {reportType === 'full_monthly' && (
+          <FullMonthlyReport data={data} totals={totals} />
+        )}
+        {reportType === 'cash_register' && (
+          <CashRegisterReport data={data} totals={totals} />
+        )}
+        {reportType === 'cash_register_report' && (
+          <CashRegisterFullReport data={data} totals={totals} />
+        )}
+      </div>
+    );
+  }
+
   // Render based on report type
   if (reportType === 'cash_register') {
     return <CashRegisterReport data={data} totals={totals} />;
@@ -235,6 +353,92 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
   }
 
   return null;
+}
+
+function AggregateReport({ data, totals, reportType }) {
+  // Calculate grand totals
+  const grandTotal = {
+    total_revenue: data.reduce((sum, u) => sum + u.total_revenue, 0),
+    cash: data.reduce((sum, u) => sum + u.cash, 0),
+    card: data.reduce((sum, u) => sum + u.card, 0),
+    szep: data.reduce((sum, u) => sum + u.szep, 0),
+    total_expenses: data.reduce((sum, u) => sum + u.total_expenses, 0),
+    days: data.reduce((sum, u) => sum + u.days, 0),
+  };
+
+  return (
+    <Card title="Egységenkénti összesítő">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-pepper-red bg-opacity-10">
+            <tr>
+              <th className="px-4 py-3 text-left font-semibold text-gray-900">Egység</th>
+              <th className="px-4 py-3 text-right font-semibold text-gray-900">Napok</th>
+              <th className="px-4 py-3 text-right font-semibold text-gray-900">Bevétel</th>
+              {reportType === 'full_monthly' && (
+                <th className="px-4 py-3 text-right font-semibold text-gray-900">Költség</th>
+              )}
+              <th className="px-4 py-3 text-right font-semibold text-gray-900">Készpénz</th>
+              <th className="px-4 py-3 text-right font-semibold text-gray-900">Kártya</th>
+              <th className="px-4 py-3 text-right font-semibold text-gray-900">SZÉP</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {data.map((unit) => (
+              <tr key={unit.name} className="hover:bg-gray-50">
+                <td className="px-4 py-3 font-medium text-gray-900">{unit.name}</td>
+                <td className="px-4 py-3 text-right text-gray-600">{unit.days}</td>
+                <td className="px-4 py-3 text-right text-green-600 font-medium">
+                  {formatCurrency(unit.total_revenue)}
+                </td>
+                {reportType === 'full_monthly' && (
+                  <td className="px-4 py-3 text-right text-red-600">
+                    {unit.total_expenses > 0 ? `-${formatCurrency(unit.total_expenses)}` : formatCurrency(0)}
+                  </td>
+                )}
+                <td className="px-4 py-3 text-right">{formatCurrency(unit.cash)}</td>
+                <td className="px-4 py-3 text-right">{formatCurrency(unit.card)}</td>
+                <td className="px-4 py-3 text-right">{formatCurrency(unit.szep)}</td>
+              </tr>
+            ))}
+            <tr className="bg-gray-100 font-bold">
+              <td className="px-4 py-3">Mindösszesen</td>
+              <td className="px-4 py-3 text-right">{grandTotal.days}</td>
+              <td className="px-4 py-3 text-right text-green-700">{formatCurrency(grandTotal.total_revenue)}</td>
+              {reportType === 'full_monthly' && (
+                <td className="px-4 py-3 text-right text-red-700">-{formatCurrency(grandTotal.total_expenses)}</td>
+              )}
+              <td className="px-4 py-3 text-right">{formatCurrency(grandTotal.cash)}</td>
+              <td className="px-4 py-3 text-right">{formatCurrency(grandTotal.card)}</td>
+              <td className="px-4 py-3 text-right">{formatCurrency(grandTotal.szep)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Summary cards */}
+      <div className="mt-4 pt-4 border-t border-gray-200">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+          <div className="bg-green-50 rounded-lg p-3">
+            <p className="text-sm text-green-600">Összes bevétel</p>
+            <p className="text-lg font-bold text-green-700">{formatCurrency(grandTotal.total_revenue)}</p>
+          </div>
+          <div className="bg-blue-50 rounded-lg p-3">
+            <p className="text-sm text-blue-600">Készpénz</p>
+            <p className="text-lg font-bold text-blue-700">{formatCurrency(grandTotal.cash)}</p>
+          </div>
+          <div className="bg-purple-50 rounded-lg p-3">
+            <p className="text-sm text-purple-600">Kártya</p>
+            <p className="text-lg font-bold text-purple-700">{formatCurrency(grandTotal.card)}</p>
+          </div>
+          <div className="bg-orange-50 rounded-lg p-3">
+            <p className="text-sm text-orange-600">SZÉP kártya</p>
+            <p className="text-lg font-bold text-orange-700">{formatCurrency(grandTotal.szep)}</p>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 function CashRegisterReport({ data, totals }) {
@@ -481,62 +685,131 @@ function CashRegisterFullReport({ data, totals }) {
 
 function FullMonthlyReport({ data, totals }) {
   const navigate = useNavigate();
+  const [expandedDays, setExpandedDays] = useState({});
+
+  const toggleDay = (date) => {
+    setExpandedDays((prev) => ({
+      ...prev,
+      [date]: !prev[date],
+    }));
+  };
 
   return (
     <Card title="Teljes havi forgalom">
-      <p className="text-sm text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez</p>
+      <p className="text-sm text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez, vagy a + gombra a költségek megtekintéséhez</p>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
             <tr>
+              <th className="px-2 py-2 text-left w-8"></th>
               <th className="px-4 py-2 text-left">Dátum</th>
               <th className="px-4 py-2 text-left">Egység</th>
-              <th className="px-4 py-2 text-right">Szoftver</th>
-              <th className="px-4 py-2 text-right hidden lg:table-cell">0%</th>
-              <th className="px-4 py-2 text-right hidden lg:table-cell">5%</th>
-              <th className="px-4 py-2 text-right hidden lg:table-cell">18%</th>
-              <th className="px-4 py-2 text-right hidden lg:table-cell">27%</th>
-              <th className="px-4 py-2 text-right">Készpénz</th>
-              <th className="px-4 py-2 text-right">Kártya</th>
-              <th className="px-4 py-2 text-right">SZÉP</th>
+              <th className="px-4 py-2 text-right">Bevétel</th>
+              <th className="px-4 py-2 text-right">Költség</th>
+              <th className="px-4 py-2 text-right font-semibold bg-gray-100">Napi összesen</th>
+              <th className="px-4 py-2 text-right hidden lg:table-cell">Készpénz</th>
+              <th className="px-4 py-2 text-right hidden lg:table-cell">Kártya</th>
+              <th className="px-4 py-2 text-right hidden lg:table-cell">SZÉP</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {data.map((row) => (
-              <tr
-                key={row.id}
-                onClick={() => navigate(`/daily?date=${row.date}`)}
-                className={`hover:bg-gray-100 cursor-pointer transition-colors ${
-                  row.mark_color ? MARK_COLORS[row.mark_color] : ''
-                }`}
-              >
-                <td className="px-4 py-2">{formatDate(row.date)}</td>
-                <td className="px-4 py-2">{row.units?.name}</td>
-                <td className="px-4 py-2 text-right font-semibold">
-                  {formatCurrency(row.total_revenue)}
-                </td>
-                <td className="px-4 py-2 text-right hidden lg:table-cell text-gray-500">{formatCurrency(row.vat_0_percent)}</td>
-                <td className="px-4 py-2 text-right hidden lg:table-cell text-gray-500">{formatCurrency(row.vat_5_percent)}</td>
-                <td className="px-4 py-2 text-right hidden lg:table-cell text-gray-500">{formatCurrency(row.vat_18_percent)}</td>
-                <td className="px-4 py-2 text-right hidden lg:table-cell text-gray-500">{formatCurrency(row.vat_27_percent)}</td>
-                <td className="px-4 py-2 text-right">{formatCurrency(row.cash_payment)}</td>
-                <td className="px-4 py-2 text-right">{formatCurrency(row.card_payment)}</td>
-                <td className="px-4 py-2 text-right">{formatCurrency(row.szep_card_payment)}</td>
-              </tr>
+              <>
+                <tr
+                  key={row.id}
+                  className={`hover:bg-gray-100 transition-colors ${
+                    row.mark_color ? MARK_COLORS[row.mark_color] : ''
+                  }`}
+                >
+                  <td className="px-2 py-2">
+                    {row.expenses?.length > 0 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleDay(row.date);
+                        }}
+                        className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-200 text-gray-500"
+                      >
+                        {expandedDays[row.date] ? '−' : '+'}
+                      </button>
+                    )}
+                  </td>
+                  <td
+                    className="px-4 py-2 cursor-pointer"
+                    onClick={() => navigate(`/daily?date=${row.date}`)}
+                  >
+                    {formatDate(row.date)}
+                  </td>
+                  <td
+                    className="px-4 py-2 cursor-pointer"
+                    onClick={() => navigate(`/daily?date=${row.date}`)}
+                  >
+                    {row.units?.name}
+                  </td>
+                  <td className="px-4 py-2 text-right text-green-600">
+                    {formatCurrency(row.total_revenue)}
+                  </td>
+                  <td className="px-4 py-2 text-right text-red-600">
+                    {row.total_expenses > 0 ? `-${formatCurrency(row.total_expenses)}` : formatCurrency(0)}
+                  </td>
+                  <td className={`px-4 py-2 text-right font-semibold bg-gray-50 ${row.daily_total >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                    {formatCurrency(row.daily_total)}
+                  </td>
+                  <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(row.cash_payment)}</td>
+                  <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(row.card_payment)}</td>
+                  <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(row.szep_card_payment)}</td>
+                </tr>
+                {expandedDays[row.date] && row.expenses?.length > 0 && (
+                  <tr key={`${row.id}-expenses`} className="bg-red-50">
+                    <td colSpan={9} className="px-4 py-2">
+                      <div className="pl-8 space-y-1">
+                        <p className="text-xs font-medium text-gray-500 mb-2">Napi költségek:</p>
+                        {row.expenses.map((exp) => (
+                          <div key={exp.id} className="flex justify-between text-sm text-red-700">
+                            <span>{exp.supplier_name} {exp.item_description ? `- ${exp.item_description}` : ''}</span>
+                            <span className="font-medium">-{formatCurrency(exp.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </>
             ))}
             <tr className="bg-gray-100 font-bold">
+              <td className="px-2 py-2"></td>
               <td className="px-4 py-2" colSpan={2}>Összesen</td>
-              <td className="px-4 py-2 text-right">{formatCurrency(totals.total_revenue)}</td>
-              <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(totals.vat_0)}</td>
-              <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(totals.vat_5)}</td>
-              <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(totals.vat_18)}</td>
-              <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(totals.vat_27)}</td>
-              <td className="px-4 py-2 text-right">{formatCurrency(totals.cash)}</td>
-              <td className="px-4 py-2 text-right">{formatCurrency(totals.card)}</td>
-              <td className="px-4 py-2 text-right">{formatCurrency(totals.szep)}</td>
+              <td className="px-4 py-2 text-right text-green-700">{formatCurrency(totals.total_revenue)}</td>
+              <td className="px-4 py-2 text-right text-red-700">-{formatCurrency(totals.total_expenses)}</td>
+              <td className={`px-4 py-2 text-right bg-gray-200 ${totals.grand_total >= 0 ? 'text-green-800' : 'text-red-800'}`}>
+                {formatCurrency(totals.grand_total)}
+              </td>
+              <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(totals.cash)}</td>
+              <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(totals.card)}</td>
+              <td className="px-4 py-2 text-right hidden lg:table-cell">{formatCurrency(totals.szep)}</td>
             </tr>
           </tbody>
         </table>
+      </div>
+
+      {/* Summary card */}
+      <div className="mt-4 pt-4 border-t border-gray-200">
+        <div className="grid grid-cols-3 gap-4 text-center">
+          <div className="bg-green-50 rounded-lg p-3">
+            <p className="text-sm text-green-600">Összes bevétel</p>
+            <p className="text-lg font-bold text-green-700">{formatCurrency(totals.total_revenue)}</p>
+          </div>
+          <div className="bg-red-50 rounded-lg p-3">
+            <p className="text-sm text-red-600">Összes költség</p>
+            <p className="text-lg font-bold text-red-700">-{formatCurrency(totals.total_expenses)}</p>
+          </div>
+          <div className={`rounded-lg p-3 ${totals.grand_total >= 0 ? 'bg-blue-50' : 'bg-red-100'}`}>
+            <p className={`text-sm ${totals.grand_total >= 0 ? 'text-blue-600' : 'text-red-600'}`}>Eredmény</p>
+            <p className={`text-lg font-bold ${totals.grand_total >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
+              {formatCurrency(totals.grand_total)}
+            </p>
+          </div>
+        </div>
       </div>
     </Card>
   );
