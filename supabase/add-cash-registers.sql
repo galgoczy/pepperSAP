@@ -28,31 +28,31 @@ CREATE INDEX IF NOT EXISTS idx_cash_registers_status ON cash_registers(status);
 ALTER TABLE cash_registers ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
--- Admins can do everything
-CREATE POLICY "Admins can manage all cash registers"
-  ON cash_registers
-  FOR ALL
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-      AND profiles.role = 'admin'
-    )
-  );
-
--- Unit users can view their own unit's cash registers
-CREATE POLICY "Unit users can view their cash registers"
+-- Allow all authenticated users to read cash registers
+CREATE POLICY "Authenticated users can view cash registers"
   ON cash_registers
   FOR SELECT
   TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-      AND profiles.unit_id = cash_registers.unit_id
-    )
-  );
+  USING (true);
+
+-- Allow all authenticated users to manage cash registers
+CREATE POLICY "Authenticated users can insert cash registers"
+  ON cash_registers
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+CREATE POLICY "Authenticated users can update cash registers"
+  ON cash_registers
+  FOR UPDATE
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "Authenticated users can delete cash registers"
+  ON cash_registers
+  FOR DELETE
+  TO authenticated
+  USING (true);
 
 -- Add trigger to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_cash_registers_updated_at()

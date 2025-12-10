@@ -43,58 +43,31 @@ CREATE INDEX IF NOT EXISTS idx_cash_register_revenue_register ON cash_register_r
 ALTER TABLE cash_register_revenue ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
--- Admins can do everything
-CREATE POLICY "Admins can manage all cash register revenue"
-  ON cash_register_revenue
-  FOR ALL
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-      AND profiles.role = 'admin'
-    )
-  );
-
--- Unit users can view and edit their own unit's cash register revenue
-CREATE POLICY "Unit users can view their cash register revenue"
+-- Allow all authenticated users to read cash register revenue
+CREATE POLICY "Authenticated users can view cash register revenue"
   ON cash_register_revenue
   FOR SELECT
   TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM daily_revenue dr
-      JOIN profiles p ON p.unit_id = dr.unit_id
-      WHERE dr.id = cash_register_revenue.daily_revenue_id
-      AND p.id = auth.uid()
-    )
-  );
+  USING (true);
 
-CREATE POLICY "Unit users can insert their cash register revenue"
+-- Allow all authenticated users to manage cash register revenue
+CREATE POLICY "Authenticated users can insert cash register revenue"
   ON cash_register_revenue
   FOR INSERT
   TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM daily_revenue dr
-      JOIN profiles p ON p.unit_id = dr.unit_id
-      WHERE dr.id = cash_register_revenue.daily_revenue_id
-      AND p.id = auth.uid()
-    )
-  );
+  WITH CHECK (true);
 
-CREATE POLICY "Unit users can update their cash register revenue"
+CREATE POLICY "Authenticated users can update cash register revenue"
   ON cash_register_revenue
   FOR UPDATE
   TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM daily_revenue dr
-      JOIN profiles p ON p.unit_id = dr.unit_id
-      WHERE dr.id = cash_register_revenue.daily_revenue_id
-      AND p.id = auth.uid()
-    )
-  );
+  USING (true);
+
+CREATE POLICY "Authenticated users can delete cash register revenue"
+  ON cash_register_revenue
+  FOR DELETE
+  TO authenticated
+  USING (true);
 
 -- Add trigger to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_cash_register_revenue_updated_at()
