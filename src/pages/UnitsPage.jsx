@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Edit, Trash2, Building2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Building2, Calculator } from 'lucide-react';
 import { useUnits } from '../hooks/useSupabase';
 import {
   Card,
@@ -18,6 +18,7 @@ import {
   Select,
   LoadingSpinner,
 } from '../components/common';
+import CashRegistersManager from '../components/units/CashRegistersManager';
 import { UNIT_TYPES } from '../lib/utils';
 import toast from 'react-hot-toast';
 
@@ -25,8 +26,10 @@ export default function UnitsPage() {
   const { units, loading, createUnit, updateUnit, deleteUnit } = useUnits();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isCashRegistersOpen, setIsCashRegistersOpen] = useState(false);
   const [editingUnit, setEditingUnit] = useState(null);
   const [deletingUnit, setDeletingUnit] = useState(null);
+  const [selectedUnitForRegisters, setSelectedUnitForRegisters] = useState(null);
   const [formData, setFormData] = useState({ name: '', type: 'restaurant' });
   const [formLoading, setFormLoading] = useState(false);
 
@@ -138,6 +141,18 @@ export default function UnitsPage() {
                   </TableCell>
                   <TableCell align="right">
                     <div className="flex justify-end gap-1">
+                      {unit.type === 'restaurant' && (
+                        <button
+                          onClick={() => {
+                            setSelectedUnitForRegisters(unit);
+                            setIsCashRegistersOpen(true);
+                          }}
+                          className="p-2 hover:bg-pepper-red hover:bg-opacity-10 rounded-lg"
+                          title="Pénztárgépek"
+                        >
+                          <Calculator className="h-4 w-4 text-pepper-red" />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleOpenEdit(unit)}
                         className="p-2 hover:bg-gray-100 rounded-lg"
@@ -220,6 +235,24 @@ export default function UnitsPage() {
         title="Egység törlése"
         message={`Biztosan törölni szeretnéd a "${deletingUnit?.name}" egységet? Ez a művelet visszavonhatatlan és törli az összes kapcsolódó adatot.`}
       />
+
+      {/* Cash registers modal */}
+      <Modal
+        isOpen={isCashRegistersOpen}
+        onClose={() => {
+          setIsCashRegistersOpen(false);
+          setSelectedUnitForRegisters(null);
+        }}
+        title="Pénztárgépek kezelése"
+        size="lg"
+      >
+        {selectedUnitForRegisters && (
+          <CashRegistersManager
+            unitId={selectedUnitForRegisters.id}
+            unitName={selectedUnitForRegisters.name}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

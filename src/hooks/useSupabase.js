@@ -134,3 +134,105 @@ export function useUsers() {
     deleteUser,
   };
 }
+
+// Hook for fetching and managing cash registers per unit
+export function useCashRegisters(unitId) {
+  const [cashRegisters, setCashRegisters] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchCashRegisters = useCallback(async () => {
+    if (!unitId) {
+      setCashRegisters([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('cash_registers')
+        .select('*')
+        .eq('unit_id', unitId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setCashRegisters(data || []);
+    } catch (error) {
+      console.error('Error fetching cash registers:', error);
+      toast.error('Hiba a pénztárgépek betöltésekor');
+    } finally {
+      setLoading(false);
+    }
+  }, [unitId]);
+
+  useEffect(() => {
+    fetchCashRegisters();
+  }, [fetchCashRegisters]);
+
+  const createCashRegister = async (registerData) => {
+    const { data, error } = await supabase
+      .from('cash_registers')
+      .insert([{ ...registerData, unit_id: unitId }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    setCashRegisters((prev) => [...prev, data]);
+    return data;
+  };
+
+  const updateCashRegister = async (id, registerData) => {
+    const { data, error } = await supabase
+      .from('cash_registers')
+      .update(registerData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    setCashRegisters((prev) => prev.map((r) => (r.id === id ? data : r)));
+    return data;
+  };
+
+  const deactivateCashRegister = async (id) => {
+    const { data, error } = await supabase
+      .from('cash_registers')
+      .update({ status: 'inactive', deactivated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    setCashRegisters((prev) => prev.map((r) => (r.id === id ? data : r)));
+    return data;
+  };
+
+  const suspendCashRegister = async (id, suspend = true) => {
+    const { data, error } = await supabase
+      .from('cash_registers')
+      .update({ status: suspend ? 'suspended' : 'active' })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    setCashRegisters((prev) => prev.map((r) => (r.id === id ? data : r)));
+    return data;
+  };
+
+  const deleteCashRegister = async (id) => {
+    const { error } = await supabase.from('cash_registers').delete().eq('id', id);
+    if (error) throw error;
+    setCashRegisters((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  return {
+    cashRegisters,
+    loading,
+    refetch: fetchCashRegisters,
+    createCashRegister,
+    updateCashRegister,
+    deactivateCashRegister,
+    suspendCashRegister,
+    deleteCashRegister,
+  };
+}
