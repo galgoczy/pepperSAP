@@ -3,6 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
+import { DayOverDayChart, RevenueTrendChart } from '../charts/RevenueTrendChart';
+
+// Feature flag for SZÉP card
+const SHOW_SZEP_FIELDS = false;
 
 // Color options for marking
 const MARK_COLORS = {
@@ -811,6 +815,19 @@ function FullMonthlyReport({ data, totals }) {
           </div>
         </div>
       </div>
+
+      {/* Revenue trend chart */}
+      {data.length > 1 && (
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <DayOverDayChart
+            data={data.map((row) => ({
+              label: formatDate(row.date).split('.').slice(1).join('.').trim(),
+              value: parseFloat(row.total_revenue) || 0,
+            }))}
+            height={180}
+          />
+        </div>
+      )}
     </Card>
   );
 }

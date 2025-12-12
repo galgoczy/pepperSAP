@@ -3,7 +3,10 @@ import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp } from 'l
 import { Card, Input, Select } from '../common';
 import { Textarea } from '../common/Input';
 import { formatCurrency } from '../../lib/utils';
-import { validateCardPayments, validateSzepPayments } from '../../lib/validations';
+import { validateCardPayments } from '../../lib/validations';
+
+// Feature flag: set to true to show SZÉP card fields
+const SHOW_SZEP_FIELDS = false;
 
 const DEFAULT_FORM_DATA = {
   vat_0_percent: '',
@@ -74,12 +77,7 @@ export default function CashRegisterSection({
     parseFloat(formData.terminal_card) || 0
   );
 
-  const szepValidation = validateSzepPayments(
-    parseFloat(formData.szep_card_payment) || 0,
-    parseFloat(formData.terminal_szep) || 0
-  );
-
-  const hasDiscrepancy = !cardValidation.isValid || !szepValidation.isValid;
+  const hasDiscrepancy = !cardValidation.isValid;
 
   return (
     <Card className="border-2 border-pepper-red border-opacity-30">
@@ -227,7 +225,7 @@ export default function CashRegisterSection({
             <h4 className="text-sm font-medium text-gray-700 mb-3">
               Fizetési módok (Pénztárgép)
             </h4>
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2">
               <Input
                 label="Készpénz"
                 type="number"
@@ -251,20 +249,18 @@ export default function CashRegisterSection({
                     : null
                 }
               />
-              <Input
-                label="SZÉP kártya"
-                type="number"
-                step="0.01"
-                value={formData.szep_card_payment}
-                onChange={(e) => handleChange('szep_card_payment', e.target.value)}
-                suffix="Ft"
-                size="sm"
-                error={
-                  !szepValidation.isValid
-                    ? `Eltérés: ${formatCurrency(szepValidation.difference)}`
-                    : null
-                }
-              />
+              {/* SZÉP card - hidden for now */}
+              {SHOW_SZEP_FIELDS && (
+                <Input
+                  label="SZÉP kártya"
+                  type="number"
+                  step="0.01"
+                  value={formData.szep_card_payment}
+                  onChange={(e) => handleChange('szep_card_payment', e.target.value)}
+                  suffix="Ft"
+                  size="sm"
+                />
+              )}
             </div>
           </div>
 
@@ -278,7 +274,7 @@ export default function CashRegisterSection({
                 </span>
               )}
             </h4>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className={`grid gap-3 ${SHOW_SZEP_FIELDS ? 'md:grid-cols-2' : ''}`}>
               <Input
                 label="Bankkártya (terminál)"
                 type="number"
@@ -289,16 +285,18 @@ export default function CashRegisterSection({
                 size="sm"
                 className={!cardValidation.isValid ? 'ring-2 ring-red-300' : ''}
               />
-              <Input
-                label="SZÉP kártya (terminál)"
-                type="number"
-                step="0.01"
-                value={formData.terminal_szep}
-                onChange={(e) => handleChange('terminal_szep', e.target.value)}
-                suffix="Ft"
-                size="sm"
-                className={!szepValidation.isValid ? 'ring-2 ring-red-300' : ''}
-              />
+              {/* SZÉP terminal - hidden for now */}
+              {SHOW_SZEP_FIELDS && (
+                <Input
+                  label="SZÉP kártya (terminál)"
+                  type="number"
+                  step="0.01"
+                  value={formData.terminal_szep}
+                  onChange={(e) => handleChange('terminal_szep', e.target.value)}
+                  suffix="Ft"
+                  size="sm"
+                />
+              )}
             </div>
 
             {/* Discrepancy warning */}
@@ -308,14 +306,9 @@ export default function CashRegisterSection({
                   <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5" />
                   <div className="text-sm">
                     <h4 className="font-medium text-red-800">Eltérés!</h4>
-                    <ul className="text-red-700 mt-1 space-y-0.5">
-                      {!cardValidation.isValid && (
-                        <li>Bankkártya: {formatCurrency(cardValidation.difference)}</li>
-                      )}
-                      {!szepValidation.isValid && (
-                        <li>SZÉP kártya: {formatCurrency(szepValidation.difference)}</li>
-                      )}
-                    </ul>
+                    <p className="text-red-700 mt-1">
+                      Bankkártya: {formatCurrency(cardValidation.difference)}
+                    </p>
                   </div>
                 </div>
 

@@ -15,6 +15,7 @@ import { Card, Badge, LoadingSpinner } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate, getToday } from '../../lib/utils';
 import { useAnimatedNumber } from '../../hooks/useAnimatedNumber';
+import { MiniTrendChart } from '../charts/RevenueTrendChart';
 
 // Animated currency display component
 function AnimatedCurrency({ value }) {
@@ -43,6 +44,7 @@ export default function AdminDashboard() {
     houseCash: [],
     recentExpenses: [],
     recentEntries: [],
+    last5DaysRevenue: [],
   });
 
   useEffect(() => {
@@ -156,6 +158,36 @@ export default function AdminDashboard() {
           .order('created_at', { ascending: false })
           .limit(20);
 
+        // Fetch last 5 days revenue for chart
+        const last5Days = [];
+        for (let i = 4; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          last5Days.push(d.toISOString().split('T')[0]);
+        }
+
+        const { data: last5DaysData } = await supabase
+          .from('daily_revenue')
+          .select('date, total_revenue')
+          .gte('date', last5Days[0])
+          .lte('date', last5Days[4]);
+
+        // Aggregate by date
+        const revenueByDate = {};
+        (last5DaysData || []).forEach((r) => {
+          revenueByDate[r.date] = (revenueByDate[r.date] || 0) + (parseFloat(r.total_revenue) || 0);
+        });
+
+        const last5DaysRevenue = last5Days.map((date) => {
+          const d = new Date(date);
+          const dayName = d.toLocaleDateString('hu-HU', { weekday: 'short' });
+          return {
+            label: `${dayName} ${d.getDate()}.`,
+            value: revenueByDate[date] || 0,
+            date,
+          };
+        });
+
         setStats({
           todayRevenue: todayTotal,
           weeklyRevenue: weeklyTotal,
@@ -167,6 +199,7 @@ export default function AdminDashboard() {
           recentEntries: recentEntries || [],
           units: units || [],
           todayRevenues: todayRevenues || [],
+          last5DaysRevenue,
         });
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -286,6 +319,17 @@ export default function AdminDashboard() {
           </Card>
         )}
       </div>
+
+      {/* 5-day revenue trend chart */}
+      {stats.last5DaysRevenue?.length > 0 && (
+        <Card>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-gray-600">Elmúlt 5 nap forgalma</h3>
+            <TrendingUp className="h-4 w-4 text-gray-400" />
+          </div>
+          <MiniTrendChart data={stats.last5DaysRevenue} height={100} />
+        </Card>
+      )}
 
       {/* Warnings */}
       {stats.missingData.length > 0 && (

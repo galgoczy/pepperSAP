@@ -1,10 +1,15 @@
 import { useState } from 'react';
-import { Download, FileSpreadsheet, FileText } from 'lucide-react';
+import { Download, FileSpreadsheet, FileText, FileDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { Modal, Button, Select } from '../common';
 import { supabase } from '../../lib/supabase';
-import { formatDate } from '../../lib/utils';
+import { formatDate, formatCurrency } from '../../lib/utils';
 import toast from 'react-hot-toast';
+
+// Feature flag for SZÉP card
+const SHOW_SZEP_FIELDS = false;
 
 const exportTypes = [
   { value: 'cash_register', label: 'Pénztárgép és bankkártya forgalom' },
@@ -41,20 +46,25 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
 
         const { data: revenues } = await query;
 
-        data = (revenues || []).map((r) => ({
-          Dátum: formatDate(r.date),
-          Egység: r.units?.name || '',
-          '0% ÁFA': r.vat_0_percent || 0,
-          '5% ÁFA': r.vat_5_percent || 0,
-          '18% ÁFA': r.vat_18_percent || 0,
-          '27% ÁFA': r.vat_27_percent || 0,
-          Borravaló: r.tips || 0,
-          Készpénz: r.cash_payment || 0,
-          Bankkártya: r.card_payment || 0,
-          'SZÉP kártya': r.szep_card_payment || 0,
-          'Terminál kártya': r.terminal_card || 0,
-          'Terminál SZÉP': r.terminal_szep || 0,
-        }));
+        data = (revenues || []).map((r) => {
+          const row = {
+            Dátum: formatDate(r.date),
+            Egység: r.units?.name || '',
+            '0% ÁFA': r.vat_0_percent || 0,
+            '5% ÁFA': r.vat_5_percent || 0,
+            '18% ÁFA': r.vat_18_percent || 0,
+            '27% ÁFA': r.vat_27_percent || 0,
+            Borravaló: r.tips || 0,
+            Készpénz: r.cash_payment || 0,
+            Bankkártya: r.card_payment || 0,
+            'Terminál kártya': r.terminal_card || 0,
+          };
+          if (SHOW_SZEP_FIELDS) {
+            row['SZÉP kártya'] = r.szep_card_payment || 0;
+            row['Terminál SZÉP'] = r.terminal_szep || 0;
+          }
+          return row;
+        });
 
         filename = `penztargep_${startDate}_${endDate}`;
       } else if (exportType === 'full_monthly') {
@@ -95,7 +105,7 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         data = revenues.map((r) => {
           const dayExpenses = expensesByDate[r.date] || 0;
           const dailyTotal = (r.total_revenue || 0) - dayExpenses;
-          return {
+          const row = {
             Dátum: formatDate(r.date),
             Egység: r.units?.name || '',
             Bevétel: r.total_revenue || 0,
@@ -103,8 +113,11 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
             'Napi összesen': dailyTotal,
             Készpénz: r.cash_payment || 0,
             Bankkártya: r.card_payment || 0,
-            'SZÉP kártya': r.szep_card_payment || 0,
           };
+          if (SHOW_SZEP_FIELDS) {
+            row['SZÉP kártya'] = r.szep_card_payment || 0;
+          }
+          return row;
         });
 
         filename = `forgalom_${startDate}_${endDate}`;
@@ -219,6 +232,19 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         return;
       }
 
+      // Calculate totals row
+      const headers = Object.keys(data[0]);
+      const totalsRow = {};
+      headers.forEach((key) => {
+        if (typeof data[0][key] === 'number') {
+          totalsRow[key] = data.reduce((sum, row) => sum + (row[key] || 0), 0);
+        } else if (key === 'Dátum') {
+          totalsRow[key] = 'Összesen';
+        } else {
+          totalsRow[key] = '';
+        }
+      });
+
       // Export based on format
       if (format === 'xlsx') {
         const ws = XLSX.utils.json_to_sheet(data);
@@ -227,7 +253,7 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         const range = XLSX.utils.decode_range(ws['!ref']);
 
         // Set column widths
-        const colWidths = Object.keys(data[0]).map((key) => ({
+        const colWidths = headers.map((key) => ({
           wch: Math.max(key.length + 2, 15),
         }));
         ws['!cols'] = colWidths;
@@ -243,23 +269,6 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
             };
           }
         }
-
-        // Format number cells with currency format and add totals
-        const numericColumns = Object.keys(data[0]).filter(
-          (key) => typeof data[0][key] === 'number'
-        );
-
-        // Calculate totals
-        const totalsRow = {};
-        Object.keys(data[0]).forEach((key) => {
-          if (typeof data[0][key] === 'number') {
-            totalsRow[key] = data.reduce((sum, row) => sum + (row[key] || 0), 0);
-          } else if (key === 'Dátum') {
-            totalsRow[key] = 'Összesen';
-          } else {
-            totalsRow[key] = '';
-          }
-        });
 
         // Add totals row
         XLSX.utils.sheet_add_json(ws, [totalsRow], {
@@ -295,18 +304,99 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Export');
         XLSX.writeFile(wb, `${filename}.xlsx`);
+      } else if (format === 'pdf') {
+        // PDF export with jsPDF
+        const doc = new jsPDF({
+          orientation: headers.length > 6 ? 'landscape' : 'portrait',
+          unit: 'mm',
+          format: 'a4',
+        });
+
+        // Title
+        const exportTypeLabel = exportTypes.find((t) => t.value === exportType)?.label || 'Riport';
+        doc.setFontSize(16);
+        doc.setTextColor(211, 47, 47); // Pepper red
+        doc.text(exportTypeLabel, 14, 20);
+
+        // Date range
+        doc.setFontSize(10);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`Időszak: ${formatDate(startDate)} - ${formatDate(endDate)}`, 14, 28);
+
+        // Format data for PDF table
+        const tableData = data.map((row) =>
+          headers.map((h) =>
+            typeof row[h] === 'number' ? formatCurrency(row[h]) : row[h]
+          )
+        );
+
+        // Add totals row
+        const totalsPdfRow = headers.map((h) =>
+          typeof totalsRow[h] === 'number' ? formatCurrency(totalsRow[h]) : totalsRow[h]
+        );
+        tableData.push(totalsPdfRow);
+
+        // Create table
+        autoTable(doc, {
+          startY: 35,
+          head: [headers],
+          body: tableData,
+          theme: 'grid',
+          headStyles: {
+            fillColor: [211, 47, 47], // Pepper red
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            halign: 'center',
+          },
+          bodyStyles: {
+            fontSize: 8,
+          },
+          footStyles: {
+            fillColor: [243, 244, 246],
+            textColor: [0, 0, 0],
+            fontStyle: 'bold',
+          },
+          alternateRowStyles: {
+            fillColor: [250, 250, 250],
+          },
+          columnStyles: headers.reduce((acc, h, i) => {
+            if (typeof data[0][h] === 'number') {
+              acc[i] = { halign: 'right' };
+            }
+            return acc;
+          }, {}),
+          didParseCell: function (data) {
+            // Bold the totals row
+            if (data.row.index === tableData.length - 1) {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.fillColor = [243, 244, 246];
+            }
+          },
+          margin: { top: 35 },
+        });
+
+        // Footer with generation date
+        const pageCount = doc.internal.getNumberOfPages();
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        for (let i = 1; i <= pageCount; i++) {
+          doc.setPage(i);
+          doc.text(
+            `Generálva: ${new Date().toLocaleString('hu-HU')} | Oldal ${i}/${pageCount}`,
+            14,
+            doc.internal.pageSize.height - 10
+          );
+        }
+
+        doc.save(`${filename}.pdf`);
       } else {
         // CSV export with totals
-        const headers = Object.keys(data[0]);
-
-        // Calculate totals row
-        const totalsRow = headers.map((h) => {
-          if (typeof data[0][h] === 'number') {
-            return data.reduce((sum, row) => sum + (row[h] || 0), 0);
-          } else if (h === 'Dátum') {
-            return 'Összesen';
+        const totalsArray = headers.map((h) => {
+          const val = totalsRow[h];
+          if (typeof val === 'string' && val.includes(',')) {
+            return `"${val}"`;
           }
-          return '';
+          return val;
         });
 
         const csvContent = [
@@ -320,12 +410,7 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
               return val;
             }).join(',')
           ),
-          totalsRow.map((val) => {
-            if (typeof val === 'string' && val.includes(',')) {
-              return `"${val}"`;
-            }
-            return val;
-          }).join(','),
+          totalsArray.join(','),
         ].join('\n');
 
         const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' });
@@ -384,7 +469,7 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
           <label className="block text-sm font-medium text-gray-700">
             Fájl formátum
           </label>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="radio"
@@ -396,6 +481,18 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
               />
               <FileSpreadsheet className="h-5 w-5 text-green-600" />
               <span className="text-sm">Excel (.xlsx)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="format"
+                value="pdf"
+                checked={format === 'pdf'}
+                onChange={(e) => setFormat(e.target.value)}
+                className="text-pepper-red focus:ring-pepper-red"
+              />
+              <FileDown className="h-5 w-5 text-red-600" />
+              <span className="text-sm">PDF (.pdf)</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
