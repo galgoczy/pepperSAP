@@ -109,10 +109,10 @@ export default function UnitDashboard() {
             .eq('unit_id', unitId)
             .order('created_at', { ascending: false })
             .limit(5),
-          // Last 10 daily entries
+          // Last 10 daily entries with cash register data
           supabase
             .from('daily_revenue')
-            .select('*')
+            .select('*, cash_register_revenue(cash_payment, card_payment)')
             .eq('unit_id', unitId)
             .order('date', { ascending: false })
             .limit(10),
@@ -344,33 +344,44 @@ export default function UnitDashboard() {
             <p className="text-sm text-gray-500 mb-3">
               Kattints egy sorra a szerkesztéshez
             </p>
-            {stats.recentEntries.map((entry) => (
-              <button
-                key={entry.id}
-                onClick={() => navigate(`/daily?date=${entry.date}`)}
-                className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors text-left group hover:bg-gray-100 ${
-                  entry.mark_color ? MARK_COLORS[entry.mark_color] : 'bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <CalendarDays className="h-5 w-5 text-pepper-red" />
-                  <div>
-                    <p className="font-medium text-gray-900">{formatDate(entry.date)}</p>
-                    <p className="text-sm text-gray-500">
-                      Forgalom: {formatCurrency(entry.total_revenue)}
-                    </p>
+            {stats.recentEntries.map((entry) => {
+              // Sum up cash and card from cash registers
+              const totalCash = (entry.cash_register_revenue || []).reduce(
+                (sum, r) => sum + (parseFloat(r.cash_payment) || 0),
+                0
+              );
+              const totalCard = (entry.cash_register_revenue || []).reduce(
+                (sum, r) => sum + (parseFloat(r.card_payment) || 0),
+                0
+              );
+              return (
+                <button
+                  key={entry.id}
+                  onClick={() => navigate(`/daily?date=${entry.date}`)}
+                  className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors text-left group hover:bg-gray-100 ${
+                    entry.mark_color ? MARK_COLORS[entry.mark_color] : 'bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <CalendarDays className="h-5 w-5 text-pepper-red" />
+                    <div>
+                      <p className="font-medium text-gray-900">{formatDate(entry.date)}</p>
+                      <p className="text-sm text-gray-500">
+                        Forgalom: {formatCurrency(entry.total_revenue)}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="text-right hidden sm:block">
-                    <p className="text-sm text-gray-600">
-                      KP: {formatCurrency(entry.cash_payment)} | Kártya: {formatCurrency(entry.card_payment)}
-                    </p>
+                  <div className="flex items-center gap-2">
+                    <div className="text-right hidden sm:block">
+                      <p className="text-sm text-gray-600">
+                        KP: {formatCurrency(totalCash)} | Kártya: {formatCurrency(totalCard)}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-pepper-red" />
                   </div>
-                  <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-pepper-red" />
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         )}
       </Card>

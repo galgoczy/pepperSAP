@@ -4,7 +4,6 @@ import {
   TrendingUp,
   TrendingDown,
   AlertTriangle,
-  Building2,
   CalendarDays,
   Receipt,
   PartyPopper,
@@ -151,10 +150,10 @@ export default function AdminDashboard() {
           .order('created_at', { ascending: false })
           .limit(5);
 
-        // Fetch last 20 daily entries across all units
+        // Fetch last 20 daily entries across all units with cash register data
         const { data: recentEntries } = await supabase
           .from('daily_revenue')
-          .select('*, units(name)')
+          .select('*, units(name), cash_register_revenue(cash_payment, card_payment)')
           .order('date', { ascending: false })
           .order('created_at', { ascending: false })
           .limit(20);
@@ -232,7 +231,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-green-200 rounded-lg shrink-0">
@@ -270,20 +269,6 @@ export default function AdminDashboard() {
               <p className="text-sm text-purple-600 font-medium">Havi forgalom</p>
               <p className="text-xl font-bold text-purple-800 break-words">
                 <AnimatedCurrency value={stats.monthlyRevenue} />
-              </p>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-gray-200 rounded-lg shrink-0">
-              <Building2 className="h-6 w-6 text-gray-700" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm text-gray-600 font-medium">Aktív egységek</p>
-              <p className="text-xl font-bold text-gray-800">
-                {stats.units?.length || 0}
               </p>
             </div>
           </div>
@@ -435,35 +420,46 @@ export default function AdminDashboard() {
             <p className="text-sm text-gray-500 mb-3">
               Kattints egy sorra a szerkesztéshez
             </p>
-            {stats.recentEntries.map((entry) => (
-              <button
-                key={entry.id}
-                onClick={() => navigate(`/daily?date=${entry.date}&unit=${entry.unit_id}`)}
-                className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors text-left group hover:bg-gray-100 ${
-                  entry.mark_color ? MARK_COLORS[entry.mark_color] : 'bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <CalendarDays className="h-5 w-5 text-pepper-red" />
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      {entry.units?.name} - {formatDate(entry.date)}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      Forgalom: {formatCurrency(entry.total_revenue)}
-                    </p>
+            {stats.recentEntries.map((entry) => {
+              // Sum up cash and card from cash registers
+              const totalCash = (entry.cash_register_revenue || []).reduce(
+                (sum, r) => sum + (parseFloat(r.cash_payment) || 0),
+                0
+              );
+              const totalCard = (entry.cash_register_revenue || []).reduce(
+                (sum, r) => sum + (parseFloat(r.card_payment) || 0),
+                0
+              );
+              return (
+                <button
+                  key={entry.id}
+                  onClick={() => navigate(`/daily?date=${entry.date}&unit=${entry.unit_id}`)}
+                  className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors text-left group hover:bg-gray-100 ${
+                    entry.mark_color ? MARK_COLORS[entry.mark_color] : 'bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <CalendarDays className="h-5 w-5 text-pepper-red" />
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {entry.units?.name} - {formatDate(entry.date)}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        Forgalom: {formatCurrency(entry.total_revenue)}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="text-right hidden sm:block">
-                    <p className="text-sm text-gray-600">
-                      KP: {formatCurrency(entry.cash_payment)} | Kártya: {formatCurrency(entry.card_payment)}
-                    </p>
+                  <div className="flex items-center gap-2">
+                    <div className="text-right hidden sm:block">
+                      <p className="text-sm text-gray-600">
+                        KP: {formatCurrency(totalCash)} | Kártya: {formatCurrency(totalCard)}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-pepper-red" />
                   </div>
-                  <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-pepper-red" />
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         )}
       </Card>
