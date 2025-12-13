@@ -41,7 +41,29 @@ CREATE TABLE user_profiles (
 );
 ```
 
-### 3. DAILY_REVENUE (Napi forgalom)
+### 3. CASH_REGISTERS (Pénztárgépek)
+```sql
+CREATE TABLE cash_registers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  unit_id UUID NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+  ap_number VARCHAR(12) NOT NULL UNIQUE,  -- AP szám (pl. "AP1234567890")
+  terminal_number VARCHAR(50),            -- Kapcsolódó bankkártya terminál száma
+  status VARCHAR(20) DEFAULT 'active',    -- 'active', 'inactive', 'suspended'
+  name VARCHAR(100),                      -- Opcionális név (pl. "Főkassza", "Terasz kassza")
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deactivated_at TIMESTAMPTZ,             -- Mikor lett kiiktatva
+
+  CONSTRAINT ap_number_format CHECK (ap_number ~ '^AP[0-9]{1,10}$')
+);
+```
+**Státuszok:**
+- `active`: Használatban, adatok szükségesek
+- `inactive`: Kiiktatva, már nem használt
+- `suspended`: Ideiglenesen nem használt, nincs adat
+
+### 4. DAILY_REVENUE (Napi forgalom)
 ```sql
 CREATE TABLE daily_revenue (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -51,26 +73,26 @@ CREATE TABLE daily_revenue (
   -- Forgalom
   total_revenue DECIMAL(12,2) NOT NULL DEFAULT 0,  -- Éttermi szoftver szerinti
 
-  -- ÁFA bontás (pénztárgép)
+  -- ÁFA bontás (pénztárgép) - DEPRECATED: használd a cash_register_revenue táblát
   vat_0_percent DECIMAL(12,2) DEFAULT 0,
   vat_5_percent DECIMAL(12,2) DEFAULT 0,
   vat_18_percent DECIMAL(12,2) DEFAULT 0,
   vat_27_percent DECIMAL(12,2) DEFAULT 0,
   tips DECIMAL(12,2) DEFAULT 0,
 
-  -- Elütés
+  -- Elütés - DEPRECATED: használd a cash_register_revenue táblát
   discrepancy_amount DECIMAL(12,2) DEFAULT 0,
   discrepancy_currency TEXT DEFAULT 'HUF',         -- 'HUF' vagy 'EUR'
   discrepancy_note TEXT,
 
-  -- Fizetési módok
+  -- Fizetési módok - DEPRECATED: használd a cash_register_revenue táblát
   cash_payment DECIMAL(12,2) DEFAULT 0,
   card_payment DECIMAL(12,2) DEFAULT 0,
-  szep_card_payment DECIMAL(12,2) DEFAULT 0,
+  szep_card_payment DECIMAL(12,2) DEFAULT 0,       -- Jelenleg nem használt a UI-ban
 
-  -- Terminál
+  -- Terminál - DEPRECATED: használd a cash_register_revenue táblát
   terminal_card DECIMAL(12,2) DEFAULT 0,
-  terminal_szep DECIMAL(12,2) DEFAULT 0,
+  terminal_szep DECIMAL(12,2) DEFAULT 0,           -- Jelenleg nem használt a UI-ban
   terminal_discrepancy_note TEXT,
 
   -- Megjelölés
@@ -84,7 +106,43 @@ CREATE TABLE daily_revenue (
 );
 ```
 
-### 4. HOUSE_CASH (Házipénztár)
+### 5. CASH_REGISTER_REVENUE (Pénztárgép szerinti forgalom)
+```sql
+CREATE TABLE cash_register_revenue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  daily_revenue_id UUID NOT NULL REFERENCES daily_revenue(id) ON DELETE CASCADE,
+  cash_register_id UUID NOT NULL REFERENCES cash_registers(id) ON DELETE CASCADE,
+
+  -- ÁFA bontás ezen a kasszán
+  vat_0_percent DECIMAL(12,2) DEFAULT 0,
+  vat_5_percent DECIMAL(12,2) DEFAULT 0,
+  vat_18_percent DECIMAL(12,2) DEFAULT 0,
+  vat_27_percent DECIMAL(12,2) DEFAULT 0,
+  tips DECIMAL(12,2) DEFAULT 0,
+
+  -- Elütés ezen a kasszán
+  discrepancy_amount DECIMAL(12,2) DEFAULT 0,
+  discrepancy_currency VARCHAR(3) DEFAULT 'HUF',
+  discrepancy_note TEXT,
+
+  -- Fizetési módok ezen a kasszán
+  cash_payment DECIMAL(12,2) DEFAULT 0,
+  card_payment DECIMAL(12,2) DEFAULT 0,
+  szep_card_payment DECIMAL(12,2) DEFAULT 0,       -- Jelenleg nem használt a UI-ban
+
+  -- Terminál adatok ezen a kasszán
+  terminal_card DECIMAL(12,2) DEFAULT 0,
+  terminal_szep DECIMAL(12,2) DEFAULT 0,           -- Jelenleg nem használt a UI-ban
+  terminal_discrepancy_note TEXT,
+
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  CONSTRAINT unique_daily_cash_register UNIQUE (daily_revenue_id, cash_register_id)
+);
+```
+
+### 6. HOUSE_CASH (Házipénztár)
 ```sql
 CREATE TABLE house_cash (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -117,7 +175,7 @@ CREATE TABLE house_cash (
 );
 ```
 
-### 5. EXPENSES (Kifizetések)
+### 7. EXPENSES (Kifizetések)
 ```sql
 CREATE TABLE expenses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -146,7 +204,7 @@ CREATE TABLE expenses (
 );
 ```
 
-### 6. EVENTS (Rendezvények)
+### 8. EVENTS (Rendezvények)
 ```sql
 CREATE TABLE events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -163,7 +221,7 @@ CREATE TABLE events (
 );
 ```
 
-### 7. EVENT_REVENUES (Rendezvény bevételek)
+### 9. EVENT_REVENUES (Rendezvény bevételek)
 ```sql
 CREATE TABLE event_revenues (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -186,7 +244,7 @@ CREATE TABLE event_revenues (
 );
 ```
 
-### 8. EVENT_EXPENSES (Rendezvény költségek)
+### 10. EVENT_EXPENSES (Rendezvény költségek)
 ```sql
 CREATE TABLE event_expenses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -229,34 +287,79 @@ ON CONFLICT (name) DO NOTHING;
 UPDATE units SET name = 'Új Név' WHERE name = 'Régi Név';
 ```
 
+### Pénztárgép hozzáadása egységhez
+```sql
+INSERT INTO cash_registers (unit_id, ap_number, terminal_number, name)
+SELECT id, 'AP1234567890', 'TERM001', 'Főkassza'
+FROM units WHERE name = 'Knorr 105'
+ON CONFLICT (ap_number) DO NOTHING;
+```
+
+### Pénztárgép felfüggesztése
+```sql
+UPDATE cash_registers
+SET status = 'suspended', updated_at = NOW()
+WHERE ap_number = 'AP1234567890';
+```
+
+### Pénztárgép kiiktatása
+```sql
+UPDATE cash_registers
+SET status = 'inactive', deactivated_at = NOW(), updated_at = NOW()
+WHERE ap_number = 'AP1234567890';
+```
+
 ### Napi forgalom hozzáadása (egyedi)
 ```sql
-INSERT INTO daily_revenue (unit_id, date, total_revenue, vat_27_percent, cash_payment, card_payment)
-SELECT id, '2024-12-09', 450000, 400000, 150000, 300000
+INSERT INTO daily_revenue (unit_id, date, total_revenue)
+SELECT id, '2024-12-09', 450000
 FROM units WHERE name = 'Knorr 105'
 ON CONFLICT (unit_id, date) DO UPDATE SET
   total_revenue = EXCLUDED.total_revenue,
+  updated_at = NOW();
+```
+
+### Pénztárgép forgalom hozzáadása
+```sql
+-- Először kell a daily_revenue rekord, aztán lehet hozzáadni a cash_register_revenue-t
+WITH dr AS (
+  SELECT dr.id as daily_revenue_id
+  FROM daily_revenue dr
+  JOIN units u ON dr.unit_id = u.id
+  WHERE u.name = 'Knorr 105' AND dr.date = '2024-12-09'
+),
+cr AS (
+  SELECT id as cash_register_id
+  FROM cash_registers
+  WHERE ap_number = 'AP1234567890'
+)
+INSERT INTO cash_register_revenue (
+  daily_revenue_id, cash_register_id,
+  vat_27_percent, cash_payment, card_payment, terminal_card
+)
+SELECT dr.daily_revenue_id, cr.cash_register_id, 400000, 150000, 300000, 300000
+FROM dr, cr
+ON CONFLICT (daily_revenue_id, cash_register_id) DO UPDATE SET
   vat_27_percent = EXCLUDED.vat_27_percent,
   cash_payment = EXCLUDED.cash_payment,
   card_payment = EXCLUDED.card_payment,
+  terminal_card = EXCLUDED.terminal_card,
   updated_at = NOW();
 ```
 
 ### Bulk napi forgalom (több nap)
 ```sql
-INSERT INTO daily_revenue (unit_id, date, total_revenue, cash_payment, card_payment)
-SELECT u.id, d.date, d.total_revenue, d.cash_payment, d.card_payment
+INSERT INTO daily_revenue (unit_id, date, total_revenue)
+SELECT u.id, d.date, d.total_revenue
 FROM units u
 CROSS JOIN (VALUES
-  ('2024-12-01'::date, 420000, 120000, 300000),
-  ('2024-12-02'::date, 380000, 100000, 280000),
-  ('2024-12-03'::date, 510000, 150000, 360000)
-) AS d(date, total_revenue, cash_payment, card_payment)
+  ('2024-12-01'::date, 420000),
+  ('2024-12-02'::date, 380000),
+  ('2024-12-03'::date, 510000)
+) AS d(date, total_revenue)
 WHERE u.name = 'Knorr 105'
 ON CONFLICT (unit_id, date) DO UPDATE SET
   total_revenue = EXCLUDED.total_revenue,
-  cash_payment = EXCLUDED.cash_payment,
-  card_payment = EXCLUDED.card_payment,
   updated_at = NOW();
 ```
 
@@ -298,6 +401,30 @@ WHERE dr.date >= DATE_TRUNC('month', CURRENT_DATE)
 GROUP BY u.name;
 ```
 
+### Lekérdezés - Egység pénztárgépei
+```sql
+SELECT cr.ap_number, cr.name, cr.terminal_number, cr.status
+FROM cash_registers cr
+JOIN units u ON cr.unit_id = u.id
+WHERE u.name = 'Knorr 105' AND cr.status = 'active';
+```
+
+### Lekérdezés - Napi forgalom kasszánkénti bontásban
+```sql
+SELECT
+  cr.ap_number,
+  cr.name as kassza_nev,
+  crr.vat_27_percent,
+  crr.cash_payment,
+  crr.card_payment,
+  crr.terminal_card
+FROM daily_revenue dr
+JOIN units u ON dr.unit_id = u.id
+JOIN cash_register_revenue crr ON crr.daily_revenue_id = dr.id
+JOIN cash_registers cr ON crr.cash_register_id = cr.id
+WHERE u.name = 'Knorr 105' AND dr.date = '2024-12-09';
+```
+
 ---
 
 ## Fontos szabályok
@@ -311,6 +438,27 @@ GROUP BY u.name;
 7. **User role-ok:** 'admin', 'unit', 'events'
 8. **Rendezvény típusok:** 'protocol', 'event', 'lunch_service', 'delivery', 'other'
 9. **Megjelölés színek:** 'red', 'yellow', 'green', 'blue', 'purple' vagy NULL
+10. **Pénztárgép státuszok:** 'active', 'inactive', 'suspended'
+11. **AP szám formátum:** 'AP' + 1-10 számjegy (pl. 'AP1234567890')
+12. **SZÉP kártya mezők:** A DB-ben léteznek, de a UI-ban jelenleg el vannak rejtve
+
+---
+
+## Tábla kapcsolatok
+
+```
+units
+  ├── user_profiles (unit_id)
+  ├── cash_registers (unit_id)
+  │     └── cash_register_revenue (cash_register_id)
+  ├── daily_revenue (unit_id)
+  │     └── cash_register_revenue (daily_revenue_id)
+  ├── house_cash (unit_id)
+  ├── expenses (unit_id)
+  └── events (unit_id)
+        ├── event_revenues (event_id)
+        └── event_expenses (event_id)
+```
 
 ---
 
@@ -318,16 +466,24 @@ GROUP BY u.name;
 
 A felhasználó kérését így fogalmazd át SQL-lé:
 
-**Példa kérés:** "Add hozzá a Knorr 105-höz december 9-re 450000 Ft forgalmat, ebből 300000 kártya és 150000 készpénz"
+**Példa kérés:** "Add hozzá a Knorr 105-höz december 9-re 450000 Ft forgalmat"
 
 **Válasz:**
 ```sql
-INSERT INTO daily_revenue (unit_id, date, total_revenue, cash_payment, card_payment)
-SELECT id, '2024-12-09', 450000, 150000, 300000
+INSERT INTO daily_revenue (unit_id, date, total_revenue)
+SELECT id, '2024-12-09', 450000
 FROM units WHERE name = 'Knorr 105'
 ON CONFLICT (unit_id, date) DO UPDATE SET
   total_revenue = EXCLUDED.total_revenue,
-  cash_payment = EXCLUDED.cash_payment,
-  card_payment = EXCLUDED.card_payment,
   updated_at = NOW();
+```
+
+**Példa kérés:** "Adj hozzá egy új pénztárgépet a Knorr 105-höz, AP száma AP9876543210, terminál száma TRM-001, neve Főkassza"
+
+**Válasz:**
+```sql
+INSERT INTO cash_registers (unit_id, ap_number, terminal_number, name)
+SELECT id, 'AP9876543210', 'TRM-001', 'Főkassza'
+FROM units WHERE name = 'Knorr 105'
+ON CONFLICT (ap_number) DO NOTHING;
 ```
