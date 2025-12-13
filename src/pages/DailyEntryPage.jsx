@@ -26,16 +26,22 @@ export default function DailyEntryPage() {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('all');
   const [selectedDate, setSelectedDate] = useState(searchParams.get('date') || getToday());
-  const [selectedUnit, setSelectedUnit] = useState(unitId || '');
+  // Initialize selected unit from URL param (for admin), or user's unit
+  const urlUnitParam = searchParams.get('unit');
+  const [selectedUnit, setSelectedUnit] = useState(urlUnitParam || unitId || '');
   const [showExpenseForm, setShowExpenseForm] = useState(false);
 
-  // Update date when URL param changes
+  // Update date and unit when URL params change
   useEffect(() => {
     const dateParam = searchParams.get('date');
+    const unitParam = searchParams.get('unit');
     if (dateParam) {
       setSelectedDate(dateParam);
     }
-  }, [searchParams]);
+    if (unitParam && isAdmin) {
+      setSelectedUnit(unitParam);
+    }
+  }, [searchParams, isAdmin]);
 
   // Get restaurant units only
   const restaurantUnits = units.filter(u => u.type === 'restaurant');
