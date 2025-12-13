@@ -36,7 +36,8 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
-    todayRevenue: 0,
+    previousDayRevenue: 0,
+    previousDayDate: null,
     weeklyRevenue: 0,
     monthlyRevenue: 0,
     yesterdayDiscrepancies: [],
@@ -73,24 +74,24 @@ export default function AdminDashboard() {
           .select('*')
           .eq('is_active', true);
 
-        // Fetch today's revenue for all units
-        const { data: todayRevenues } = await supabase
+        // Fetch YESTERDAY's revenue for all units (data is entered at end of day)
+        const { data: previousDayRevenues } = await supabase
           .from('daily_revenue')
           .select('*, units(name)')
-          .eq('date', today);
+          .eq('date', yesterdayStr);
 
-        // Calculate total today revenue
-        const todayTotal = (todayRevenues || []).reduce(
+        // Calculate total previous day revenue
+        const previousDayTotal = (previousDayRevenues || []).reduce(
           (sum, r) => sum + (parseFloat(r.total_revenue) || 0),
           0
         );
 
-        // Fetch weekly revenue (from Monday to today)
+        // Fetch weekly revenue (from Monday to yesterday - not including today)
         const { data: weeklyRevenues } = await supabase
           .from('daily_revenue')
           .select('total_revenue')
           .gte('date', mondayStr)
-          .lte('date', today);
+          .lte('date', yesterdayStr);
 
         // Calculate weekly total
         const weeklyTotal = (weeklyRevenues || []).reduce(
@@ -98,12 +99,12 @@ export default function AdminDashboard() {
           0
         );
 
-        // Fetch monthly revenue
+        // Fetch monthly revenue (up to yesterday)
         const { data: monthlyRevenues } = await supabase
           .from('daily_revenue')
           .select('total_revenue')
           .gte('date', firstDayOfMonth)
-          .lte('date', today);
+          .lte('date', yesterdayStr);
 
         // Calculate monthly total
         const monthlyTotal = (monthlyRevenues || []).reduce(
@@ -158,9 +159,9 @@ export default function AdminDashboard() {
           .order('created_at', { ascending: false })
           .limit(20);
 
-        // Fetch last 5 days revenue for chart
+        // Fetch last 5 days revenue for chart (ending with yesterday, not today)
         const last5Days = [];
-        for (let i = 4; i >= 0; i--) {
+        for (let i = 5; i >= 1; i--) {
           const d = new Date();
           d.setDate(d.getDate() - i);
           last5Days.push(d.toISOString().split('T')[0]);
@@ -189,7 +190,8 @@ export default function AdminDashboard() {
         });
 
         setStats({
-          todayRevenue: todayTotal,
+          previousDayRevenue: previousDayTotal,
+          previousDayDate: yesterdayStr,
           weeklyRevenue: weeklyTotal,
           monthlyRevenue: monthlyTotal,
           yesterdayDiscrepancies: yesterdayRevenues || [],
@@ -198,7 +200,7 @@ export default function AdminDashboard() {
           recentExpenses: recentExpenses || [],
           recentEntries: recentEntries || [],
           units: units || [],
-          todayRevenues: todayRevenues || [],
+          previousDayRevenues: previousDayRevenues || [],
           last5DaysRevenue,
         });
       } catch (error) {
@@ -233,13 +235,13 @@ export default function AdminDashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-green-200 rounded-lg">
+            <div className="p-3 bg-green-200 rounded-lg shrink-0">
               <TrendingUp className="h-6 w-6 text-green-700" />
             </div>
-            <div>
-              <p className="text-sm text-green-600 font-medium">Mai forgalom</p>
-              <p className="text-2xl font-bold text-green-800">
-                <AnimatedCurrency value={stats.todayRevenue} />
+            <div className="min-w-0">
+              <p className="text-sm text-green-600 font-medium">Tegnapi forgalom</p>
+              <p className="text-xl font-bold text-green-800 break-words">
+                <AnimatedCurrency value={stats.previousDayRevenue} />
               </p>
             </div>
           </div>
@@ -247,12 +249,12 @@ export default function AdminDashboard() {
 
         <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-200 rounded-lg">
+            <div className="p-3 bg-blue-200 rounded-lg shrink-0">
               <CalendarDays className="h-6 w-6 text-blue-700" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm text-blue-600 font-medium">Heti forgalom</p>
-              <p className="text-2xl font-bold text-blue-800">
+              <p className="text-xl font-bold text-blue-800 break-words">
                 <AnimatedCurrency value={stats.weeklyRevenue} />
               </p>
             </div>
@@ -261,12 +263,12 @@ export default function AdminDashboard() {
 
         <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-purple-200 rounded-lg">
+            <div className="p-3 bg-purple-200 rounded-lg shrink-0">
               <CalendarDays className="h-6 w-6 text-purple-700" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm text-purple-600 font-medium">Havi forgalom</p>
-              <p className="text-2xl font-bold text-purple-800">
+              <p className="text-xl font-bold text-purple-800 break-words">
                 <AnimatedCurrency value={stats.monthlyRevenue} />
               </p>
             </div>
@@ -275,12 +277,12 @@ export default function AdminDashboard() {
 
         <Card className="bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-gray-200 rounded-lg">
+            <div className="p-3 bg-gray-200 rounded-lg shrink-0">
               <Building2 className="h-6 w-6 text-gray-700" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm text-gray-600 font-medium">Aktív egységek</p>
-              <p className="text-2xl font-bold text-gray-800">
+              <p className="text-xl font-bold text-gray-800">
                 {stats.units?.length || 0}
               </p>
             </div>
@@ -290,12 +292,12 @@ export default function AdminDashboard() {
         {stats.yesterdayDiscrepancies.length > 0 && (
           <Card className="bg-gradient-to-br from-red-50 to-red-100 border-red-200">
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-red-200 rounded-lg">
+              <div className="p-3 bg-red-200 rounded-lg shrink-0">
                 <AlertTriangle className="h-6 w-6 text-red-700" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-red-600 font-medium">Tegnapi eltérések</p>
-                <p className="text-2xl font-bold text-red-800">
+                <p className="text-xl font-bold text-red-800">
                   {stats.yesterdayDiscrepancies.length}
                 </p>
               </div>
@@ -306,12 +308,12 @@ export default function AdminDashboard() {
         {stats.missingData.length > 0 && (
           <Card className="bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200">
             <div className="flex items-center gap-3">
-              <div className="p-3 bg-yellow-200 rounded-lg">
+              <div className="p-3 bg-yellow-200 rounded-lg shrink-0">
                 <AlertTriangle className="h-6 w-6 text-yellow-700" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-yellow-600 font-medium">Hiányzó adatok</p>
-                <p className="text-2xl font-bold text-yellow-800">
+                <p className="text-xl font-bold text-yellow-800 break-words">
                   {stats.missingData.length} egység
                 </p>
               </div>
@@ -355,15 +357,15 @@ export default function AdminDashboard() {
 
       {/* Unit revenues */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Today's revenue by unit */}
-        <Card title="Mai forgalom egységenként">
-          {stats.todayRevenues?.length === 0 ? (
+        {/* Yesterday's revenue by unit */}
+        <Card title="Tegnapi forgalom egységenként">
+          {stats.previousDayRevenues?.length === 0 ? (
             <p className="text-gray-500 text-center py-4">
-              Még nincsenek mai adatok
+              Még nincsenek tegnapi adatok
             </p>
           ) : (
             <div className="space-y-3">
-              {stats.todayRevenues?.map((revenue) => (
+              {stats.previousDayRevenues?.map((revenue) => (
                 <div
                   key={revenue.id}
                   className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"

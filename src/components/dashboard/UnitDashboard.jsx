@@ -40,8 +40,8 @@ export default function UnitDashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
-    todayRevenue: null,
-    todayHouseCash: null,
+    previousDayRevenue: null,
+    runningHouseCash: 0,
     weeklyRevenue: 0,
     recentExpenses: [],
     recentEntries: [],
@@ -55,6 +55,11 @@ export default function UnitDashboard() {
         const today = getToday();
         const now = new Date();
 
+        // Yesterday's date (data is entered at end of day)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+
         // Get Monday of current week (for weekly revenue)
         const dayOfWeek = now.getDay();
         const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
@@ -64,34 +69,39 @@ export default function UnitDashboard() {
 
         // Fetch all data in parallel for better performance
         const [
-          todayRevenueResult,
-          latestHouseCashResult,
+          previousDayRevenueResult,
+          allCashRevenuesResult,
+          cashExpensesResult,
           weeklyRevenuesResult,
           recentExpensesResult,
           recentEntriesResult,
         ] = await Promise.all([
-          // Today's revenue
+          // Yesterday's revenue (data is entered at end of day)
           supabase
             .from('daily_revenue')
             .select('*')
             .eq('unit_id', unitId)
-            .eq('date', today)
+            .eq('date', yesterdayStr)
             .maybeSingle(),
-          // Latest house cash (not just today's)
+          // All cash revenues for running house cash calculation
           supabase
-            .from('house_cash')
-            .select('*')
+            .from('daily_revenue')
+            .select('cash_payment')
             .eq('unit_id', unitId)
-            .order('date', { ascending: false })
-            .limit(1)
-            .maybeSingle(),
-          // Weekly revenue (Monday to today)
+            .lte('date', today),
+          // All cash expenses for running house cash calculation
+          supabase
+            .from('expenses')
+            .select('amount')
+            .eq('unit_id', unitId)
+            .eq('payment_method', 'cash'),
+          // Weekly revenue (Monday to yesterday - not including today)
           supabase
             .from('daily_revenue')
             .select('total_revenue')
             .eq('unit_id', unitId)
             .gte('date', mondayStr)
-            .lte('date', today),
+            .lte('date', yesterdayStr),
           // Recent expenses
           supabase
             .from('expenses')
@@ -113,9 +123,20 @@ export default function UnitDashboard() {
           0
         );
 
+        // Calculate running house cash: sum of cash revenues - cash expenses
+        const totalCashRevenue = (allCashRevenuesResult.data || []).reduce(
+          (sum, r) => sum + (parseFloat(r.cash_payment) || 0),
+          0
+        );
+        const totalCashExpenses = (cashExpensesResult.data || []).reduce(
+          (sum, r) => sum + (parseFloat(r.amount) || 0),
+          0
+        );
+        const runningHouseCash = totalCashRevenue - totalCashExpenses;
+
         setStats({
-          todayRevenue: todayRevenueResult.data,
-          todayHouseCash: latestHouseCashResult.data,
+          previousDayRevenue: previousDayRevenueResult.data,
+          runningHouseCash,
           weeklyRevenue: weeklyTotal,
           recentExpenses: recentExpensesResult.data || [],
           recentEntries: recentEntriesResult.data || [],
@@ -163,15 +184,15 @@ export default function UnitDashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-green-200 rounded-lg">
+            <div className="p-3 bg-green-200 rounded-lg shrink-0">
               <TrendingUp className="h-6 w-6 text-green-700" />
             </div>
-            <div>
-              <p className="text-sm text-green-600 font-medium">Mai forgalom</p>
-              <p className="text-2xl font-bold text-green-800">
+            <div className="min-w-0">
+              <p className="text-sm text-green-600 font-medium">Tegnapi forgalom</p>
+              <p className="text-xl font-bold text-green-800 break-words">
                 <AnimatedCurrency
-                  value={stats.todayRevenue?.total_revenue}
-                  hasData={!!stats.todayRevenue}
+                  value={stats.previousDayRevenue?.total_revenue}
+                  hasData={!!stats.previousDayRevenue}
                 />
               </p>
             </div>
@@ -180,16 +201,13 @@ export default function UnitDashboard() {
 
         <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-200 rounded-lg">
+            <div className="p-3 bg-blue-200 rounded-lg shrink-0">
               <Wallet className="h-6 w-6 text-blue-700" />
             </div>
-            <div>
-              <p className="text-sm text-blue-600 font-medium">Házipénztár (hivatalos)</p>
-              <p className="text-2xl font-bold text-blue-800">
-                <AnimatedCurrency
-                  value={stats.todayHouseCash?.official_total}
-                  hasData={!!stats.todayHouseCash}
-                />
+            <div className="min-w-0">
+              <p className="text-sm text-blue-600 font-medium">Házipénztár egyenleg</p>
+              <p className="text-xl font-bold text-blue-800 break-words">
+                <AnimatedCurrency value={stats.runningHouseCash} />
               </p>
             </div>
           </div>
@@ -197,12 +215,12 @@ export default function UnitDashboard() {
 
         <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-purple-200 rounded-lg">
+            <div className="p-3 bg-purple-200 rounded-lg shrink-0">
               <TrendingUp className="h-6 w-6 text-purple-700" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm text-purple-600 font-medium">Heti forgalom</p>
-              <p className="text-2xl font-bold text-purple-800">
+              <p className="text-xl font-bold text-purple-800 break-words">
                 <AnimatedCurrency value={stats.weeklyRevenue} />
               </p>
             </div>
@@ -210,16 +228,16 @@ export default function UnitDashboard() {
         </Card>
       </div>
 
-      {/* Today's data status */}
-      {!stats.todayRevenue && (
+      {/* Yesterday's data status */}
+      {!stats.previousDayRevenue && (
         <Card className="border-yellow-200 bg-yellow-50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <CalendarDays className="h-5 w-5 text-yellow-600" />
               <div>
-                <h3 className="font-medium text-yellow-800">Mai adat hiányzik</h3>
+                <h3 className="font-medium text-yellow-800">Tegnapi adat hiányzik</h3>
                 <p className="text-sm text-yellow-700">
-                  Még nem rögzített mai forgalmi adatokat.
+                  Még nem rögzített tegnapi forgalmi adatokat.
                 </p>
               </div>
             </div>
@@ -230,32 +248,32 @@ export default function UnitDashboard() {
         </Card>
       )}
 
-      {/* Today's details */}
-      {stats.todayRevenue && (
-        <Card title="Mai adatok részletesen">
+      {/* Yesterday's details */}
+      {stats.previousDayRevenue && (
+        <Card title="Tegnapi adatok részletesen">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-3">
               <h4 className="font-medium text-gray-700">Pénztárgép forgalom</h4>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">0% ÁFA</span>
-                  <span>{formatCurrency(stats.todayRevenue.vat_0_percent)}</span>
+                  <span>{formatCurrency(stats.previousDayRevenue.vat_0_percent)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">5% ÁFA</span>
-                  <span>{formatCurrency(stats.todayRevenue.vat_5_percent)}</span>
+                  <span>{formatCurrency(stats.previousDayRevenue.vat_5_percent)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">18% ÁFA</span>
-                  <span>{formatCurrency(stats.todayRevenue.vat_18_percent)}</span>
+                  <span>{formatCurrency(stats.previousDayRevenue.vat_18_percent)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">27% ÁFA</span>
-                  <span>{formatCurrency(stats.todayRevenue.vat_27_percent)}</span>
+                  <span>{formatCurrency(stats.previousDayRevenue.vat_27_percent)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Borravaló</span>
-                  <span>{formatCurrency(stats.todayRevenue.tips)}</span>
+                  <span>{formatCurrency(stats.previousDayRevenue.tips)}</span>
                 </div>
               </div>
             </div>
@@ -265,15 +283,11 @@ export default function UnitDashboard() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Készpénz</span>
-                  <span>{formatCurrency(stats.todayRevenue.cash_payment)}</span>
+                  <span>{formatCurrency(stats.previousDayRevenue.cash_payment)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Bankkártya</span>
-                  <span>{formatCurrency(stats.todayRevenue.card_payment)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">SZÉP kártya</span>
-                  <span>{formatCurrency(stats.todayRevenue.szep_card_payment)}</span>
+                  <span>{formatCurrency(stats.previousDayRevenue.card_payment)}</span>
                 </div>
               </div>
             </div>
