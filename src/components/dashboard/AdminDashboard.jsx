@@ -239,7 +239,7 @@ export default function AdminDashboard() {
             </div>
             <div className="min-w-0">
               <p className="text-sm text-green-600 font-medium">Tegnapi forgalom</p>
-              <p className="text-xl font-bold text-green-800 break-words">
+              <p className="text-base font-bold text-green-800 break-words">
                 <AnimatedCurrency value={stats.previousDayRevenue} />
               </p>
             </div>
@@ -253,7 +253,7 @@ export default function AdminDashboard() {
             </div>
             <div className="min-w-0">
               <p className="text-sm text-blue-600 font-medium">Heti forgalom</p>
-              <p className="text-xl font-bold text-blue-800 break-words">
+              <p className="text-base font-bold text-blue-800 break-words">
                 <AnimatedCurrency value={stats.weeklyRevenue} />
               </p>
             </div>
@@ -267,7 +267,7 @@ export default function AdminDashboard() {
             </div>
             <div className="min-w-0">
               <p className="text-sm text-purple-600 font-medium">Havi forgalom</p>
-              <p className="text-xl font-bold text-purple-800 break-words">
+              <p className="text-base font-bold text-purple-800 break-words">
                 <AnimatedCurrency value={stats.monthlyRevenue} />
               </p>
             </div>
@@ -282,7 +282,7 @@ export default function AdminDashboard() {
               </div>
               <div className="min-w-0">
                 <p className="text-sm text-red-600 font-medium">Tegnapi eltérések</p>
-                <p className="text-xl font-bold text-red-800">
+                <p className="text-base font-bold text-red-800">
                   {stats.yesterdayDiscrepancies.length}
                 </p>
               </div>
@@ -298,7 +298,7 @@ export default function AdminDashboard() {
               </div>
               <div className="min-w-0">
                 <p className="text-sm text-yellow-600 font-medium">Hiányzó adatok</p>
-                <p className="text-xl font-bold text-yellow-800 break-words">
+                <p className="text-base font-bold text-yellow-800 break-words">
                   {stats.missingData.length} egység
                 </p>
               </div>
