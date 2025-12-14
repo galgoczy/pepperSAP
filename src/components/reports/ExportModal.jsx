@@ -111,7 +111,7 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
       if (format === 'xlsx') {
         exportToExcel(data, headers, totalsRow, filename, reportType);
       } else if (format === 'pdf') {
-        exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate, unitName);
+        await exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate, unitName);
       } else {
         exportToCsv(data, headers, totalsRow, filename, reportType);
       }
@@ -927,10 +927,10 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
         let cellStyle = null;
 
         if (rowData._rowType === 'registerHeader') {
-          // Register header: bold, light blue background
+          // Register header: bold, dark blue background with white text
           cellStyle = {
-            font: { bold: true },
-            fill: { fgColor: { rgb: 'DBEAFE' } },
+            font: { bold: true, color: { rgb: 'FFFFFF' } },
+            fill: { fgColor: { rgb: '3B82F6' } },
           };
         } else if (rowData._rowType === 'subtotal') {
           // Subtotal: bold, gray background
@@ -1002,7 +1002,7 @@ function sanitizeForPdf(text) {
     .replace(/Ű/g, 'Ü');
 }
 
-function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate, unitName = '') {
+async function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate, unitName = '') {
   const doc = new jsPDF({
     orientation: headers.length > 7 ? 'landscape' : 'portrait',
     unit: 'mm',
@@ -1013,12 +1013,35 @@ function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, 
   doc.setFillColor(211, 47, 47);
   doc.rect(0, 0, doc.internal.pageSize.width, 25, 'F');
 
-  doc.setFontSize(18);
-  doc.setTextColor(255, 255, 255);
-  doc.text('Pepper House', 14, 12);
+  // Try to load logo
+  let logoLoaded = false;
+  try {
+    const response = await fetch('/gfx/logo.png');
+    if (response.ok) {
+      const blob = await response.blob();
+      const reader = new FileReader();
+      const logoBase64 = await new Promise((resolve) => {
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+      // Add logo image (white logo on transparent background for red header)
+      // Adjust dimensions as needed - height 15mm, width proportional
+      doc.addImage(logoBase64, 'PNG', 10, 5, 50, 15);
+      logoLoaded = true;
+    }
+  } catch (e) {
+    // Logo not available, use text fallback
+  }
 
-  doc.setFontSize(10);
-  doc.text(sanitizeForPdf('Pénzügyi Nyilvántartó Rendszer'), 14, 18);
+  // Fallback to text if logo not loaded
+  if (!logoLoaded) {
+    doc.setFontSize(18);
+    doc.setTextColor(255, 255, 255);
+    doc.text('Pepper House', 14, 12);
+
+    doc.setFontSize(10);
+    doc.text(sanitizeForPdf('Pénzügyi Nyilvántartó Rendszer'), 14, 18);
+  }
 
   // Report title with unit name
   let reportLabel = reportTypeLabels[reportType] || 'Riport';
@@ -1090,9 +1113,10 @@ function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, 
       else if (reportType === 'cash_register' && data[hookData.row.index]) {
         const rowType = data[hookData.row.index]._rowType;
         if (rowType === 'registerHeader') {
-          // Register header: bold, light blue background
+          // Register header: bold, dark blue background with white text
           hookData.cell.styles.fontStyle = 'bold';
-          hookData.cell.styles.fillColor = [219, 234, 254];
+          hookData.cell.styles.fillColor = [59, 130, 246];
+          hookData.cell.styles.textColor = [255, 255, 255];
         } else if (rowType === 'subtotal') {
           // Subtotal: bold, gray background
           hookData.cell.styles.fontStyle = 'bold';
