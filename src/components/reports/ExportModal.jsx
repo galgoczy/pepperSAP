@@ -721,7 +721,7 @@ async function fetchCashRevenueAllUnitsExport(startDate, endDate) {
 async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate);
 
@@ -738,6 +738,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
         cashRegisterTotal: 0,
         cash: 0,
         card: 0,
+        terminal_card: 0,
       };
     }
 
@@ -753,6 +754,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
           total: 0,
           cash: 0,
           card: 0,
+          terminal_card: 0,
         };
       }
 
@@ -765,14 +767,16 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
       unitData[unitId].registers[registerId].total += total;
       unitData[unitId].registers[registerId].cash += parseFloat(cr.cash_payment) || 0;
       unitData[unitId].registers[registerId].card += parseFloat(cr.card_payment) || 0;
+      unitData[unitId].registers[registerId].terminal_card += parseFloat(cr.terminal_card) || 0;
 
       unitData[unitId].cashRegisterTotal += total;
       unitData[unitId].cash += parseFloat(cr.cash_payment) || 0;
       unitData[unitId].card += parseFloat(cr.card_payment) || 0;
+      unitData[unitId].terminal_card += parseFloat(cr.terminal_card) || 0;
     });
   });
 
-  const headers = ['Egység', 'Pénztárgép', 'Forgalom', 'Készpénz', 'Kártya'];
+  const headers = ['Egység', 'Pénztárgép', 'Forgalom', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés'];
 
   const data = [];
   Object.values(unitData)
@@ -785,6 +789,8 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
           'Forgalom': reg.total,
           'Készpénz': reg.cash,
           'Kártya': reg.card,
+          'Terminál': reg.terminal_card,
+          'Eltérés': reg.card - reg.terminal_card,
         });
       });
     });
@@ -795,38 +801,163 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
 async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: true });
 
-  const headers = ['Egység', 'Dátum', 'Pénztárgép', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Összesen', 'Készpénz', 'Kártya'];
-
-  const data = [];
+  // Group by unit, then by register
+  const unitData = {};
   (revenues || []).forEach((row) => {
     const unitName = row.units?.name || 'Ismeretlen';
+    const unitId = row.unit_id;
+
+    if (!unitData[unitId]) {
+      unitData[unitId] = {
+        unitName,
+        registers: {},
+        totals: {
+          vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
+          total: 0, cash: 0, card: 0, terminal_card: 0,
+        },
+      };
+    }
+
     const crRevenues = row.cash_register_revenue || [];
-
     crRevenues.forEach((cr) => {
-      const total = (parseFloat(cr.vat_0_percent) || 0) +
-        (parseFloat(cr.vat_5_percent) || 0) +
-        (parseFloat(cr.vat_18_percent) || 0) +
-        (parseFloat(cr.vat_27_percent) || 0) +
-        (parseFloat(cr.tips) || 0);
+      const apNumber = cr.cash_registers?.ap_number || 'unknown';
+      const registerName = cr.cash_registers?.name || '';
 
+      if (!unitData[unitId].registers[apNumber]) {
+        unitData[unitId].registers[apNumber] = {
+          ap_number: apNumber,
+          name: registerName,
+          days: [],
+          totals: {
+            vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
+            total: 0, cash: 0, card: 0, terminal_card: 0,
+          },
+        };
+      }
+
+      const dayData = {
+        date: row.date,
+        vat_0: parseFloat(cr.vat_0_percent) || 0,
+        vat_5: parseFloat(cr.vat_5_percent) || 0,
+        vat_18: parseFloat(cr.vat_18_percent) || 0,
+        vat_27: parseFloat(cr.vat_27_percent) || 0,
+        tips: parseFloat(cr.tips) || 0,
+        cash: parseFloat(cr.cash_payment) || 0,
+        card: parseFloat(cr.card_payment) || 0,
+        terminal_card: parseFloat(cr.terminal_card) || 0,
+      };
+      dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27 + dayData.tips;
+      dayData.discrepancy = dayData.card - dayData.terminal_card;
+
+      unitData[unitId].registers[apNumber].days.push(dayData);
+
+      // Update register totals
+      unitData[unitId].registers[apNumber].totals.vat_0 += dayData.vat_0;
+      unitData[unitId].registers[apNumber].totals.vat_5 += dayData.vat_5;
+      unitData[unitId].registers[apNumber].totals.vat_18 += dayData.vat_18;
+      unitData[unitId].registers[apNumber].totals.vat_27 += dayData.vat_27;
+      unitData[unitId].registers[apNumber].totals.tips += dayData.tips;
+      unitData[unitId].registers[apNumber].totals.total += dayData.total;
+      unitData[unitId].registers[apNumber].totals.cash += dayData.cash;
+      unitData[unitId].registers[apNumber].totals.card += dayData.card;
+      unitData[unitId].registers[apNumber].totals.terminal_card += dayData.terminal_card;
+
+      // Update unit totals
+      unitData[unitId].totals.vat_0 += dayData.vat_0;
+      unitData[unitId].totals.vat_5 += dayData.vat_5;
+      unitData[unitId].totals.vat_18 += dayData.vat_18;
+      unitData[unitId].totals.vat_27 += dayData.vat_27;
+      unitData[unitId].totals.tips += dayData.tips;
+      unitData[unitId].totals.total += dayData.total;
+      unitData[unitId].totals.cash += dayData.cash;
+      unitData[unitId].totals.card += dayData.card;
+      unitData[unitId].totals.terminal_card += dayData.terminal_card;
+    });
+  });
+
+  // Headers without "Pénztárgép" column - register name will be in header rows
+  const headers = ['Dátum', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Összesen', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés'];
+
+  const data = [];
+  const units = Object.values(unitData).sort((a, b) => a.unitName.localeCompare(b.unitName));
+
+  units.forEach((unit) => {
+    // Unit header row
+    data.push({
+      'Dátum': `=== ${unit.unitName} ===`,
+      '0% ÁFA': '', '5% ÁFA': '', '18% ÁFA': '', '27% ÁFA': '', 'Borravaló': '',
+      'Összesen': '', 'Készpénz': '', 'Kártya': '', 'Terminál': '', 'Eltérés': '',
+      _rowType: 'unitHeader',
+    });
+
+    const registers = Object.values(unit.registers).sort((a, b) => a.ap_number.localeCompare(b.ap_number));
+
+    registers.forEach((reg) => {
+      // Register header row
+      const registerLabel = reg.name ? `Pénztárgép: ${reg.ap_number} (${reg.name})` : `Pénztárgép: ${reg.ap_number}`;
       data.push({
-        'Egység': unitName,
-        'Dátum': formatDate(row.date),
-        'Pénztárgép': cr.cash_registers?.ap_number || 'unknown',
-        '0% ÁFA': parseFloat(cr.vat_0_percent) || 0,
-        '5% ÁFA': parseFloat(cr.vat_5_percent) || 0,
-        '18% ÁFA': parseFloat(cr.vat_18_percent) || 0,
-        '27% ÁFA': parseFloat(cr.vat_27_percent) || 0,
-        'Borravaló': parseFloat(cr.tips) || 0,
-        'Összesen': total,
-        'Készpénz': parseFloat(cr.cash_payment) || 0,
-        'Kártya': parseFloat(cr.card_payment) || 0,
+        'Dátum': registerLabel,
+        '0% ÁFA': '', '5% ÁFA': '', '18% ÁFA': '', '27% ÁFA': '', 'Borravaló': '',
+        'Összesen': '', 'Készpénz': '', 'Kártya': '', 'Terminál': '', 'Eltérés': '',
+        _rowType: 'registerHeader',
       });
+
+      // Day rows
+      reg.days.forEach((day) => {
+        data.push({
+          'Dátum': formatDate(day.date),
+          '0% ÁFA': day.vat_0,
+          '5% ÁFA': day.vat_5,
+          '18% ÁFA': day.vat_18,
+          '27% ÁFA': day.vat_27,
+          'Borravaló': day.tips,
+          'Összesen': day.total,
+          'Készpénz': day.cash,
+          'Kártya': day.card,
+          'Terminál': day.terminal_card,
+          'Eltérés': day.discrepancy,
+          _rowType: 'data',
+        });
+      });
+
+      // Register subtotal row
+      const regDiscrepancy = reg.totals.card - reg.totals.terminal_card;
+      data.push({
+        'Dátum': `${reg.ap_number} összesen`,
+        '0% ÁFA': reg.totals.vat_0,
+        '5% ÁFA': reg.totals.vat_5,
+        '18% ÁFA': reg.totals.vat_18,
+        '27% ÁFA': reg.totals.vat_27,
+        'Borravaló': reg.totals.tips,
+        'Összesen': reg.totals.total,
+        'Készpénz': reg.totals.cash,
+        'Kártya': reg.totals.card,
+        'Terminál': reg.totals.terminal_card,
+        'Eltérés': regDiscrepancy,
+        _rowType: 'subtotal',
+      });
+    });
+
+    // Unit grand total row
+    const unitDiscrepancy = unit.totals.card - unit.totals.terminal_card;
+    data.push({
+      'Dátum': `${unit.unitName} összesen`,
+      '0% ÁFA': unit.totals.vat_0,
+      '5% ÁFA': unit.totals.vat_5,
+      '18% ÁFA': unit.totals.vat_18,
+      '27% ÁFA': unit.totals.vat_27,
+      'Borravaló': unit.totals.tips,
+      'Összesen': unit.totals.total,
+      'Készpénz': unit.totals.cash,
+      'Kártya': unit.totals.card,
+      'Terminál': unit.totals.terminal_card,
+      'Eltérés': unitDiscrepancy,
+      _rowType: 'unitTotal',
     });
   });
 
@@ -949,14 +1080,20 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
     }
   }
 
-  // For cash_register, style rows based on _rowType
-  if (reportType === 'cash_register') {
+  // For cash_register and cash_register_all_detailed, style rows based on _rowType
+  if (reportType === 'cash_register' || reportType === 'cash_register_all_detailed') {
     for (let row = 1; row <= range.e.r; row++) {
       const rowData = data[row - 1];
       if (rowData && rowData._rowType) {
         let cellStyle = null;
 
-        if (rowData._rowType === 'registerHeader') {
+        if (rowData._rowType === 'unitHeader') {
+          // Unit header: bold, dark red background with white text
+          cellStyle = {
+            font: { bold: true, color: { rgb: 'FFFFFF' } },
+            fill: { fgColor: { rgb: 'D32F2F' } },
+          };
+        } else if (rowData._rowType === 'registerHeader') {
           // Register header: bold, dark blue background with white text
           cellStyle = {
             font: { bold: true, color: { rgb: 'FFFFFF' } },
@@ -967,6 +1104,12 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
           cellStyle = {
             font: { bold: true },
             fill: { fgColor: { rgb: 'E5E7EB' } },
+          };
+        } else if (rowData._rowType === 'unitTotal') {
+          // Unit total: bold, light red background
+          cellStyle = {
+            font: { bold: true },
+            fill: { fgColor: { rgb: 'FECACA' } },
           };
         }
 
@@ -1139,10 +1282,15 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
         hookData.cell.styles.fontStyle = 'bold';
         hookData.cell.styles.fillColor = [254, 202, 202];
       }
-      // Style rows based on _rowType for cash_register
-      else if (reportType === 'cash_register' && data[hookData.row.index]) {
+      // Style rows based on _rowType for cash_register and cash_register_all_detailed
+      else if ((reportType === 'cash_register' || reportType === 'cash_register_all_detailed') && data[hookData.row.index]) {
         const rowType = data[hookData.row.index]._rowType;
-        if (rowType === 'registerHeader') {
+        if (rowType === 'unitHeader') {
+          // Unit header: bold, dark red background with white text
+          hookData.cell.styles.fontStyle = 'bold';
+          hookData.cell.styles.fillColor = [211, 47, 47];
+          hookData.cell.styles.textColor = [255, 255, 255];
+        } else if (rowType === 'registerHeader') {
           // Register header: bold, dark blue background with white text
           hookData.cell.styles.fontStyle = 'bold';
           hookData.cell.styles.fillColor = [59, 130, 246];
@@ -1151,6 +1299,10 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
           // Subtotal: bold, gray background
           hookData.cell.styles.fontStyle = 'bold';
           hookData.cell.styles.fillColor = [229, 231, 235];
+        } else if (rowType === 'unitTotal') {
+          // Unit total: bold, light red background
+          hookData.cell.styles.fontStyle = 'bold';
+          hookData.cell.styles.fillColor = [254, 202, 202];
         }
       }
     },

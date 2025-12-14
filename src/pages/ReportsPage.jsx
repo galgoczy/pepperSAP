@@ -40,7 +40,8 @@ export default function ReportsPage() {
   const { units } = useUnits();
   const [startDate, setStartDate] = useState(getFirstDayOfMonth());
   const [endDate, setEndDate] = useState(getLastDayOfMonth());
-  const [reportType, setReportType] = useState('full_monthly');
+  // Admin defaults to "all units" view with full_monthly_all report
+  const [reportType, setReportType] = useState(isAdmin && !unitId ? 'full_monthly_all' : 'full_monthly');
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState(unitId || '');
 

@@ -652,6 +652,7 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
           total: 0,
           cash: 0,
           card: 0,
+          terminal_card: 0,
         };
       }
 
@@ -664,6 +665,7 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
       unitData[unitId].registers[registerId].total += total;
       unitData[unitId].registers[registerId].cash += parseFloat(cr.cash_payment) || 0;
       unitData[unitId].registers[registerId].card += parseFloat(cr.card_payment) || 0;
+      unitData[unitId].registers[registerId].terminal_card += parseFloat(cr.terminal_card) || 0;
 
       unitData[unitId].cashRegisterTotal += total;
       unitData[unitId].cash += parseFloat(cr.cash_payment) || 0;
@@ -695,7 +697,7 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
     .lte('date', endDate)
     .order('date', { ascending: true });
 
-  // Group by unit, then by date
+  // Group by unit, then by register, then list days
   const unitData = {};
   (revenues || []).forEach((row) => {
     const unitName = row.units?.name || 'Ismeretlen';
@@ -704,67 +706,99 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
     if (!unitData[unitId]) {
       unitData[unitId] = {
         unitName,
-        days: [],
+        registers: {},
         totals: {
-          cashRegisterTotal: 0,
-          cash: 0,
-          card: 0,
-          terminal_card: 0,
+          vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
+          total: 0, cash: 0, card: 0, terminal_card: 0,
         },
       };
     }
 
-    const dayData = {
-      date: row.date,
-      registers: [],
-      dayTotal: 0,
-      dayCash: 0,
-      dayCard: 0,
-    };
-
     const crRevenues = row.cash_register_revenue || [];
     crRevenues.forEach((cr) => {
-      const total = (parseFloat(cr.vat_0_percent) || 0) +
-        (parseFloat(cr.vat_5_percent) || 0) +
-        (parseFloat(cr.vat_18_percent) || 0) +
-        (parseFloat(cr.vat_27_percent) || 0) +
-        (parseFloat(cr.tips) || 0);
+      const apNumber = cr.cash_registers?.ap_number || 'unknown';
+      const registerName = cr.cash_registers?.name || '';
 
-      dayData.registers.push({
-        ap_number: cr.cash_registers?.ap_number || 'unknown',
-        name: cr.cash_registers?.name || '',
+      if (!unitData[unitId].registers[apNumber]) {
+        unitData[unitId].registers[apNumber] = {
+          ap_number: apNumber,
+          name: registerName,
+          days: [],
+          totals: {
+            vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
+            total: 0, cash: 0, card: 0, terminal_card: 0,
+          },
+        };
+      }
+
+      const dayData = {
+        date: row.date,
         vat_0: parseFloat(cr.vat_0_percent) || 0,
         vat_5: parseFloat(cr.vat_5_percent) || 0,
         vat_18: parseFloat(cr.vat_18_percent) || 0,
         vat_27: parseFloat(cr.vat_27_percent) || 0,
         tips: parseFloat(cr.tips) || 0,
-        total,
         cash: parseFloat(cr.cash_payment) || 0,
         card: parseFloat(cr.card_payment) || 0,
-      });
+        terminal_card: parseFloat(cr.terminal_card) || 0,
+      };
+      dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27 + dayData.tips;
+      dayData.discrepancy = dayData.card - dayData.terminal_card;
 
-      dayData.dayTotal += total;
-      dayData.dayCash += parseFloat(cr.cash_payment) || 0;
-      dayData.dayCard += parseFloat(cr.card_payment) || 0;
+      unitData[unitId].registers[apNumber].days.push(dayData);
 
-      unitData[unitId].totals.cashRegisterTotal += total;
-      unitData[unitId].totals.cash += parseFloat(cr.cash_payment) || 0;
-      unitData[unitId].totals.card += parseFloat(cr.card_payment) || 0;
-      unitData[unitId].totals.terminal_card += parseFloat(cr.terminal_card) || 0;
+      // Update register totals
+      unitData[unitId].registers[apNumber].totals.vat_0 += dayData.vat_0;
+      unitData[unitId].registers[apNumber].totals.vat_5 += dayData.vat_5;
+      unitData[unitId].registers[apNumber].totals.vat_18 += dayData.vat_18;
+      unitData[unitId].registers[apNumber].totals.vat_27 += dayData.vat_27;
+      unitData[unitId].registers[apNumber].totals.tips += dayData.tips;
+      unitData[unitId].registers[apNumber].totals.total += dayData.total;
+      unitData[unitId].registers[apNumber].totals.cash += dayData.cash;
+      unitData[unitId].registers[apNumber].totals.card += dayData.card;
+      unitData[unitId].registers[apNumber].totals.terminal_card += dayData.terminal_card;
+
+      // Update unit totals
+      unitData[unitId].totals.vat_0 += dayData.vat_0;
+      unitData[unitId].totals.vat_5 += dayData.vat_5;
+      unitData[unitId].totals.vat_18 += dayData.vat_18;
+      unitData[unitId].totals.vat_27 += dayData.vat_27;
+      unitData[unitId].totals.tips += dayData.tips;
+      unitData[unitId].totals.total += dayData.total;
+      unitData[unitId].totals.cash += dayData.cash;
+      unitData[unitId].totals.card += dayData.card;
+      unitData[unitId].totals.terminal_card += dayData.terminal_card;
     });
-
-    if (dayData.registers.length > 0) {
-      unitData[unitId].days.push(dayData);
-    }
   });
 
-  const data = Object.values(unitData).sort((a, b) => a.unitName.localeCompare(b.unitName));
+  // Convert registers object to array and calculate discrepancies
+  const data = Object.values(unitData).map((unit) => ({
+    ...unit,
+    registers: Object.values(unit.registers).sort((a, b) => a.ap_number.localeCompare(b.ap_number)),
+    totals: {
+      ...unit.totals,
+      discrepancy: unit.totals.card - unit.totals.terminal_card,
+    },
+  })).sort((a, b) => a.unitName.localeCompare(b.unitName));
+
+  // Add discrepancy to register totals
+  data.forEach((unit) => {
+    unit.registers.forEach((reg) => {
+      reg.totals.discrepancy = reg.totals.card - reg.totals.terminal_card;
+    });
+  });
 
   const totals = {
-    cashRegisterTotal: data.reduce((sum, r) => sum + r.totals.cashRegisterTotal, 0),
+    vat_0: data.reduce((sum, r) => sum + r.totals.vat_0, 0),
+    vat_5: data.reduce((sum, r) => sum + r.totals.vat_5, 0),
+    vat_18: data.reduce((sum, r) => sum + r.totals.vat_18, 0),
+    vat_27: data.reduce((sum, r) => sum + r.totals.vat_27, 0),
+    tips: data.reduce((sum, r) => sum + r.totals.tips, 0),
+    total: data.reduce((sum, r) => sum + r.totals.total, 0),
     cash: data.reduce((sum, r) => sum + r.totals.cash, 0),
     card: data.reduce((sum, r) => sum + r.totals.card, 0),
     terminal_card: data.reduce((sum, r) => sum + r.totals.terminal_card, 0),
+    discrepancy: data.reduce((sum, r) => sum + r.totals.discrepancy, 0),
   };
 
   return { data, totals };
@@ -1277,29 +1311,42 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
               <th className="px-4 py-2 text-right">Forgalom</th>
               <th className="px-4 py-2 text-right">KP</th>
               <th className="px-4 py-2 text-right">Kártya</th>
+              <th className="px-4 py-2 text-right">Terminál</th>
+              <th className="px-4 py-2 text-right">Eltérés</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {data.map((unit, unitIdx) => (
               <React.Fragment key={`unit-${unitIdx}-${unit.unitName}`}>
                 <tr className="bg-gray-50 font-medium">
-                  <td className="px-4 py-2" colSpan={4}>{unit.unitName}</td>
+                  <td className="px-4 py-2" colSpan={6}>{unit.unitName}</td>
                 </tr>
-                {(unit.registers || []).map((reg, regIdx) => (
-                  <tr key={`${unitIdx}-${regIdx}-${reg.ap_number}`} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 pl-8 text-gray-600">
-                      {reg.ap_number} {reg.name && `(${reg.name})`}
-                    </td>
-                    <td className="px-4 py-2 text-right">{formatCurrency(reg.total)}</td>
-                    <td className="px-4 py-2 text-right">{formatCurrency(reg.cash)}</td>
-                    <td className="px-4 py-2 text-right">{formatCurrency(reg.card)}</td>
-                  </tr>
-                ))}
+                {(unit.registers || []).map((reg, regIdx) => {
+                  const discrepancy = reg.card - (reg.terminal_card || 0);
+                  return (
+                    <tr key={`${unitIdx}-${regIdx}-${reg.ap_number}`} className="hover:bg-gray-50">
+                      <td className="px-4 py-2 pl-8 text-gray-600">
+                        {reg.ap_number} {reg.name && `(${reg.name})`}
+                      </td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(reg.total)}</td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(reg.cash)}</td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(reg.card)}</td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(reg.terminal_card || 0)}</td>
+                      <td className={`px-4 py-2 text-right ${discrepancy !== 0 ? 'text-orange-600 font-medium' : ''}`}>
+                        {formatCurrency(discrepancy)}
+                      </td>
+                    </tr>
+                  );
+                })}
                 <tr className="bg-gray-100">
                   <td className="px-4 py-2 pl-8 font-medium text-gray-700">{unit.unitName} összesen</td>
                   <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.cashRegisterTotal)}</td>
                   <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.cash)}</td>
                   <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.card)}</td>
+                  <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.terminal_card)}</td>
+                  <td className={`px-4 py-2 text-right font-medium ${(unit.card - unit.terminal_card) !== 0 ? 'text-orange-600' : ''}`}>
+                    {formatCurrency(unit.card - unit.terminal_card)}
+                  </td>
                 </tr>
               </React.Fragment>
             ))}
@@ -1308,6 +1355,10 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
               <td className="px-4 py-2 text-right">{formatCurrency(totals.cashRegisterTotal)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.cash)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.card)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.terminal_card)}</td>
+              <td className={`px-4 py-2 text-right ${(totals.card - totals.terminal_card) !== 0 ? 'text-orange-600' : ''}`}>
+                {formatCurrency(totals.card - totals.terminal_card)}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -1330,7 +1381,6 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-3 py-2 text-left">Dátum</th>
-                    <th className="px-3 py-2 text-left">Pénztárgép</th>
                     <th className="px-3 py-2 text-right">0%</th>
                     <th className="px-3 py-2 text-right">5%</th>
                     <th className="px-3 py-2 text-right">18%</th>
@@ -1339,34 +1389,70 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                     <th className="px-3 py-2 text-right font-semibold">Össz.</th>
                     <th className="px-3 py-2 text-right">KP</th>
                     <th className="px-3 py-2 text-right">Kártya</th>
+                    <th className="px-3 py-2 text-right">Term.</th>
+                    <th className="px-3 py-2 text-right">Elt.</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {(unit.days || []).map((day, dayIdx) => (
-                    <React.Fragment key={`day-${unitIdx}-${dayIdx}-${day.date}`}>
-                      {(day.registers || []).map((reg, regIdx) => (
-                        <tr key={`${dayIdx}-${regIdx}-${reg.ap_number}`} className="hover:bg-gray-50">
-                          {regIdx === 0 && (
-                            <td className="px-3 py-2" rowSpan={(day.registers || []).length}>{formatDate(day.date)}</td>
-                          )}
-                          <td className="px-3 py-2 text-gray-600">{reg.ap_number}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(reg.vat_0)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(reg.vat_5)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(reg.vat_18)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(reg.vat_27)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(reg.tips)}</td>
-                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(reg.total)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(reg.cash)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(reg.card)}</td>
+                  {(unit.registers || []).map((reg, regIdx) => (
+                    <React.Fragment key={`reg-${unitIdx}-${regIdx}-${reg.ap_number}`}>
+                      {/* Register header row */}
+                      <tr className="bg-blue-50">
+                        <td className="px-3 py-2 font-bold text-blue-800" colSpan={11}>
+                          Pénztárgép: {reg.ap_number} {reg.name && `(${reg.name})`}
+                        </td>
+                      </tr>
+                      {/* Day rows for this register */}
+                      {(reg.days || []).map((day, dayIdx) => (
+                        <tr key={`day-${unitIdx}-${regIdx}-${dayIdx}-${day.date}`} className="hover:bg-gray-50">
+                          <td className="px-3 py-2">{formatDate(day.date)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(day.vat_0)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(day.vat_5)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(day.vat_18)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(day.vat_27)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(day.tips)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(day.total)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(day.cash)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(day.card)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(day.terminal_card)}</td>
+                          <td className={`px-3 py-2 text-right ${day.discrepancy !== 0 ? 'text-orange-600 font-medium' : ''}`}>
+                            {formatCurrency(day.discrepancy)}
+                          </td>
                         </tr>
                       ))}
+                      {/* Register subtotal row */}
+                      <tr className="bg-gray-100 font-semibold">
+                        <td className="px-3 py-2">{reg.ap_number} összesen</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.vat_0)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.vat_5)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.vat_18)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.vat_27)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.tips)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.total)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.cash)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.card)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.terminal_card)}</td>
+                        <td className={`px-3 py-2 text-right ${reg.totals.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
+                          {formatCurrency(reg.totals.discrepancy)}
+                        </td>
+                      </tr>
                     </React.Fragment>
                   ))}
-                  <tr className="bg-gray-100 font-bold">
-                    <td className="px-3 py-2" colSpan={7}>{unit.unitName} összesen</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.cashRegisterTotal || 0)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.cash || 0)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.card || 0)}</td>
+                  {/* Unit grand total row */}
+                  <tr className="bg-pepper-red bg-opacity-20 font-bold">
+                    <td className="px-3 py-2">{unit.unitName} összesen</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.vat_0)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.vat_5)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.vat_18)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.vat_27)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.tips)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.total)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.cash)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.card)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.terminal_card)}</td>
+                    <td className={`px-3 py-2 text-right ${unit.totals.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
+                      {formatCurrency(unit.totals.discrepancy)}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -1376,10 +1462,10 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
 
         {/* Grand total */}
         <div className="bg-pepper-red bg-opacity-10 rounded-lg p-4">
-          <div className="grid grid-cols-4 gap-4 text-center">
+          <div className="grid grid-cols-5 gap-4 text-center">
             <div>
               <p className="text-sm text-gray-600">Összes forgalom</p>
-              <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.cashRegisterTotal)}</p>
+              <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.total)}</p>
             </div>
             <div>
               <p className="text-sm text-gray-600">Összes KP</p>
@@ -1392,6 +1478,12 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
             <div>
               <p className="text-sm text-gray-600">Összes terminál</p>
               <p className="text-xl font-bold text-purple-700">{formatCurrency(totals.terminal_card)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Összes eltérés</p>
+              <p className={`text-xl font-bold ${totals.discrepancy !== 0 ? 'text-orange-600' : 'text-gray-700'}`}>
+                {formatCurrency(totals.discrepancy)}
+              </p>
             </div>
           </div>
         </div>
