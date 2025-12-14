@@ -18,11 +18,13 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId, 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   const [totals, setTotals] = useState({});
+  const [unitName, setUnitName] = useState('');
 
   useEffect(() => {
     // Reset data immediately when report type changes to prevent rendering old data with new component
     setData([]);
     setTotals({});
+    setUnitName('');
 
     async function fetchReportData() {
       setLoading(true);
@@ -30,20 +32,24 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId, 
       try {
         let reportData = [];
         let reportTotals = {};
+        let reportUnitName = '';
 
         // Single unit reports (or admin with specific unit)
         if (reportType === 'full_monthly') {
           const result = await fetchFullMonthlyData(startDate, endDate, unitId);
           reportData = result.data;
           reportTotals = result.totals;
+          reportUnitName = result.data[0]?.units?.name || '';
         } else if (reportType === 'cash_revenue') {
           const result = await fetchCashRevenueData(startDate, endDate, unitId);
           reportData = result.data;
           reportTotals = result.totals;
+          reportUnitName = result.data[0]?.units?.name || '';
         } else if (reportType === 'cash_register') {
           const result = await fetchCashRegisterData(startDate, endDate, unitId);
           reportData = result.data;
           reportTotals = result.totals;
+          reportUnitName = result.unitName || '';
         } else if (reportType === 'events') {
           const result = await fetchEventsData(startDate, endDate, unitId);
           reportData = result.data;
@@ -74,6 +80,7 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId, 
 
         setData(reportData);
         setTotals(reportTotals);
+        setUnitName(reportUnitName);
       } catch (error) {
         console.error('Error fetching report data:', error);
       } finally {
@@ -104,13 +111,13 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId, 
 
   // Render based on report type
   if (reportType === 'full_monthly') {
-    return <FullMonthlyReport data={data} totals={totals} />;
+    return <FullMonthlyReport data={data} totals={totals} unitName={unitName} />;
   }
   if (reportType === 'cash_revenue') {
-    return <CashRevenueReport data={data} totals={totals} />;
+    return <CashRevenueReport data={data} totals={totals} unitName={unitName} />;
   }
   if (reportType === 'cash_register') {
-    return <CashRegisterReport data={data} totals={totals} />;
+    return <CashRegisterReport data={data} totals={totals} unitName={unitName} />;
   }
   if (reportType === 'events') {
     return <EventsReport data={data} totals={totals} />;
@@ -307,10 +314,10 @@ async function fetchCashRevenueData(startDate, endDate, unitId) {
 }
 
 async function fetchCashRegisterData(startDate, endDate, unitId) {
-  // Fetch daily revenue with cash register data
+  // Fetch daily revenue with cash register data, including cash register info
   let query = supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card)')
+    .select('*, units(name), cash_register_revenue(*, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: true });
@@ -321,38 +328,79 @@ async function fetchCashRegisterData(startDate, endDate, unitId) {
 
   const { data: revenues } = await query;
 
-  // Calculate aggregated data for each day
-  const data = (revenues || []).map((row) => {
+  // Get unit name from first record
+  const unitName = revenues?.[0]?.units?.name || '';
+
+  // Group by cash register
+  const registerData = {};
+  (revenues || []).forEach((row) => {
     const crRevenues = row.cash_register_revenue || [];
-    return {
-      ...row,
-      vat_0: crRevenues.reduce((sum, r) => sum + (parseFloat(r.vat_0_percent) || 0), 0),
-      vat_5: crRevenues.reduce((sum, r) => sum + (parseFloat(r.vat_5_percent) || 0), 0),
-      vat_18: crRevenues.reduce((sum, r) => sum + (parseFloat(r.vat_18_percent) || 0), 0),
-      vat_27: crRevenues.reduce((sum, r) => sum + (parseFloat(r.vat_27_percent) || 0), 0),
-      tips: crRevenues.reduce((sum, r) => sum + (parseFloat(r.tips) || 0), 0),
-      cash: crRevenues.reduce((sum, r) => sum + (parseFloat(r.cash_payment) || 0), 0),
-      card: crRevenues.reduce((sum, r) => sum + (parseFloat(r.card_payment) || 0), 0),
-      terminal_card: crRevenues.reduce((sum, r) => sum + (parseFloat(r.terminal_card) || 0), 0),
-    };
+    crRevenues.forEach((cr) => {
+      const apNumber = cr.cash_registers?.ap_number || 'unknown';
+      const registerName = cr.cash_registers?.name || '';
+
+      if (!registerData[apNumber]) {
+        registerData[apNumber] = {
+          ap_number: apNumber,
+          name: registerName,
+          days: [],
+          totals: {
+            vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
+            cash: 0, card: 0, terminal_card: 0, total: 0,
+          },
+        };
+      }
+
+      const dayData = {
+        date: row.date,
+        unit_id: row.unit_id,
+        vat_0: parseFloat(cr.vat_0_percent) || 0,
+        vat_5: parseFloat(cr.vat_5_percent) || 0,
+        vat_18: parseFloat(cr.vat_18_percent) || 0,
+        vat_27: parseFloat(cr.vat_27_percent) || 0,
+        tips: parseFloat(cr.tips) || 0,
+        cash: parseFloat(cr.cash_payment) || 0,
+        card: parseFloat(cr.card_payment) || 0,
+        terminal_card: parseFloat(cr.terminal_card) || 0,
+      };
+      dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27 + dayData.tips;
+      dayData.cardDiscrepancy = dayData.card - dayData.terminal_card;
+
+      registerData[apNumber].days.push(dayData);
+      registerData[apNumber].totals.vat_0 += dayData.vat_0;
+      registerData[apNumber].totals.vat_5 += dayData.vat_5;
+      registerData[apNumber].totals.vat_18 += dayData.vat_18;
+      registerData[apNumber].totals.vat_27 += dayData.vat_27;
+      registerData[apNumber].totals.tips += dayData.tips;
+      registerData[apNumber].totals.cash += dayData.cash;
+      registerData[apNumber].totals.card += dayData.card;
+      registerData[apNumber].totals.terminal_card += dayData.terminal_card;
+      registerData[apNumber].totals.total += dayData.total;
+    });
   });
 
-  // Calculate totals
-  const totals = {
-    vat_0: data.reduce((sum, r) => sum + r.vat_0, 0),
-    vat_5: data.reduce((sum, r) => sum + r.vat_5, 0),
-    vat_18: data.reduce((sum, r) => sum + r.vat_18, 0),
-    vat_27: data.reduce((sum, r) => sum + r.vat_27, 0),
-    tips: data.reduce((sum, r) => sum + r.tips, 0),
-    cash: data.reduce((sum, r) => sum + r.cash, 0),
-    card: data.reduce((sum, r) => sum + r.card, 0),
-    terminal_card: data.reduce((sum, r) => sum + r.terminal_card, 0),
-  };
+  // Calculate card discrepancy for each register
+  Object.values(registerData).forEach((reg) => {
+    reg.totals.cardDiscrepancy = reg.totals.card - reg.totals.terminal_card;
+  });
 
+  const data = Object.values(registerData).sort((a, b) => a.ap_number.localeCompare(b.ap_number));
+
+  // Calculate grand totals
+  const totals = {
+    vat_0: data.reduce((sum, r) => sum + r.totals.vat_0, 0),
+    vat_5: data.reduce((sum, r) => sum + r.totals.vat_5, 0),
+    vat_18: data.reduce((sum, r) => sum + r.totals.vat_18, 0),
+    vat_27: data.reduce((sum, r) => sum + r.totals.vat_27, 0),
+    tips: data.reduce((sum, r) => sum + r.totals.tips, 0),
+    cash: data.reduce((sum, r) => sum + r.totals.cash, 0),
+    card: data.reduce((sum, r) => sum + r.totals.card, 0),
+    terminal_card: data.reduce((sum, r) => sum + r.totals.terminal_card, 0),
+  };
   totals.cashRegisterTotal = totals.vat_0 + totals.vat_5 + totals.vat_18 + totals.vat_27 + totals.tips;
   totals.cardDiscrepancy = totals.card - totals.terminal_card;
 
-  return { data, totals };
+  return { data, totals, unitName };
 }
 
 async function fetchEventsData(startDate, endDate, unitId) {
@@ -974,79 +1022,111 @@ function CashRevenueReport({ data, totals }) {
   );
 }
 
-function CashRegisterReport({ data, totals }) {
+function CashRegisterReport({ data, totals, unitName }) {
   const navigate = useNavigate();
 
-  const cashRegisterTotal = (row) => row.vat_0 + row.vat_5 + row.vat_18 + row.vat_27 + row.tips;
-  const cardDiscrepancy = (row) => row.card - row.terminal_card;
-
   return (
-    <Card title="Pénztárgép jelentés">
+    <Card title={unitName ? `Pénztárgép jelentés - ${unitName}` : 'Pénztárgép jelentés'}>
       <p className="text-sm text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez</p>
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-pepper-red bg-opacity-10">
-            <tr>
-              <th className="px-3 py-2 text-left">Dátum</th>
-              <th className="px-3 py-2 text-right">0%</th>
-              <th className="px-3 py-2 text-right">5%</th>
-              <th className="px-3 py-2 text-right">18%</th>
-              <th className="px-3 py-2 text-right">27%</th>
-              <th className="px-3 py-2 text-right">Borr.</th>
-              <th className="px-3 py-2 text-right font-semibold bg-pepper-red bg-opacity-20">Összesen</th>
-              <th className="px-3 py-2 text-right">KP</th>
-              <th className="px-3 py-2 text-right">Kártya</th>
-              <th className="px-3 py-2 text-right">Term.</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {data.map((row) => (
-              <tr
-                key={row.id}
-                onClick={() => navigate(`/daily?date=${row.date}&unit=${row.unit_id}`)}
-                className={`hover:bg-gray-100 cursor-pointer transition-colors ${row.mark_color ? MARK_COLORS[row.mark_color] : ''}`}
-              >
-                <td className="px-3 py-2">{formatDate(row.date)}</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(row.vat_0)}</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(row.vat_5)}</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(row.vat_18)}</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(row.vat_27)}</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(row.tips)}</td>
-                <td className="px-3 py-2 text-right font-semibold bg-gray-50">{formatCurrency(cashRegisterTotal(row))}</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(row.cash)}</td>
-                <td className={`px-3 py-2 text-right ${Math.abs(cardDiscrepancy(row)) > 0.01 ? 'text-red-600' : ''}`}>
-                  {formatCurrency(row.card)}
-                </td>
-                <td className="px-3 py-2 text-right">{formatCurrency(row.terminal_card)}</td>
-              </tr>
-            ))}
-            <tr className="bg-gray-100 font-bold">
-              <td className="px-3 py-2">Összesen</td>
-              <td className="px-3 py-2 text-right">{formatCurrency(totals.vat_0)}</td>
-              <td className="px-3 py-2 text-right">{formatCurrency(totals.vat_5)}</td>
-              <td className="px-3 py-2 text-right">{formatCurrency(totals.vat_18)}</td>
-              <td className="px-3 py-2 text-right">{formatCurrency(totals.vat_27)}</td>
-              <td className="px-3 py-2 text-right">{formatCurrency(totals.tips)}</td>
-              <td className="px-3 py-2 text-right bg-gray-200">{formatCurrency(totals.cashRegisterTotal)}</td>
-              <td className="px-3 py-2 text-right">{formatCurrency(totals.cash)}</td>
-              <td className="px-3 py-2 text-right">{formatCurrency(totals.card)}</td>
-              <td className="px-3 py-2 text-right">{formatCurrency(totals.terminal_card)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
 
-      {/* Discrepancy warning */}
-      {Math.abs(totals.cardDiscrepancy) > 0.01 && (
-        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-          <div className="flex items-center gap-2 text-red-800 font-medium">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            Kártya eltérés: {formatCurrency(totals.cardDiscrepancy)}
+      <div className="space-y-6">
+        {data.map((register, regIdx) => (
+          <div key={`register-${regIdx}-${register.ap_number}`} className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="bg-pepper-red bg-opacity-10 px-4 py-2 font-bold text-gray-900">
+              Pénztárgép: {register.ap_number} {register.name && `(${register.name})`}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Dátum</th>
+                    <th className="px-3 py-2 text-right">0%</th>
+                    <th className="px-3 py-2 text-right">5%</th>
+                    <th className="px-3 py-2 text-right">18%</th>
+                    <th className="px-3 py-2 text-right">27%</th>
+                    <th className="px-3 py-2 text-right">Borr.</th>
+                    <th className="px-3 py-2 text-right font-semibold">Összesen</th>
+                    <th className="px-3 py-2 text-right">KP</th>
+                    <th className="px-3 py-2 text-right">Kártya</th>
+                    <th className="px-3 py-2 text-right">Term.</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {(register.days || []).map((day, dayIdx) => (
+                    <tr
+                      key={`${regIdx}-${dayIdx}-${day.date}`}
+                      onClick={() => navigate(`/daily?date=${day.date}&unit=${day.unit_id}`)}
+                      className="hover:bg-gray-100 cursor-pointer transition-colors"
+                    >
+                      <td className="px-3 py-2">{formatDate(day.date)}</td>
+                      <td className="px-3 py-2 text-right">{formatCurrency(day.vat_0)}</td>
+                      <td className="px-3 py-2 text-right">{formatCurrency(day.vat_5)}</td>
+                      <td className="px-3 py-2 text-right">{formatCurrency(day.vat_18)}</td>
+                      <td className="px-3 py-2 text-right">{formatCurrency(day.vat_27)}</td>
+                      <td className="px-3 py-2 text-right">{formatCurrency(day.tips)}</td>
+                      <td className="px-3 py-2 text-right font-medium">{formatCurrency(day.total)}</td>
+                      <td className="px-3 py-2 text-right">{formatCurrency(day.cash)}</td>
+                      <td className={`px-3 py-2 text-right ${Math.abs(day.cardDiscrepancy) > 0.01 ? 'text-red-600' : ''}`}>
+                        {formatCurrency(day.card)}
+                      </td>
+                      <td className="px-3 py-2 text-right">{formatCurrency(day.terminal_card)}</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-gray-100 font-bold">
+                    <td className="px-3 py-2">{register.ap_number} összesen</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(register.totals?.vat_0 || 0)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(register.totals?.vat_5 || 0)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(register.totals?.vat_18 || 0)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(register.totals?.vat_27 || 0)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(register.totals?.tips || 0)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(register.totals?.total || 0)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(register.totals?.cash || 0)}</td>
+                    <td className={`px-3 py-2 text-right ${Math.abs(register.totals?.cardDiscrepancy || 0) > 0.01 ? 'text-red-600' : ''}`}>
+                      {formatCurrency(register.totals?.card || 0)}
+                    </td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(register.totals?.terminal_card || 0)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {/* Per-register discrepancy warning */}
+            {Math.abs(register.totals?.cardDiscrepancy || 0) > 0.01 && (
+              <div className="m-2 p-2 bg-red-50 border border-red-200 rounded text-sm">
+                <span className="text-red-800">Kártya eltérés: {formatCurrency(register.totals?.cardDiscrepancy || 0)}</span>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* Grand total */}
+        <div className="bg-pepper-red bg-opacity-10 rounded-lg p-4">
+          <h4 className="font-bold text-gray-900 mb-3">Mindösszesen</h4>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
+            <div>
+              <p className="text-sm text-gray-600">Forgalom</p>
+              <p className="text-lg font-bold text-gray-900">{formatCurrency(totals.cashRegisterTotal)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Készpénz</p>
+              <p className="text-lg font-bold text-green-700">{formatCurrency(totals.cash)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Kártya</p>
+              <p className="text-lg font-bold text-blue-700">{formatCurrency(totals.card)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Terminál</p>
+              <p className="text-lg font-bold text-purple-700">{formatCurrency(totals.terminal_card)}</p>
+            </div>
+            {Math.abs(totals.cardDiscrepancy) > 0.01 && (
+              <div>
+                <p className="text-sm text-red-600">Eltérés</p>
+                <p className="text-lg font-bold text-red-700">{formatCurrency(totals.cardDiscrepancy)}</p>
+              </div>
+            )}
           </div>
         </div>
-      )}
+      </div>
     </Card>
   );
 }

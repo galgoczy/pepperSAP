@@ -32,6 +32,8 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
       let data = [];
       let headers = [];
       let filename = '';
+      let unitName = '';
+      let customTotals = null;
 
       // Fetch data based on report type
       if (reportType === 'full_monthly') {
@@ -48,7 +50,23 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         const result = await fetchCashRegisterExport(startDate, endDate, unitId);
         data = result.data;
         headers = result.headers;
+        unitName = result.unitName || '';
         filename = `penztargep_jelentes_${startDate}_${endDate}`;
+        // Special totals row for cash register
+        customTotals = {
+          'Pénztárgép': 'Mindösszesen',
+          'Dátum': '',
+          '0% ÁFA': result.grandTotals.vat_0,
+          '5% ÁFA': result.grandTotals.vat_5,
+          '18% ÁFA': result.grandTotals.vat_18,
+          '27% ÁFA': result.grandTotals.vat_27,
+          'Borravaló': result.grandTotals.tips,
+          'Összesen': result.grandTotals.total,
+          'Készpénz': result.grandTotals.cash,
+          'Kártya': result.grandTotals.card,
+          'Terminál': result.grandTotals.terminal_card,
+          'Eltérés': result.grandTotals.cardDiscrepancy,
+        };
       } else if (reportType === 'events') {
         const result = await fetchEventsExport(startDate, endDate, unitId);
         data = result.data;
@@ -86,16 +104,16 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         return;
       }
 
-      // Calculate totals row
-      const totalsRow = calculateTotalsRow(data, headers);
+      // Calculate totals row (use custom totals for cash_register)
+      const totalsRow = customTotals || calculateTotalsRow(data, headers);
 
       // Export based on format
       if (format === 'xlsx') {
-        exportToExcel(data, headers, totalsRow, filename);
+        exportToExcel(data, headers, totalsRow, filename, reportType);
       } else if (format === 'pdf') {
-        exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate);
+        exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate, unitName);
       } else {
-        exportToCsv(data, headers, totalsRow, filename);
+        exportToCsv(data, headers, totalsRow, filename, reportType);
       }
 
       toast.success('Export sikeres!');
@@ -321,7 +339,7 @@ async function fetchCashRevenueExport(startDate, endDate, unitId) {
 async function fetchCashRegisterExport(startDate, endDate, unitId) {
   let query = supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card)')
+    .select('*, units(name), cash_register_revenue(*, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: true });
@@ -332,34 +350,123 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
 
   const { data: revenues } = await query;
 
-  const headers = ['Dátum', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Összesen', 'Készpénz', 'Kártya', 'Terminál'];
+  // Get unit name
+  const unitName = revenues?.[0]?.units?.name || '';
 
-  const data = (revenues || []).map((row) => {
+  // Group by cash register
+  const registerData = {};
+  (revenues || []).forEach((row) => {
     const crRevenues = row.cash_register_revenue || [];
-    const vat_0 = crRevenues.reduce((sum, r) => sum + (parseFloat(r.vat_0_percent) || 0), 0);
-    const vat_5 = crRevenues.reduce((sum, r) => sum + (parseFloat(r.vat_5_percent) || 0), 0);
-    const vat_18 = crRevenues.reduce((sum, r) => sum + (parseFloat(r.vat_18_percent) || 0), 0);
-    const vat_27 = crRevenues.reduce((sum, r) => sum + (parseFloat(r.vat_27_percent) || 0), 0);
-    const tips = crRevenues.reduce((sum, r) => sum + (parseFloat(r.tips) || 0), 0);
-    const cash = crRevenues.reduce((sum, r) => sum + (parseFloat(r.cash_payment) || 0), 0);
-    const card = crRevenues.reduce((sum, r) => sum + (parseFloat(r.card_payment) || 0), 0);
-    const terminal = crRevenues.reduce((sum, r) => sum + (parseFloat(r.terminal_card) || 0), 0);
+    crRevenues.forEach((cr) => {
+      const apNumber = cr.cash_registers?.ap_number || 'unknown';
+      const registerName = cr.cash_registers?.name || '';
 
-    return {
-      'Dátum': formatDate(row.date),
-      '0% ÁFA': vat_0,
-      '5% ÁFA': vat_5,
-      '18% ÁFA': vat_18,
-      '27% ÁFA': vat_27,
-      'Borravaló': tips,
-      'Összesen': vat_0 + vat_5 + vat_18 + vat_27 + tips,
-      'Készpénz': cash,
-      'Kártya': card,
-      'Terminál': terminal,
-    };
+      if (!registerData[apNumber]) {
+        registerData[apNumber] = {
+          ap_number: apNumber,
+          name: registerName,
+          days: [],
+          totals: {
+            vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
+            cash: 0, card: 0, terminal_card: 0, total: 0,
+          },
+        };
+      }
+
+      const dayData = {
+        date: row.date,
+        vat_0: parseFloat(cr.vat_0_percent) || 0,
+        vat_5: parseFloat(cr.vat_5_percent) || 0,
+        vat_18: parseFloat(cr.vat_18_percent) || 0,
+        vat_27: parseFloat(cr.vat_27_percent) || 0,
+        tips: parseFloat(cr.tips) || 0,
+        cash: parseFloat(cr.cash_payment) || 0,
+        card: parseFloat(cr.card_payment) || 0,
+        terminal_card: parseFloat(cr.terminal_card) || 0,
+      };
+      dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27 + dayData.tips;
+      dayData.cardDiscrepancy = dayData.card - dayData.terminal_card;
+
+      registerData[apNumber].days.push(dayData);
+      registerData[apNumber].totals.vat_0 += dayData.vat_0;
+      registerData[apNumber].totals.vat_5 += dayData.vat_5;
+      registerData[apNumber].totals.vat_18 += dayData.vat_18;
+      registerData[apNumber].totals.vat_27 += dayData.vat_27;
+      registerData[apNumber].totals.tips += dayData.tips;
+      registerData[apNumber].totals.cash += dayData.cash;
+      registerData[apNumber].totals.card += dayData.card;
+      registerData[apNumber].totals.terminal_card += dayData.terminal_card;
+      registerData[apNumber].totals.total += dayData.total;
+    });
   });
 
-  return { data, headers };
+  // Calculate card discrepancy for each register
+  Object.values(registerData).forEach((reg) => {
+    reg.totals.cardDiscrepancy = reg.totals.card - reg.totals.terminal_card;
+  });
+
+  const registers = Object.values(registerData).sort((a, b) => a.ap_number.localeCompare(b.ap_number));
+
+  // Flatten to export format: register header + days + subtotal rows
+  const headers = ['Pénztárgép', 'Dátum', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Összesen', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés'];
+
+  const data = [];
+  let grandTotals = {
+    vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
+    total: 0, cash: 0, card: 0, terminal_card: 0, cardDiscrepancy: 0,
+  };
+
+  registers.forEach((reg) => {
+    // Add days for this register
+    reg.days.forEach((day) => {
+      data.push({
+        'Pénztárgép': reg.ap_number,
+        'Dátum': formatDate(day.date),
+        '0% ÁFA': day.vat_0,
+        '5% ÁFA': day.vat_5,
+        '18% ÁFA': day.vat_18,
+        '27% ÁFA': day.vat_27,
+        'Borravaló': day.tips,
+        'Összesen': day.total,
+        'Készpénz': day.cash,
+        'Kártya': day.card,
+        'Terminál': day.terminal_card,
+        'Eltérés': day.cardDiscrepancy,
+        _isSubtotal: false,
+      });
+    });
+
+    // Add subtotal row for this register
+    data.push({
+      'Pénztárgép': `${reg.ap_number} összesen`,
+      'Dátum': '',
+      '0% ÁFA': reg.totals.vat_0,
+      '5% ÁFA': reg.totals.vat_5,
+      '18% ÁFA': reg.totals.vat_18,
+      '27% ÁFA': reg.totals.vat_27,
+      'Borravaló': reg.totals.tips,
+      'Összesen': reg.totals.total,
+      'Készpénz': reg.totals.cash,
+      'Kártya': reg.totals.card,
+      'Terminál': reg.totals.terminal_card,
+      'Eltérés': reg.totals.cardDiscrepancy,
+      _isSubtotal: true,
+    });
+
+    // Accumulate grand totals
+    grandTotals.vat_0 += reg.totals.vat_0;
+    grandTotals.vat_5 += reg.totals.vat_5;
+    grandTotals.vat_18 += reg.totals.vat_18;
+    grandTotals.vat_27 += reg.totals.vat_27;
+    grandTotals.tips += reg.totals.tips;
+    grandTotals.total += reg.totals.total;
+    grandTotals.cash += reg.totals.cash;
+    grandTotals.card += reg.totals.card;
+    grandTotals.terminal_card += reg.totals.terminal_card;
+    grandTotals.cardDiscrepancy += reg.totals.cardDiscrepancy;
+  });
+
+  return { data, headers, unitName, grandTotals };
 }
 
 async function fetchEventsExport(startDate, endDate, unitId) {
@@ -764,8 +871,17 @@ function calculateTotalsRow(data, headers) {
   return totalsRow;
 }
 
-function exportToExcel(data, headers, totalsRow, filename) {
-  const ws = XLSX.utils.json_to_sheet(data);
+function exportToExcel(data, headers, totalsRow, filename, reportType) {
+  // Clean data: remove internal flags and filter columns
+  const cleanData = data.map((row) => {
+    const cleanRow = {};
+    headers.forEach((h) => {
+      cleanRow[h] = row[h];
+    });
+    return cleanRow;
+  });
+
+  const ws = XLSX.utils.json_to_sheet(cleanData);
 
   // Get the range
   const range = XLSX.utils.decode_range(ws['!ref']);
@@ -788,8 +904,30 @@ function exportToExcel(data, headers, totalsRow, filename) {
     }
   }
 
+  // For cash_register, style subtotal rows
+  if (reportType === 'cash_register') {
+    for (let row = 1; row <= range.e.r; row++) {
+      const rowData = data[row - 1];
+      if (rowData && rowData._isSubtotal) {
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const cell = XLSX.utils.encode_cell({ r: row, c: col });
+          if (ws[cell]) {
+            ws[cell].s = {
+              font: { bold: true },
+              fill: { fgColor: { rgb: 'E5E7EB' } },
+            };
+          }
+        }
+      }
+    }
+  }
+
   // Add totals row
-  XLSX.utils.sheet_add_json(ws, [totalsRow], {
+  const cleanTotalsRow = {};
+  headers.forEach((h) => {
+    cleanTotalsRow[h] = totalsRow[h];
+  });
+  XLSX.utils.sheet_add_json(ws, [cleanTotalsRow], {
     skipHeader: true,
     origin: -1,
   });
@@ -804,7 +942,7 @@ function exportToExcel(data, headers, totalsRow, filename) {
     if (ws[cell]) {
       ws[cell].s = {
         font: { bold: true },
-        fill: { fgColor: { rgb: 'F3F4F6' } },
+        fill: { fgColor: { rgb: 'FECACA' } },
       };
     }
   }
@@ -824,7 +962,17 @@ function exportToExcel(data, headers, totalsRow, filename) {
   XLSX.writeFile(wb, `${filename}.xlsx`);
 }
 
-function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate) {
+// Helper function to replace Hungarian special characters for PDF
+function sanitizeForPdf(text) {
+  if (typeof text !== 'string') return text;
+  return text
+    .replace(/ő/g, 'ö')
+    .replace(/Ő/g, 'Ö')
+    .replace(/ű/g, 'ü')
+    .replace(/Ű/g, 'Ü');
+}
+
+function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate, unitName = '') {
   const doc = new jsPDF({
     orientation: headers.length > 7 ? 'landscape' : 'portrait',
     unit: 'mm',
@@ -840,36 +988,46 @@ function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, 
   doc.text('Pepper House', 14, 12);
 
   doc.setFontSize(10);
-  doc.text('Pénzügyi Nyilvántartó Rendszer', 14, 18);
+  doc.text(sanitizeForPdf('Pénzügyi Nyilvántartó Rendszer'), 14, 18);
 
-  // Report title
-  const reportLabel = reportTypeLabels[reportType] || 'Riport';
+  // Report title with unit name
+  let reportLabel = reportTypeLabels[reportType] || 'Riport';
+  if (unitName) {
+    reportLabel = `${reportLabel} - ${unitName}`;
+  }
   doc.setFontSize(14);
   doc.setTextColor(211, 47, 47);
-  doc.text(reportLabel, 14, 35);
+  doc.text(sanitizeForPdf(reportLabel), 14, 35);
 
   // Date range
   doc.setFontSize(10);
   doc.setTextColor(100, 100, 100);
-  doc.text(`Időszak: ${formatDate(startDate)} - ${formatDate(endDate)}`, 14, 42);
+  doc.text(sanitizeForPdf(`Idöszak: ${formatDate(startDate)} - ${formatDate(endDate)}`), 14, 42);
 
-  // Format data for PDF table
-  const tableData = data.map((row) =>
-    headers.map((h) =>
-      typeof row[h] === 'number' ? formatCurrency(row[h]) : row[h]
-    )
+  // Format data for PDF table - sanitize all strings
+  const tableData = data.map((row, rowIndex) =>
+    headers.map((h) => {
+      const val = row[h];
+      if (typeof val === 'number') return formatCurrency(val);
+      return sanitizeForPdf(val);
+    })
   );
 
   // Add totals row
-  const totalsPdfRow = headers.map((h) =>
-    typeof totalsRow[h] === 'number' ? formatCurrency(totalsRow[h]) : totalsRow[h]
-  );
+  const totalsPdfRow = headers.map((h) => {
+    const val = totalsRow[h];
+    if (typeof val === 'number') return formatCurrency(val);
+    return sanitizeForPdf(val);
+  });
   tableData.push(totalsPdfRow);
+
+  // Sanitize headers
+  const sanitizedHeaders = headers.map((h) => sanitizeForPdf(h));
 
   // Create table
   autoTable(doc, {
     startY: 48,
-    head: [headers],
+    head: [sanitizedHeaders],
     body: tableData,
     theme: 'grid',
     headStyles: {
@@ -893,10 +1051,15 @@ function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, 
       return acc;
     }, {}),
     didParseCell: function (hookData) {
-      // Bold the totals row
+      // Bold the totals row (last row)
       if (hookData.row.index === tableData.length - 1) {
         hookData.cell.styles.fontStyle = 'bold';
-        hookData.cell.styles.fillColor = [243, 244, 246];
+        hookData.cell.styles.fillColor = [254, 202, 202];
+      }
+      // Style subtotal rows for cash_register
+      else if (reportType === 'cash_register' && data[hookData.row.index]?._isSubtotal) {
+        hookData.cell.styles.fontStyle = 'bold';
+        hookData.cell.styles.fillColor = [229, 231, 235];
       }
     },
     margin: { top: 48 },
@@ -909,7 +1072,7 @@ function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, 
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
     doc.text(
-      `Generálva: ${new Date().toLocaleString('hu-HU')} | Oldal ${i}/${pageCount}`,
+      sanitizeForPdf(`Generálva: ${new Date().toLocaleString('hu-HU')} | Oldal ${i}/${pageCount}`),
       14,
       doc.internal.pageSize.height - 10
     );
@@ -918,7 +1081,7 @@ function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, 
   doc.save(`${filename}.pdf`);
 }
 
-function exportToCsv(data, headers, totalsRow, filename) {
+function exportToCsv(data, headers, totalsRow, filename, reportType) {
   const totalsArray = headers.map((h) => {
     const val = totalsRow[h];
     if (typeof val === 'string' && val.includes(',')) {

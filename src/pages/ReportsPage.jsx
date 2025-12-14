@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, ChevronLeft } from 'lucide-react';
+import { Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Select } from '../components/common';
@@ -135,18 +135,32 @@ export default function ReportsPage() {
             <label className="block text-sm font-medium text-gray-700">
               Gyors választás
             </label>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                const prev = getPreviousMonthDates();
-                setStartDate(prev.start);
-                setEndDate(prev.end);
-              }}
-              className="w-full"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Előző hónap
-            </Button>
+            {startDate === getFirstDayOfMonth() && endDate === getLastDayOfMonth() ? (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const prev = getPreviousMonthDates();
+                  setStartDate(prev.start);
+                  setEndDate(prev.end);
+                }}
+                className="w-full"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Előző hónap
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setStartDate(getFirstDayOfMonth());
+                  setEndDate(getLastDayOfMonth());
+                }}
+                className="w-full"
+              >
+                Aktuális hónap
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            )}
           </div>
 
           {isAdmin && (
