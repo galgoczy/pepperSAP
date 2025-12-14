@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
@@ -807,10 +807,9 @@ function FullMonthlyReport({ data, totals }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {data.map((row) => (
-              <>
+            {data.map((row, rowIdx) => (
+              <React.Fragment key={`row-${rowIdx}-${row.id}`}>
                 <tr
-                  key={row.id}
                   className={`hover:bg-gray-100 transition-colors ${row.mark_color ? MARK_COLORS[row.mark_color] : ''}`}
                 >
                   <td className="px-2 py-2">
@@ -838,7 +837,7 @@ function FullMonthlyReport({ data, totals }) {
                   </td>
                 </tr>
                 {expandedDays[row.date] && row.expenses?.length > 0 && (
-                  <tr key={`${row.id}-expenses`} className="bg-red-50">
+                  <tr className="bg-red-50">
                     <td colSpan={8} className="px-4 py-2">
                       <div className="pl-8 space-y-1">
                         <p className="text-xs font-medium text-gray-500 mb-2">Napi költségek:</p>
@@ -852,7 +851,7 @@ function FullMonthlyReport({ data, totals }) {
                     </td>
                   </tr>
                 )}
-              </>
+              </React.Fragment>
             ))}
             <tr className="bg-gray-100 font-bold">
               <td className="px-2 py-2"></td>
@@ -1187,13 +1186,13 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {data.map((unit) => (
-              <>
-                <tr key={unit.unitName} className="bg-gray-50 font-medium">
+            {data.map((unit, unitIdx) => (
+              <React.Fragment key={`unit-${unitIdx}-${unit.unitName}`}>
+                <tr className="bg-gray-50 font-medium">
                   <td className="px-4 py-2" colSpan={4}>{unit.unitName}</td>
                 </tr>
-                {unit.registers.map((reg) => (
-                  <tr key={`${unit.unitName}-${reg.ap_number}`} className="hover:bg-gray-50">
+                {unit.registers.map((reg, regIdx) => (
+                  <tr key={`${unitIdx}-${regIdx}-${reg.ap_number}`} className="hover:bg-gray-50">
                     <td className="px-4 py-2 pl-8 text-gray-600">
                       {reg.ap_number} {reg.name && `(${reg.name})`}
                     </td>
@@ -1208,7 +1207,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
                   <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.cash)}</td>
                   <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.card)}</td>
                 </tr>
-              </>
+              </React.Fragment>
             ))}
             <tr className="bg-pepper-red bg-opacity-10 font-bold">
               <td className="px-4 py-2">Mindösszesen</td>
@@ -1227,8 +1226,8 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
   return (
     <Card title="Pénztárgép forgalom - összes egység (részletes)">
       <div className="space-y-6">
-        {data.map((unit) => (
-          <div key={unit.unitName} className="border border-gray-200 rounded-lg overflow-hidden">
+        {data.map((unit, unitIdx) => (
+          <div key={`unit-${unitIdx}-${unit.unitName}`} className="border border-gray-200 rounded-lg overflow-hidden">
             <div className="bg-pepper-red bg-opacity-10 px-4 py-2 font-bold text-gray-900">
               {unit.unitName}
             </div>
@@ -1249,11 +1248,11 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {unit.days.map((day) => (
-                    <>
-                      {day.registers.map((reg, idx) => (
-                        <tr key={`${day.date}-${reg.ap_number}`} className="hover:bg-gray-50">
-                          {idx === 0 && (
+                  {unit.days.map((day, dayIdx) => (
+                    <React.Fragment key={`day-${unitIdx}-${dayIdx}-${day.date}`}>
+                      {day.registers.map((reg, regIdx) => (
+                        <tr key={`${dayIdx}-${regIdx}-${reg.ap_number}`} className="hover:bg-gray-50">
+                          {regIdx === 0 && (
                             <td className="px-3 py-2" rowSpan={day.registers.length}>{formatDate(day.date)}</td>
                           )}
                           <td className="px-3 py-2 text-gray-600">{reg.ap_number}</td>
@@ -1267,7 +1266,7 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                           <td className="px-3 py-2 text-right">{formatCurrency(reg.card)}</td>
                         </tr>
                       ))}
-                    </>
+                    </React.Fragment>
                   ))}
                   <tr className="bg-gray-100 font-bold">
                     <td className="px-3 py-2" colSpan={7}>{unit.unitName} összesen</td>
