@@ -20,6 +20,10 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId, 
   const [totals, setTotals] = useState({});
 
   useEffect(() => {
+    // Reset data immediately when report type changes to prevent rendering old data with new component
+    setData([]);
+    setTotals({});
+
     async function fetchReportData() {
       setLoading(true);
 
@@ -1191,7 +1195,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
                 <tr className="bg-gray-50 font-medium">
                   <td className="px-4 py-2" colSpan={4}>{unit.unitName}</td>
                 </tr>
-                {unit.registers.map((reg, regIdx) => (
+                {(unit.registers || []).map((reg, regIdx) => (
                   <tr key={`${unitIdx}-${regIdx}-${reg.ap_number}`} className="hover:bg-gray-50">
                     <td className="px-4 py-2 pl-8 text-gray-600">
                       {reg.ap_number} {reg.name && `(${reg.name})`}
@@ -1248,12 +1252,12 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {unit.days.map((day, dayIdx) => (
+                  {(unit.days || []).map((day, dayIdx) => (
                     <React.Fragment key={`day-${unitIdx}-${dayIdx}-${day.date}`}>
-                      {day.registers.map((reg, regIdx) => (
+                      {(day.registers || []).map((reg, regIdx) => (
                         <tr key={`${dayIdx}-${regIdx}-${reg.ap_number}`} className="hover:bg-gray-50">
                           {regIdx === 0 && (
-                            <td className="px-3 py-2" rowSpan={day.registers.length}>{formatDate(day.date)}</td>
+                            <td className="px-3 py-2" rowSpan={(day.registers || []).length}>{formatDate(day.date)}</td>
                           )}
                           <td className="px-3 py-2 text-gray-600">{reg.ap_number}</td>
                           <td className="px-3 py-2 text-right">{formatCurrency(reg.vat_0)}</td>
@@ -1270,9 +1274,9 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                   ))}
                   <tr className="bg-gray-100 font-bold">
                     <td className="px-3 py-2" colSpan={7}>{unit.unitName} összesen</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.cashRegisterTotal)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.cash)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.card)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.cashRegisterTotal || 0)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.cash || 0)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.card || 0)}</td>
                   </tr>
                 </tbody>
               </table>
