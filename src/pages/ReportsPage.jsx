@@ -7,12 +7,21 @@ import MonthlyReport from '../components/reports/MonthlyReport';
 import ExportModal from '../components/reports/ExportModal';
 import { getFirstDayOfMonth, getLastDayOfMonth } from '../lib/utils';
 
-const reportTypes = [
-  { value: 'cash_register', label: 'Pénztárgép és bankkártya forgalom' },
-  { value: 'cash_register_report', label: 'Pénztárgép jelentés' },
-  { value: 'cash_revenue', label: 'Készpénz bevételek' },
+// Base report types for all users
+const baseReportTypes = [
   { value: 'full_monthly', label: 'Teljes havi forgalom' },
+  { value: 'cash_revenue', label: 'Készpénz bevételek' },
+  { value: 'cash_register', label: 'Pénztárgép jelentés' },
   { value: 'events', label: 'Rendezvény összesítő' },
+];
+
+// Admin-only aggregated report types (when "all units" selected)
+const adminAggregateReportTypes = [
+  { value: 'full_monthly_all', label: 'Teljes havi forgalom - összes egység' },
+  { value: 'cash_revenue_all', label: 'Készpénz bevételek - összes egység' },
+  { value: 'cash_register_all_simple', label: 'Pénztárgép forgalom - összes egység (egyszerű)' },
+  { value: 'cash_register_all_detailed', label: 'Pénztárgép forgalom - összes egység (részletes)' },
+  { value: 'events_all', label: 'Rendezvény összesítő - összes egység' },
 ];
 
 // Get previous month's first and last day
@@ -35,18 +44,43 @@ export default function ReportsPage() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState(unitId || '');
 
-  const filteredReportTypes = reportTypes.filter((type) => {
-    if (isEvents && !['events'].includes(type.value)) {
-      return false;
+  // Get restaurant units only (exclude events unit)
+  const restaurantUnits = units.filter((u) => u.type === 'restaurant');
+
+  // Determine available report types based on user role and selected unit
+  const getAvailableReportTypes = () => {
+    if (isEvents) {
+      return [{ value: 'events', label: 'Rendezvény összesítő' }];
     }
-    return true;
-  });
+
+    if (isAdmin && !selectedUnit) {
+      // Admin with "all units" selected - show aggregate reports
+      return adminAggregateReportTypes;
+    }
+
+    // Regular user or admin with specific unit selected
+    return baseReportTypes;
+  };
+
+  const availableReportTypes = getAvailableReportTypes();
+
+  // Reset report type if current selection is not available
+  const handleUnitChange = (newUnit) => {
+    setSelectedUnit(newUnit);
+    // If switching to/from "all units", reset report type
+    if ((newUnit === '' && selectedUnit !== '') || (newUnit !== '' && selectedUnit === '')) {
+      setReportType(newUnit === '' ? 'full_monthly_all' : 'full_monthly');
+    }
+  };
 
   // Build unit options for admin dropdown
   const unitOptions = [
     { value: '', label: 'Összes egység' },
-    ...units.map((unit) => ({ value: unit.id, label: unit.name })),
+    ...restaurantUnits.map((unit) => ({ value: unit.id, label: unit.name })),
   ];
+
+  // Determine effective unit ID for reports
+  const effectiveUnitId = isAdmin ? selectedUnit : unitId;
 
   return (
     <div className="space-y-6">
@@ -115,21 +149,21 @@ export default function ReportsPage() {
             </Button>
           </div>
 
-          <Select
-            label="Riport típusa"
-            value={reportType}
-            onChange={(e) => setReportType(e.target.value)}
-            options={filteredReportTypes}
-          />
-
           {isAdmin && (
             <Select
               label="Egység"
               value={selectedUnit}
-              onChange={(e) => setSelectedUnit(e.target.value)}
+              onChange={(e) => handleUnitChange(e.target.value)}
               options={unitOptions}
             />
           )}
+
+          <Select
+            label="Riport típusa"
+            value={reportType}
+            onChange={(e) => setReportType(e.target.value)}
+            options={availableReportTypes}
+          />
         </div>
       </Card>
 
@@ -138,7 +172,8 @@ export default function ReportsPage() {
         startDate={startDate}
         endDate={endDate}
         reportType={reportType}
-        unitId={isAdmin ? selectedUnit : unitId}
+        unitId={effectiveUnitId}
+        isAdmin={isAdmin}
       />
 
       {/* Export modal */}
@@ -147,7 +182,9 @@ export default function ReportsPage() {
         onClose={() => setIsExportOpen(false)}
         startDate={startDate}
         endDate={endDate}
-        unitId={isAdmin ? selectedUnit : unitId}
+        unitId={effectiveUnitId}
+        reportType={reportType}
+        isAdmin={isAdmin}
       />
     </div>
   );
