@@ -35,23 +35,42 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
       let unitName = '';
       let customTotals = null;
 
+      // Helper to sanitize unit name for filename
+      const sanitizeFilename = (name) => {
+        if (!name) return '';
+        return name
+          .toLowerCase()
+          .replace(/\s+/g, '_')
+          .replace(/[áàâä]/g, 'a')
+          .replace(/[éèêë]/g, 'e')
+          .replace(/[íìîï]/g, 'i')
+          .replace(/[óòôöő]/g, 'o')
+          .replace(/[úùûüű]/g, 'u')
+          .replace(/[^a-z0-9_]/g, '');
+      };
+
       // Fetch data based on report type
       if (reportType === 'full_monthly') {
         const result = await fetchFullMonthlyExport(startDate, endDate, unitId);
         data = result.data;
         headers = result.headers;
-        filename = `teljes_havi_forgalom_${startDate}_${endDate}`;
+        unitName = result.unitName || '';
+        const unitSlug = sanitizeFilename(unitName);
+        filename = unitSlug ? `teljes_havi_forgalom_${unitSlug}_${startDate}_${endDate}` : `teljes_havi_forgalom_${startDate}_${endDate}`;
       } else if (reportType === 'cash_revenue') {
         const result = await fetchCashRevenueExport(startDate, endDate, unitId);
         data = result.data;
         headers = result.headers;
-        filename = `keszpenz_bevetelek_${startDate}_${endDate}`;
+        unitName = result.unitName || '';
+        const unitSlug = sanitizeFilename(unitName);
+        filename = unitSlug ? `keszpenz_bevetelek_${unitSlug}_${startDate}_${endDate}` : `keszpenz_bevetelek_${startDate}_${endDate}`;
       } else if (reportType === 'cash_register') {
         const result = await fetchCashRegisterExport(startDate, endDate, unitId);
         data = result.data;
         headers = result.headers;
         unitName = result.unitName || '';
-        filename = `penztargep_jelentes_${startDate}_${endDate}`;
+        const unitSlug = sanitizeFilename(unitName);
+        filename = unitSlug ? `penztargep_jelentes_${unitSlug}_${startDate}_${endDate}` : `penztargep_jelentes_${startDate}_${endDate}`;
         // Special totals row for cash register
         customTotals = {
           'Dátum': 'Mindösszesen',
@@ -71,7 +90,9 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         const result = await fetchEventsExport(startDate, endDate, unitId);
         data = result.data;
         headers = result.headers;
-        filename = `rendezvenyek_${startDate}_${endDate}`;
+        unitName = result.unitName || '';
+        const unitSlug = sanitizeFilename(unitName);
+        filename = unitSlug ? `rendezvenyek_${unitSlug}_${startDate}_${endDate}` : `rendezvenyek_${startDate}_${endDate}`;
       } else if (reportType === 'full_monthly_all') {
         const result = await fetchFullMonthlyAllUnitsExport(startDate, endDate);
         data = result.data;
@@ -247,6 +268,9 @@ async function fetchFullMonthlyExport(startDate, endDate, unitId) {
 
   const headers = ['Dátum', 'Szoftver bevétel', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Költség', 'Eredmény'];
 
+  // Get unit name
+  const unitName = revenues[0]?.units?.name || '';
+
   const data = revenues.map((row) => {
     const crRevenues = row.cash_register_revenue || [];
     const cashRegisterCash = crRevenues.reduce((sum, r) => sum + (parseFloat(r.cash_payment) || 0), 0);
@@ -269,7 +293,7 @@ async function fetchFullMonthlyExport(startDate, endDate, unitId) {
     };
   });
 
-  return { data, headers };
+  return { data, headers, unitName };
 }
 
 async function fetchCashRevenueExport(startDate, endDate, unitId) {
@@ -313,6 +337,9 @@ async function fetchCashRevenueExport(startDate, endDate, unitId) {
 
   const headers = ['Dátum', 'Pénztár zseb', 'Tartalék bevétel', 'Összesen'];
 
+  // Get unit name
+  const unitName = revenues[0]?.units?.name || '';
+
   const data = revenues.map((row) => {
     const crRevenues = row.cash_register_revenue || [];
     const cashRegisterCash = crRevenues.reduce((sum, r) => sum + (parseFloat(r.cash_payment) || 0), 0);
@@ -333,7 +360,7 @@ async function fetchCashRevenueExport(startDate, endDate, unitId) {
     };
   });
 
-  return { data, headers };
+  return { data, headers, unitName };
 }
 
 async function fetchCashRegisterExport(startDate, endDate, unitId) {
@@ -499,8 +526,11 @@ async function fetchEventsExport(startDate, endDate, unitId) {
   const { data: events } = await query;
 
   if (!events?.length) {
-    return { data: [], headers: [] };
+    return { data: [], headers: [], unitName: '' };
   }
+
+  // Get unit name
+  const unitName = events[0]?.units?.name || '';
 
   const eventIds = events.map((e) => e.id);
 
@@ -530,7 +560,7 @@ async function fetchEventsExport(startDate, endDate, unitId) {
     'Eredmény': (revenueByEvent[event.id] || 0) - (expenseByEvent[event.id] || 0),
   }));
 
-  return { data, headers };
+  return { data, headers, unitName };
 }
 
 // Admin all-units exports

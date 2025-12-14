@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
-import { DayOverDayChart } from '../charts/RevenueTrendChart';
+import { RevenueTrendChart } from '../charts/RevenueTrendChart';
 
 // Color options for marking
 const MARK_COLORS = {
@@ -54,6 +54,7 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId, 
           const result = await fetchEventsData(startDate, endDate, unitId);
           reportData = result.data;
           reportTotals = result.totals;
+          reportUnitName = result.unitName || '';
         }
         // Admin aggregate reports (all units)
         else if (reportType === 'full_monthly_all') {
@@ -120,7 +121,7 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId, 
     return <CashRegisterReport data={data} totals={totals} unitName={unitName} />;
   }
   if (reportType === 'events') {
-    return <EventsReport data={data} totals={totals} />;
+    return <EventsReport data={data} totals={totals} unitName={unitName} />;
   }
   // Admin aggregate reports
   if (reportType === 'full_monthly_all') {
@@ -418,8 +419,11 @@ async function fetchEventsData(startDate, endDate, unitId) {
   const { data: events } = await query;
 
   if (!events?.length) {
-    return { data: [], totals: {} };
+    return { data: [], totals: {}, unitName: '' };
   }
+
+  // Get unit name
+  const unitName = events[0]?.units?.name || '';
 
   const eventIds = events.map((e) => e.id);
 
@@ -452,7 +456,7 @@ async function fetchEventsData(startDate, endDate, unitId) {
     profit: data.reduce((sum, e) => sum + e.profit, 0),
   };
 
-  return { data, totals };
+  return { data, totals, unitName };
 }
 
 // Admin aggregate reports
@@ -833,7 +837,7 @@ async function fetchEventsAllUnits(startDate, endDate) {
 // REPORT COMPONENTS
 // ============================================
 
-function FullMonthlyReport({ data, totals }) {
+function FullMonthlyReport({ data, totals, unitName }) {
   const navigate = useNavigate();
   const [expandedDays, setExpandedDays] = useState({});
 
@@ -841,8 +845,10 @@ function FullMonthlyReport({ data, totals }) {
     setExpandedDays((prev) => ({ ...prev, [date]: !prev[date] }));
   };
 
+  const title = unitName ? `Teljes havi forgalom - ${unitName}` : 'Teljes havi forgalom';
+
   return (
-    <Card title="Teljes havi forgalom">
+    <Card title={title}>
       <p className="text-sm text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez, vagy a + gombra a költségek megtekintéséhez</p>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -948,8 +954,8 @@ function FullMonthlyReport({ data, totals }) {
       {/* Revenue trend chart */}
       {data.length > 1 && (
         <div className="mt-6 pt-4 border-t border-gray-200">
-          <h4 className="text-sm font-medium text-gray-700 mb-3">Bevétel alakulása</h4>
-          <DayOverDayChart
+          <h4 className="text-sm font-medium text-gray-700 mb-3">Napi forgalom alakulása</h4>
+          <RevenueTrendChart
             data={data.map((row) => ({
               label: formatDate(row.date).split('.').slice(1).join('.').trim(),
               value: row.totalSoftware,
@@ -962,11 +968,13 @@ function FullMonthlyReport({ data, totals }) {
   );
 }
 
-function CashRevenueReport({ data, totals }) {
+function CashRevenueReport({ data, totals, unitName }) {
   const navigate = useNavigate();
 
+  const title = unitName ? `Készpénz bevételek - ${unitName}` : 'Készpénz bevételek';
+
   return (
-    <Card title="Készpénz bevételek">
+    <Card title={title}>
       <p className="text-sm text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez</p>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -1131,9 +1139,11 @@ function CashRegisterReport({ data, totals, unitName }) {
   );
 }
 
-function EventsReport({ data, totals }) {
+function EventsReport({ data, totals, unitName }) {
+  const title = unitName ? `Rendezvény összesítő - ${unitName}` : 'Rendezvény összesítő';
+
   return (
-    <Card title="Rendezvény összesítő">
+    <Card title={title}>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-pepper-red bg-opacity-10">
