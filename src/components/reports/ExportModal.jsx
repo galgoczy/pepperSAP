@@ -54,8 +54,7 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         filename = `penztargep_jelentes_${startDate}_${endDate}`;
         // Special totals row for cash register
         customTotals = {
-          'Pénztárgép': 'Mindösszesen',
-          'Dátum': '',
+          'Dátum': 'Mindösszesen',
           '0% ÁFA': result.grandTotals.vat_0,
           '5% ÁFA': result.grandTotals.vat_5,
           '18% ÁFA': result.grandTotals.vat_18,
@@ -66,6 +65,7 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
           'Kártya': result.grandTotals.card,
           'Terminál': result.grandTotals.terminal_card,
           'Eltérés': result.grandTotals.cardDiscrepancy,
+          _rowType: 'grandTotal',
         };
       } else if (reportType === 'events') {
         const result = await fetchEventsExport(startDate, endDate, unitId);
@@ -407,8 +407,8 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
 
   const registers = Object.values(registerData).sort((a, b) => a.ap_number.localeCompare(b.ap_number));
 
-  // Flatten to export format: register header + days + subtotal rows
-  const headers = ['Pénztárgép', 'Dátum', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Összesen', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés'];
+  // Headers without "Pénztárgép" column - register name will be in header rows
+  const headers = ['Dátum', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Összesen', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés'];
 
   const data = [];
   let grandTotals = {
@@ -417,10 +417,26 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
   };
 
   registers.forEach((reg) => {
+    // Add register header row
+    const registerLabel = reg.name ? `Pénztárgép: ${reg.ap_number} (${reg.name})` : `Pénztárgép: ${reg.ap_number}`;
+    data.push({
+      'Dátum': registerLabel,
+      '0% ÁFA': '',
+      '5% ÁFA': '',
+      '18% ÁFA': '',
+      '27% ÁFA': '',
+      'Borravaló': '',
+      'Összesen': '',
+      'Készpénz': '',
+      'Kártya': '',
+      'Terminál': '',
+      'Eltérés': '',
+      _rowType: 'registerHeader',
+    });
+
     // Add days for this register
     reg.days.forEach((day) => {
       data.push({
-        'Pénztárgép': reg.ap_number,
         'Dátum': formatDate(day.date),
         '0% ÁFA': day.vat_0,
         '5% ÁFA': day.vat_5,
@@ -432,14 +448,13 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
         'Kártya': day.card,
         'Terminál': day.terminal_card,
         'Eltérés': day.cardDiscrepancy,
-        _isSubtotal: false,
+        _rowType: 'data',
       });
     });
 
     // Add subtotal row for this register
     data.push({
-      'Pénztárgép': `${reg.ap_number} összesen`,
-      'Dátum': '',
+      'Dátum': `${reg.ap_number} összesen`,
       '0% ÁFA': reg.totals.vat_0,
       '5% ÁFA': reg.totals.vat_5,
       '18% ÁFA': reg.totals.vat_18,
@@ -450,7 +465,7 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
       'Kártya': reg.totals.card,
       'Terminál': reg.totals.terminal_card,
       'Eltérés': reg.totals.cardDiscrepancy,
-      _isSubtotal: true,
+      _rowType: 'subtotal',
     });
 
     // Accumulate grand totals
@@ -904,18 +919,33 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
     }
   }
 
-  // For cash_register, style subtotal rows
+  // For cash_register, style rows based on _rowType
   if (reportType === 'cash_register') {
     for (let row = 1; row <= range.e.r; row++) {
       const rowData = data[row - 1];
-      if (rowData && rowData._isSubtotal) {
-        for (let col = range.s.c; col <= range.e.c; col++) {
-          const cell = XLSX.utils.encode_cell({ r: row, c: col });
-          if (ws[cell]) {
-            ws[cell].s = {
-              font: { bold: true },
-              fill: { fgColor: { rgb: 'E5E7EB' } },
-            };
+      if (rowData && rowData._rowType) {
+        let cellStyle = null;
+
+        if (rowData._rowType === 'registerHeader') {
+          // Register header: bold, light blue background
+          cellStyle = {
+            font: { bold: true },
+            fill: { fgColor: { rgb: 'DBEAFE' } },
+          };
+        } else if (rowData._rowType === 'subtotal') {
+          // Subtotal: bold, gray background
+          cellStyle = {
+            font: { bold: true },
+            fill: { fgColor: { rgb: 'E5E7EB' } },
+          };
+        }
+
+        if (cellStyle) {
+          for (let col = range.s.c; col <= range.e.c; col++) {
+            const cell = XLSX.utils.encode_cell({ r: row, c: col });
+            if (ws[cell]) {
+              ws[cell].s = cellStyle;
+            }
           }
         }
       }
@@ -935,7 +965,7 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
   // Update range after adding totals
   const newRange = XLSX.utils.decode_range(ws['!ref']);
 
-  // Style totals row
+  // Style totals row (grand total for cash_register or regular totals)
   const totalsRowIndex = newRange.e.r;
   for (let col = newRange.s.c; col <= newRange.e.c; col++) {
     const cell = XLSX.utils.encode_cell({ r: totalsRowIndex, c: col });
@@ -1051,15 +1081,23 @@ function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, 
       return acc;
     }, {}),
     didParseCell: function (hookData) {
-      // Bold the totals row (last row)
+      // Grand totals row (last row)
       if (hookData.row.index === tableData.length - 1) {
         hookData.cell.styles.fontStyle = 'bold';
         hookData.cell.styles.fillColor = [254, 202, 202];
       }
-      // Style subtotal rows for cash_register
-      else if (reportType === 'cash_register' && data[hookData.row.index]?._isSubtotal) {
-        hookData.cell.styles.fontStyle = 'bold';
-        hookData.cell.styles.fillColor = [229, 231, 235];
+      // Style rows based on _rowType for cash_register
+      else if (reportType === 'cash_register' && data[hookData.row.index]) {
+        const rowType = data[hookData.row.index]._rowType;
+        if (rowType === 'registerHeader') {
+          // Register header: bold, light blue background
+          hookData.cell.styles.fontStyle = 'bold';
+          hookData.cell.styles.fillColor = [219, 234, 254];
+        } else if (rowType === 'subtotal') {
+          // Subtotal: bold, gray background
+          hookData.cell.styles.fontStyle = 'bold';
+          hookData.cell.styles.fillColor = [229, 231, 235];
+        }
       }
     },
     margin: { top: 48 },
