@@ -158,7 +158,7 @@ export function useHouseCash(unitId, date) {
           .eq('invoice_date', date),
         supabase
           .from('daily_revenue')
-          .select('total_revenue, cash_register_revenue(cash_payment, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips)')
+          .select('id, total_revenue')
           .eq('unit_id', unitId)
           .eq('date', date)
           .maybeSingle(),
@@ -178,8 +178,20 @@ export function useHouseCash(unitId, date) {
         .filter(e => e.is_official === false)
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
 
+      // Fetch cash register revenues separately if we have a daily_revenue record
+      let cashRegisterRevenues = [];
+      if (dailyRevenueResult.data?.id) {
+        const { data: crData, error: crError } = await supabase
+          .from('cash_register_revenue')
+          .select('cash_payment, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips')
+          .eq('daily_revenue_id', dailyRevenueResult.data.id);
+
+        if (!crError) {
+          cashRegisterRevenues = crData || [];
+        }
+      }
+
       // Calculate cash register totals
-      const cashRegisterRevenues = dailyRevenueResult.data?.cash_register_revenue || [];
       const totalCashRegisterCash = cashRegisterRevenues.reduce(
         (sum, cr) => sum + (parseFloat(cr.cash_payment) || 0), 0
       );
@@ -219,8 +231,16 @@ export function useHouseCash(unitId, date) {
 
   const saveHouseCash = async (cashData) => {
     try {
+      // Convert empty strings to null for numeric fields
+      const cleanedData = Object.fromEntries(
+        Object.entries(cashData).map(([key, value]) => [
+          key,
+          value === '' ? null : value
+        ])
+      );
+
       const dataToSave = {
-        ...cashData,
+        ...cleanedData,
         unit_id: unitId,
         date: date,
       };
