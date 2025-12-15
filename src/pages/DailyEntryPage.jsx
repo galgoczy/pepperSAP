@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { jsPDF } from 'jspdf';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Select, LoadingSpinner } from '../components/common';
@@ -7,9 +8,21 @@ import DailyRevenueForm from '../components/daily/DailyRevenueForm';
 import HouseCashForm from '../components/daily/HouseCashForm';
 import DailyReport from '../components/daily/DailyReport';
 import ExpenseForm from '../components/expenses/ExpenseForm';
-import { getToday, formatCurrency, formatDate } from '../lib/utils';
+import { getToday, formatCurrency, formatDate, PAYMENT_METHODS } from '../lib/utils';
 import { supabase } from '../lib/supabase';
 import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronRight } from 'lucide-react';
+
+// Helper to sanitize Hungarian characters for PDF
+function sanitizeForPdf(text) {
+  if (typeof text !== 'string') return text;
+  return text.replace(/ő/g, 'ö').replace(/Ő/g, 'Ö').replace(/ű/g, 'ü').replace(/Ű/g, 'Ü');
+}
+
+// Format currency for PDF (simple version without currency symbol issues)
+function formatPdfCurrency(amount) {
+  const num = parseFloat(amount) || 0;
+  return num.toLocaleString('hu-HU') + ' Ft';
+}
 
 const tabs = [
   { id: 'all', label: 'Minden adat' },
@@ -59,6 +72,244 @@ export default function DailyEntryPage() {
   // Get selected unit name
   const selectedUnitName = units.find(u => u.id === effectiveUnitId)?.name || '';
 
+  // Generate Daily Report PDF
+  const generateDailyReportPdf = async () => {
+    try {
+      // Fetch data
+      const [revenueResult, houseCashResult, expensesResult] = await Promise.all([
+        supabase
+          .from('daily_revenue')
+          .select('*')
+          .eq('unit_id', effectiveUnitId)
+          .eq('date', selectedDate)
+          .maybeSingle(),
+        supabase
+          .from('house_cash')
+          .select('*')
+          .eq('unit_id', effectiveUnitId)
+          .eq('date', selectedDate)
+          .maybeSingle(),
+        supabase
+          .from('expenses')
+          .select('*')
+          .eq('unit_id', effectiveUnitId)
+          .eq('invoice_date', selectedDate)
+          .order('created_at', { ascending: true }),
+      ]);
+
+      const revenue = revenueResult.data;
+      const houseCash = houseCashResult.data;
+      const expenses = expensesResult.data || [];
+
+      // Create PDF
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      let y = 20;
+
+      // Header
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Napi elszámolás'), pageWidth / 2, y, { align: 'center' });
+      y += 8;
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text(sanitizeForPdf(selectedUnitName || 'Egység'), pageWidth / 2, y, { align: 'center' });
+      y += 6;
+      doc.text(formatDate(selectedDate), pageWidth / 2, y, { align: 'center' });
+      y += 12;
+
+      // Revenue section
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Forgalmi adatok'), 15, y);
+      y += 8;
+
+      if (revenue) {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+
+        // Software revenue
+        doc.text(sanitizeForPdf('Éttermi szoftver forgalom:'), 20, y);
+        doc.text(formatPdfCurrency(revenue.total_revenue), 120, y);
+        y += 6;
+
+        // VAT breakdown
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf('Pénztárgép forgalom (ÁFA bontás):'), 20, y);
+        y += 6;
+        doc.setFont('helvetica', 'normal');
+        doc.text(sanitizeForPdf('0% ÁFA:'), 25, y);
+        doc.text(formatPdfCurrency(revenue.vat_0_percent), 80, y);
+        doc.text(sanitizeForPdf('5% ÁFA:'), 110, y);
+        doc.text(formatPdfCurrency(revenue.vat_5_percent), 160, y);
+        y += 5;
+        doc.text(sanitizeForPdf('18% ÁFA:'), 25, y);
+        doc.text(formatPdfCurrency(revenue.vat_18_percent), 80, y);
+        doc.text(sanitizeForPdf('27% ÁFA:'), 110, y);
+        doc.text(formatPdfCurrency(revenue.vat_27_percent), 160, y);
+        y += 5;
+        doc.text(sanitizeForPdf('Borravaló:'), 25, y);
+        doc.text(formatPdfCurrency(revenue.tips), 80, y);
+        y += 6;
+
+        const cashRegisterTotal =
+          (parseFloat(revenue.vat_0_percent) || 0) +
+          (parseFloat(revenue.vat_5_percent) || 0) +
+          (parseFloat(revenue.vat_18_percent) || 0) +
+          (parseFloat(revenue.vat_27_percent) || 0) +
+          (parseFloat(revenue.tips) || 0);
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf('Pénztárgép összesen:'), 25, y);
+        doc.text(formatPdfCurrency(cashRegisterTotal), 80, y);
+        y += 8;
+
+        // Discrepancy
+        if (parseFloat(revenue.discrepancy_amount) !== 0) {
+          doc.setTextColor(180, 0, 0);
+          doc.text(sanitizeForPdf('Elütés:'), 20, y);
+          doc.text(formatPdfCurrency(revenue.discrepancy_amount), 80, y);
+          if (revenue.discrepancy_note) {
+            y += 5;
+            doc.setFont('helvetica', 'italic');
+            doc.text(sanitizeForPdf(revenue.discrepancy_note.substring(0, 80)), 25, y);
+          }
+          doc.setTextColor(0, 0, 0);
+          doc.setFont('helvetica', 'normal');
+          y += 6;
+        }
+
+        // Payment methods
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf('Fizetési módok:'), 20, y);
+        y += 6;
+        doc.setFont('helvetica', 'normal');
+        doc.text(sanitizeForPdf('Készpénz:'), 25, y);
+        doc.text(formatPdfCurrency(revenue.cash_payment), 80, y);
+        doc.text(sanitizeForPdf('Bankkártya:'), 110, y);
+        doc.text(formatPdfCurrency(revenue.card_payment), 160, y);
+        y += 5;
+        doc.text(sanitizeForPdf('SZÉP kártya:'), 25, y);
+        doc.text(formatPdfCurrency(revenue.szep_card_payment), 80, y);
+        y += 8;
+      } else {
+        doc.setFontSize(10);
+        doc.text(sanitizeForPdf('Nincs rögzített forgalmi adat'), 20, y);
+        y += 8;
+      }
+
+      // House cash section
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Házipénztár'), 15, y);
+      y += 8;
+
+      if (houseCash) {
+        doc.setFontSize(10);
+
+        // Official pocket
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf('Pénztár zseb:'), 20, y);
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.text(sanitizeForPdf('Váltópénz:'), 25, y);
+        doc.text(formatPdfCurrency(houseCash.change_amount), 80, y);
+        y += 5;
+        doc.text(sanitizeForPdf('Napi készpénz:'), 25, y);
+        doc.text(formatPdfCurrency(houseCash.official_daily_cash), 80, y);
+        y += 5;
+        doc.text(sanitizeForPdf('Egyéb bevétel:'), 25, y);
+        doc.text(formatPdfCurrency(houseCash.official_other_income), 80, y);
+        y += 5;
+        doc.text(sanitizeForPdf('Készpénzes számlák:'), 25, y);
+        doc.text('-' + formatPdfCurrency(houseCash.official_cash_expenses), 80, y);
+        y += 5;
+        doc.text(sanitizeForPdf('EFO kifizetések:'), 25, y);
+        doc.text('-' + formatPdfCurrency(houseCash.official_employment_expenses), 80, y);
+        y += 5;
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf('Összesen:'), 25, y);
+        doc.text(formatPdfCurrency(houseCash.official_total), 80, y);
+        y += 8;
+
+        // Reserve pocket
+        doc.text(sanitizeForPdf('Tartalék:'), 20, y);
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.text(sanitizeForPdf('Különbözet:'), 25, y);
+        doc.text(formatPdfCurrency(houseCash.other_difference), 80, y);
+        y += 5;
+        doc.text(sanitizeForPdf('Extra bevétel:'), 25, y);
+        doc.text(formatPdfCurrency(houseCash.other_extra_income), 80, y);
+        y += 5;
+        doc.text(sanitizeForPdf('Kiadások:'), 25, y);
+        doc.text('-' + formatPdfCurrency(houseCash.other_expenses), 80, y);
+        y += 5;
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf('Összesen:'), 25, y);
+        doc.text(formatPdfCurrency(houseCash.other_total), 80, y);
+        y += 10;
+      } else {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(sanitizeForPdf('Nincs rögzített házipénztár adat'), 20, y);
+        y += 10;
+      }
+
+      // Expenses section
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Napi kifizetések'), 15, y);
+      y += 8;
+
+      if (expenses.length > 0) {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+
+        let totalExpenses = 0;
+        expenses.forEach((expense) => {
+          if (y > 270) {
+            doc.addPage();
+            y = 20;
+          }
+          totalExpenses += parseFloat(expense.amount) || 0;
+          doc.text(sanitizeForPdf(expense.supplier_name), 20, y);
+          doc.text('-' + formatPdfCurrency(expense.amount), 160, y);
+          y += 4;
+          doc.setFontSize(8);
+          doc.setTextColor(100, 100, 100);
+          const paymentMethod = PAYMENT_METHODS[expense.payment_method] || expense.payment_method;
+          doc.text(sanitizeForPdf((expense.item_description || '') + ' - ' + paymentMethod), 25, y);
+          doc.setTextColor(0, 0, 0);
+          doc.setFontSize(10);
+          y += 6;
+        });
+
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf('Kifizetések összesen:'), 20, y);
+        doc.text('-' + formatPdfCurrency(totalExpenses), 160, y);
+        y += 10;
+      } else {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(sanitizeForPdf('Nincs rögzített kifizetés'), 20, y);
+        y += 10;
+      }
+
+      // Footer
+      doc.setFontSize(8);
+      doc.setTextColor(128, 128, 128);
+      doc.text(sanitizeForPdf('Pepper House Pénzügyi Nyilvántartó Rendszer'), pageWidth / 2, 285, { align: 'center' });
+      doc.text(sanitizeForPdf('Nyomtatva: ' + new Date().toLocaleString('hu-HU')), pageWidth / 2, 290, { align: 'center' });
+
+      // Save PDF
+      const fileName = `napi_riport_${selectedUnitName.replace(/\s+/g, '_')}_${selectedDate}.pdf`;
+      doc.save(sanitizeForPdf(fileName));
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Hiba a PDF generálása közben');
+    }
+  };
+
   if (unitsLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -93,11 +344,11 @@ export default function DailyEntryPage() {
           {activeTab === 'report' && (
             <Button
               variant="outline"
-              onClick={() => window.print()}
+              onClick={generateDailyReportPdf}
               className="no-print"
             >
               <Printer className="h-4 w-4" />
-              Nyomtatás
+              PDF letöltés
             </Button>
           )}
         </div>
