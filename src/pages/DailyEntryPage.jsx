@@ -101,6 +101,41 @@ export default function DailyEntryPage() {
       const houseCash = houseCashResult.data;
       const expenses = expensesResult.data || [];
 
+      // Fetch aggregated cash register data if revenue exists
+      let cashRegisterTotals = {
+        vat_0_percent: 0,
+        vat_5_percent: 0,
+        vat_18_percent: 0,
+        vat_27_percent: 0,
+        tips: 0,
+        cash_payment: 0,
+        card_payment: 0,
+        szep_card_payment: 0,
+      };
+
+      if (revenue?.id) {
+        const { data: cashRegisterData } = await supabase
+          .from('cash_register_revenue')
+          .select('vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment')
+          .eq('daily_revenue_id', revenue.id);
+
+        if (cashRegisterData) {
+          cashRegisterTotals = cashRegisterData.reduce(
+            (acc, cr) => ({
+              vat_0_percent: acc.vat_0_percent + (parseFloat(cr.vat_0_percent) || 0),
+              vat_5_percent: acc.vat_5_percent + (parseFloat(cr.vat_5_percent) || 0),
+              vat_18_percent: acc.vat_18_percent + (parseFloat(cr.vat_18_percent) || 0),
+              vat_27_percent: acc.vat_27_percent + (parseFloat(cr.vat_27_percent) || 0),
+              tips: acc.tips + (parseFloat(cr.tips) || 0),
+              cash_payment: acc.cash_payment + (parseFloat(cr.cash_payment) || 0),
+              card_payment: acc.card_payment + (parseFloat(cr.card_payment) || 0),
+              szep_card_payment: acc.szep_card_payment + (parseFloat(cr.szep_card_payment) || 0),
+            }),
+            cashRegisterTotals
+          );
+        }
+      }
+
       // Create PDF
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const pageWidth = doc.internal.pageSize.getWidth();
@@ -133,31 +168,31 @@ export default function DailyEntryPage() {
         doc.text(formatPdfCurrency(revenue.total_revenue), 120, y);
         y += 6;
 
-        // VAT breakdown
+        // VAT breakdown (from aggregated cash register data)
         doc.setFont('helvetica', 'bold');
         doc.text(sanitizeForPdf('Pénztárgép forgalom (ÁFA bontás):'), 20, y);
         y += 6;
         doc.setFont('helvetica', 'normal');
         doc.text(sanitizeForPdf('0% ÁFA:'), 25, y);
-        doc.text(formatPdfCurrency(revenue.vat_0_percent), 80, y);
+        doc.text(formatPdfCurrency(cashRegisterTotals.vat_0_percent), 80, y);
         doc.text(sanitizeForPdf('5% ÁFA:'), 110, y);
-        doc.text(formatPdfCurrency(revenue.vat_5_percent), 160, y);
+        doc.text(formatPdfCurrency(cashRegisterTotals.vat_5_percent), 160, y);
         y += 5;
         doc.text(sanitizeForPdf('18% ÁFA:'), 25, y);
-        doc.text(formatPdfCurrency(revenue.vat_18_percent), 80, y);
+        doc.text(formatPdfCurrency(cashRegisterTotals.vat_18_percent), 80, y);
         doc.text(sanitizeForPdf('27% ÁFA:'), 110, y);
-        doc.text(formatPdfCurrency(revenue.vat_27_percent), 160, y);
+        doc.text(formatPdfCurrency(cashRegisterTotals.vat_27_percent), 160, y);
         y += 5;
         doc.text(sanitizeForPdf('Borravaló:'), 25, y);
-        doc.text(formatPdfCurrency(revenue.tips), 80, y);
+        doc.text(formatPdfCurrency(cashRegisterTotals.tips), 80, y);
         y += 6;
 
         const cashRegisterTotal =
-          (parseFloat(revenue.vat_0_percent) || 0) +
-          (parseFloat(revenue.vat_5_percent) || 0) +
-          (parseFloat(revenue.vat_18_percent) || 0) +
-          (parseFloat(revenue.vat_27_percent) || 0) +
-          (parseFloat(revenue.tips) || 0);
+          cashRegisterTotals.vat_0_percent +
+          cashRegisterTotals.vat_5_percent +
+          cashRegisterTotals.vat_18_percent +
+          cashRegisterTotals.vat_27_percent +
+          cashRegisterTotals.tips;
         doc.setFont('helvetica', 'bold');
         doc.text(sanitizeForPdf('Pénztárgép összesen:'), 25, y);
         doc.text(formatPdfCurrency(cashRegisterTotal), 80, y);
@@ -178,18 +213,18 @@ export default function DailyEntryPage() {
           y += 6;
         }
 
-        // Payment methods
+        // Payment methods (from aggregated cash register data)
         doc.setFont('helvetica', 'bold');
         doc.text(sanitizeForPdf('Fizetési módok:'), 20, y);
         y += 6;
         doc.setFont('helvetica', 'normal');
         doc.text(sanitizeForPdf('Készpénz:'), 25, y);
-        doc.text(formatPdfCurrency(revenue.cash_payment), 80, y);
+        doc.text(formatPdfCurrency(cashRegisterTotals.cash_payment), 80, y);
         doc.text(sanitizeForPdf('Bankkártya:'), 110, y);
-        doc.text(formatPdfCurrency(revenue.card_payment), 160, y);
+        doc.text(formatPdfCurrency(cashRegisterTotals.card_payment), 160, y);
         y += 5;
         doc.text(sanitizeForPdf('SZÉP kártya:'), 25, y);
-        doc.text(formatPdfCurrency(revenue.szep_card_payment), 80, y);
+        doc.text(formatPdfCurrency(cashRegisterTotals.szep_card_payment), 80, y);
         y += 8;
       } else {
         doc.setFontSize(10);

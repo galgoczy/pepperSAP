@@ -4,17 +4,38 @@ import toast from 'react-hot-toast';
 
 export function useDailyRevenue(unitId, date) {
   const [revenue, setRevenue] = useState(null);
+  const [cashRegisterTotals, setCashRegisterTotals] = useState({
+    vat_0_percent: 0,
+    vat_5_percent: 0,
+    vat_18_percent: 0,
+    vat_27_percent: 0,
+    tips: 0,
+    cash_payment: 0,
+    card_payment: 0,
+    szep_card_payment: 0,
+  });
   const [loading, setLoading] = useState(true);
 
   const fetchRevenue = useCallback(async () => {
     if (!unitId || !date) {
       setRevenue(null);
+      setCashRegisterTotals({
+        vat_0_percent: 0,
+        vat_5_percent: 0,
+        vat_18_percent: 0,
+        vat_27_percent: 0,
+        tips: 0,
+        cash_payment: 0,
+        card_payment: 0,
+        szep_card_payment: 0,
+      });
       setLoading(false);
       return;
     }
 
     try {
-      const { data, error } = await supabase
+      // Fetch daily_revenue record
+      const { data: dailyRevenue, error } = await supabase
         .from('daily_revenue')
         .select('*')
         .eq('unit_id', unitId)
@@ -25,7 +46,53 @@ export function useDailyRevenue(unitId, date) {
         throw error;
       }
 
-      setRevenue(data || null);
+      setRevenue(dailyRevenue || null);
+
+      // If we have a daily_revenue record, fetch aggregated cash register data
+      if (dailyRevenue?.id) {
+        const { data: cashRegisterData, error: crError } = await supabase
+          .from('cash_register_revenue')
+          .select('vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment')
+          .eq('daily_revenue_id', dailyRevenue.id);
+
+        if (!crError && cashRegisterData) {
+          // Aggregate all cash register data
+          const totals = cashRegisterData.reduce(
+            (acc, cr) => ({
+              vat_0_percent: acc.vat_0_percent + (parseFloat(cr.vat_0_percent) || 0),
+              vat_5_percent: acc.vat_5_percent + (parseFloat(cr.vat_5_percent) || 0),
+              vat_18_percent: acc.vat_18_percent + (parseFloat(cr.vat_18_percent) || 0),
+              vat_27_percent: acc.vat_27_percent + (parseFloat(cr.vat_27_percent) || 0),
+              tips: acc.tips + (parseFloat(cr.tips) || 0),
+              cash_payment: acc.cash_payment + (parseFloat(cr.cash_payment) || 0),
+              card_payment: acc.card_payment + (parseFloat(cr.card_payment) || 0),
+              szep_card_payment: acc.szep_card_payment + (parseFloat(cr.szep_card_payment) || 0),
+            }),
+            {
+              vat_0_percent: 0,
+              vat_5_percent: 0,
+              vat_18_percent: 0,
+              vat_27_percent: 0,
+              tips: 0,
+              cash_payment: 0,
+              card_payment: 0,
+              szep_card_payment: 0,
+            }
+          );
+          setCashRegisterTotals(totals);
+        }
+      } else {
+        setCashRegisterTotals({
+          vat_0_percent: 0,
+          vat_5_percent: 0,
+          vat_18_percent: 0,
+          vat_27_percent: 0,
+          tips: 0,
+          cash_payment: 0,
+          card_payment: 0,
+          szep_card_payment: 0,
+        });
+      }
     } catch (error) {
       console.error('Error fetching daily revenue:', error);
       toast.error('Hiba a napi forgalom betöltésekor');
@@ -98,6 +165,7 @@ export function useDailyRevenue(unitId, date) {
 
   return {
     revenue,
+    cashRegisterTotals,
     loading,
     refetch: fetchRevenue,
     saveRevenue,

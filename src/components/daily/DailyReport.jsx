@@ -4,7 +4,7 @@ import { Card, LoadingSpinner, Badge } from '../common';
 import { formatCurrency, formatDate, PAYMENT_METHODS } from '../../lib/utils';
 
 export default function DailyReport({ date, unitId }) {
-  const { revenue, loading: revenueLoading } = useDailyRevenue(unitId, date);
+  const { revenue, cashRegisterTotals, loading: revenueLoading } = useDailyRevenue(unitId, date);
   const { houseCash, loading: cashLoading } = useHouseCash(unitId, date);
   const { expenses, loading: expensesLoading } = useExpenses(unitId, date, date);
 
@@ -28,17 +28,18 @@ export default function DailyReport({ date, unitId }) {
     );
   }
 
+  // Use aggregated cash register totals from the hook
   const cashRegisterTotal =
-    (parseFloat(revenue?.vat_0_percent) || 0) +
-    (parseFloat(revenue?.vat_5_percent) || 0) +
-    (parseFloat(revenue?.vat_18_percent) || 0) +
-    (parseFloat(revenue?.vat_27_percent) || 0) +
-    (parseFloat(revenue?.tips) || 0);
+    (cashRegisterTotals.vat_0_percent || 0) +
+    (cashRegisterTotals.vat_5_percent || 0) +
+    (cashRegisterTotals.vat_18_percent || 0) +
+    (cashRegisterTotals.vat_27_percent || 0) +
+    (cashRegisterTotals.tips || 0);
 
   const paymentMethodsTotal =
-    (parseFloat(revenue?.cash_payment) || 0) +
-    (parseFloat(revenue?.card_payment) || 0) +
-    (parseFloat(revenue?.szep_card_payment) || 0);
+    (cashRegisterTotals.cash_payment || 0) +
+    (cashRegisterTotals.card_payment || 0) +
+    (cashRegisterTotals.szep_card_payment || 0);
 
   const totalExpenses = expenses.reduce(
     (sum, e) => sum + (parseFloat(e.amount) || 0),
@@ -84,23 +85,23 @@ export default function DailyReport({ date, unitId }) {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">0% ÁFA:</span>
-                  <span>{formatCurrency(revenue.vat_0_percent)}</span>
+                  <span>{formatCurrency(cashRegisterTotals.vat_0_percent)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">5% ÁFA:</span>
-                  <span>{formatCurrency(revenue.vat_5_percent)}</span>
+                  <span>{formatCurrency(cashRegisterTotals.vat_5_percent)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">18% ÁFA:</span>
-                  <span>{formatCurrency(revenue.vat_18_percent)}</span>
+                  <span>{formatCurrency(cashRegisterTotals.vat_18_percent)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">27% ÁFA:</span>
-                  <span>{formatCurrency(revenue.vat_27_percent)}</span>
+                  <span>{formatCurrency(cashRegisterTotals.vat_27_percent)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">Borravaló:</span>
-                  <span>{formatCurrency(revenue.tips)}</span>
+                  <span>{formatCurrency(cashRegisterTotals.tips)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-green-50 rounded font-medium">
                   <span className="text-green-700">Összesen:</span>
@@ -137,15 +138,15 @@ export default function DailyReport({ date, unitId }) {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">Készpénz:</span>
-                  <span>{formatCurrency(revenue.cash_payment)}</span>
+                  <span>{formatCurrency(cashRegisterTotals.cash_payment)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">Bankkártya:</span>
-                  <span>{formatCurrency(revenue.card_payment)}</span>
+                  <span>{formatCurrency(cashRegisterTotals.card_payment)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">SZÉP kártya:</span>
-                  <span>{formatCurrency(revenue.szep_card_payment)}</span>
+                  <span>{formatCurrency(cashRegisterTotals.szep_card_payment)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-green-50 rounded font-medium">
                   <span className="text-green-700">Összesen:</span>

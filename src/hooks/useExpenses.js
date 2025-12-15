@@ -49,9 +49,16 @@ export function useExpenses(unitId, startDate, endDate) {
 
   const createExpense = async (expenseData) => {
     try {
+      // Convert empty strings to null for date fields
+      const cleanedData = {
+        ...expenseData,
+        payment_deadline: expenseData.payment_deadline || null,
+        fulfillment_date: expenseData.fulfillment_date || null,
+      };
+
       const { data, error } = await supabase
         .from('expenses')
-        .insert([expenseData])
+        .insert([cleanedData])
         .select(`
           *,
           units (
@@ -75,9 +82,16 @@ export function useExpenses(unitId, startDate, endDate) {
 
   const updateExpense = async (id, expenseData) => {
     try {
+      // Convert empty strings to null for date fields
+      const cleanedData = {
+        ...expenseData,
+        payment_deadline: expenseData.payment_deadline || null,
+        fulfillment_date: expenseData.fulfillment_date || null,
+      };
+
       const { data, error } = await supabase
         .from('expenses')
-        .update(expenseData)
+        .update(cleanedData)
         .eq('id', id)
         .select(`
           *,
