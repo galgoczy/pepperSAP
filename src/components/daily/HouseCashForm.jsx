@@ -1,67 +1,67 @@
 import { useState, useEffect } from 'react';
-import { Save, Wallet, Banknote, ArrowRight, TrendingUp } from 'lucide-react';
-import { useHouseCash, useDailyRevenue } from '../../hooks/useDailyRevenue';
+import { Save, Wallet, Banknote, ArrowRight, TrendingUp, Calculator } from 'lucide-react';
+import { useHouseCash } from '../../hooks/useDailyRevenue';
 import { Card, Button, Input, LoadingSpinner } from '../common';
 import { formatCurrency } from '../../lib/utils';
 
 const DEFAULT_CHANGE_AMOUNT = 30000;
 
-export default function HouseCashForm({ date, unitId }) {
-  const { houseCash, previousDayClosing, loading, saveHouseCash } = useHouseCash(unitId, date);
-  const { revenue } = useDailyRevenue(unitId, date);
+export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
+  const { houseCash, previousDayClosing, calculatedData, loading, saveHouseCash, refetch } = useHouseCash(unitId, date);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     change_amount: DEFAULT_CHANGE_AMOUNT,
-    official_daily_cash: '',
     official_other_income: '',
-    official_cash_expenses: '',
     official_employment_expenses: '',
-    other_difference: '',
     other_extra_income: '',
-    other_expenses: '',
   });
 
   // Opening balance from previous day's closing
   const openingBalance = previousDayClosing || 0;
 
+  // Auto-calculated values from hook
+  const {
+    cashInvoiceExpenses,      // Készpénzes számlák (auto from expenses)
+    nonInvoiceExpenses,       // Nem számlás kifizetések (auto from expenses)
+    totalCashRegisterCash,    // Napi forgalom (auto from cash registers)
+    totalCashRegisterRevenue, // Pénztárgép összes bevétel
+    softwareRevenue,          // Szoftver bevétel
+  } = calculatedData;
+
+  // Software vs cash register difference (calculated)
+  const softwareCashRegisterDiff = softwareRevenue - totalCashRegisterRevenue;
+
   useEffect(() => {
     if (houseCash) {
       setFormData({
         change_amount: houseCash.change_amount ?? DEFAULT_CHANGE_AMOUNT,
-        official_daily_cash: houseCash.official_daily_cash || '',
         official_other_income: houseCash.official_other_income || '',
-        official_cash_expenses: houseCash.official_cash_expenses || '',
         official_employment_expenses: houseCash.official_employment_expenses || '',
-        other_difference: houseCash.other_difference || '',
         other_extra_income: houseCash.other_extra_income || '',
-        other_expenses: houseCash.other_expenses || '',
       });
     } else {
-      // Auto-fill from daily revenue if available
       setFormData({
         change_amount: DEFAULT_CHANGE_AMOUNT,
-        official_daily_cash: revenue?.cash_payment || '',
         official_other_income: '',
-        official_cash_expenses: '',
         official_employment_expenses: '',
-        other_difference: '',
         other_extra_income: '',
-        other_expenses: '',
       });
     }
-  }, [houseCash, date, revenue]);
+  }, [houseCash, date]);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   // Calculate daily movement (income - expenses) for Pénztár zseb
+  // Income: napi forgalom (auto) + egyéb hivatalos bevétel
   const dailyIncome =
-    (parseFloat(formData.official_daily_cash) || 0) +
+    totalCashRegisterCash +
     (parseFloat(formData.official_other_income) || 0);
 
+  // Expenses: készpénzes számlák (auto) + EFO kifizetések
   const dailyExpenses =
-    (parseFloat(formData.official_cash_expenses) || 0) +
+    cashInvoiceExpenses +
     (parseFloat(formData.official_employment_expenses) || 0);
 
   const dailyMovement = dailyIncome - dailyExpenses;
@@ -69,11 +69,16 @@ export default function HouseCashForm({ date, unitId }) {
   // Closing balance = Opening + Daily movement (váltópénz is NOT included in running balance)
   const closingBalance = openingBalance + dailyMovement;
 
+  // Napi záró pénztár = nyitó + napi egyenleg
+  const dailyClosingCash = openingBalance + dailyMovement;
+
   // Tartalék (separate tracking)
+  // other_difference is now auto-calculated (softwareCashRegisterDiff)
+  // other_expenses is now auto-calculated (nonInvoiceExpenses)
   const otherTotal =
-    (parseFloat(formData.other_difference) || 0) +
+    softwareCashRegisterDiff +
     (parseFloat(formData.other_extra_income) || 0) -
-    (parseFloat(formData.other_expenses) || 0);
+    nonInvoiceExpenses;
 
   // For saving: official_total is the closing balance
   const officialTotal = closingBalance;
@@ -86,9 +91,19 @@ export default function HouseCashForm({ date, unitId }) {
     try {
       await saveHouseCash({
         ...formData,
+        // Store auto-calculated values too
+        official_daily_cash: totalCashRegisterCash,
+        official_cash_expenses: cashInvoiceExpenses,
+        other_difference: softwareCashRegisterDiff,
+        other_expenses: nonInvoiceExpenses,
         official_total: officialTotal,
         other_total: otherTotal,
       });
+
+      // Call onSaveSuccess callback if provided (for tab navigation)
+      if (onSaveSuccess) {
+        onSaveSuccess();
+      }
     } finally {
       setSaving(false);
     }
@@ -158,15 +173,16 @@ export default function HouseCashForm({ date, unitId }) {
         }
       >
         <div className="grid gap-4 md:grid-cols-2">
-          <Input
-            label="Napi készpénz forgalom (+)"
-            type="number"
-            step="0.01"
-            value={formData.official_daily_cash}
-            onChange={(e) => handleChange('official_daily_cash', e.target.value)}
-            suffix="Ft"
-            helper="Pénztárgép szerinti készpénz forgalom"
-          />
+          {/* Auto-calculated: Napi forgalom */}
+          <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-center gap-2 mb-1">
+              <Calculator className="h-4 w-4 text-green-600" />
+              <span className="text-sm font-medium text-green-700">Napi forgalom (+)</span>
+            </div>
+            <p className="text-xl font-bold text-green-800">{formatCurrency(totalCashRegisterCash)}</p>
+            <p className="text-xs text-green-600 mt-1">Pénztárgépek készpénz forgalma (automatikus)</p>
+          </div>
+
           <Input
             label="Egyéb hivatalos bevétel (+)"
             type="number"
@@ -175,15 +191,17 @@ export default function HouseCashForm({ date, unitId }) {
             onChange={(e) => handleChange('official_other_income', e.target.value)}
             suffix="Ft"
           />
-          <Input
-            label="Készpénzes számlák (-)"
-            type="number"
-            step="0.01"
-            value={formData.official_cash_expenses}
-            onChange={(e) => handleChange('official_cash_expenses', e.target.value)}
-            suffix="Ft"
-            helper="Készpénzzel kifizetett számlák összege"
-          />
+
+          {/* Auto-calculated: Készpénzes számlák */}
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-center gap-2 mb-1">
+              <Calculator className="h-4 w-4 text-red-600" />
+              <span className="text-sm font-medium text-red-700">Készpénzes számlák (-)</span>
+            </div>
+            <p className="text-xl font-bold text-red-800">{formatCurrency(cashInvoiceExpenses)}</p>
+            <p className="text-xs text-red-600 mt-1">Számlás kifizetésekből (automatikus)</p>
+          </div>
+
           <Input
             label="EFO kifizetések (-)"
             type="number"
@@ -211,6 +229,19 @@ export default function HouseCashForm({ date, unitId }) {
             </span>
           </div>
         </div>
+
+        {/* Napi záró pénztár */}
+        <div className="mt-4 p-4 bg-emerald-100 border border-emerald-300 rounded-lg">
+          <div className="flex justify-between items-center">
+            <div>
+              <span className="font-semibold text-emerald-700">Napi záró pénztár</span>
+              <p className="text-xs text-emerald-600">Nyitó + napi egyenleg</p>
+            </div>
+            <span className="text-xl font-bold text-emerald-800">
+              {formatCurrency(dailyClosingCash)}
+            </span>
+          </div>
+        </div>
       </Card>
 
       {/* Other pocket */}
@@ -223,15 +254,22 @@ export default function HouseCashForm({ date, unitId }) {
         }
       >
         <div className="grid gap-4 md:grid-cols-2">
-          <Input
-            label="Szoftver vs pénztárgép különbség"
-            type="number"
-            step="0.01"
-            value={formData.other_difference}
-            onChange={(e) => handleChange('other_difference', e.target.value)}
-            suffix="Ft"
-            helper="Éttermi szoftver és pénztárgép közötti különbség"
-          />
+          {/* Auto-calculated: Szoftver vs pénztárgép különbség */}
+          <div className={`p-3 border rounded-lg ${softwareCashRegisterDiff >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-orange-50 border-orange-200'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <Calculator className="h-4 w-4 text-blue-600" />
+              <span className={`text-sm font-medium ${softwareCashRegisterDiff >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>
+                Szoftver vs pénztárgép különbség
+              </span>
+            </div>
+            <p className={`text-xl font-bold ${softwareCashRegisterDiff >= 0 ? 'text-blue-800' : 'text-orange-800'}`}>
+              {formatCurrency(softwareCashRegisterDiff)}
+            </p>
+            <p className="text-xs text-gray-600 mt-1">
+              Szoftver: {formatCurrency(softwareRevenue)} - Pénztárgép: {formatCurrency(totalCashRegisterRevenue)}
+            </p>
+          </div>
+
           <Input
             label="Egyéb extra bevétel"
             type="number"
@@ -240,15 +278,16 @@ export default function HouseCashForm({ date, unitId }) {
             onChange={(e) => handleChange('other_extra_income', e.target.value)}
             suffix="Ft"
           />
-          <Input
-            label="Nem számlás kifizetések (-)"
-            type="number"
-            step="0.01"
-            value={formData.other_expenses}
-            onChange={(e) => handleChange('other_expenses', e.target.value)}
-            suffix="Ft"
-            helper="Számla nélküli kiadások"
-          />
+
+          {/* Auto-calculated: Nem számlás kifizetések */}
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-center gap-2 mb-1">
+              <Calculator className="h-4 w-4 text-red-600" />
+              <span className="text-sm font-medium text-red-700">Nem számlás kifizetések (-)</span>
+            </div>
+            <p className="text-xl font-bold text-red-800">{formatCurrency(nonInvoiceExpenses)}</p>
+            <p className="text-xs text-red-600 mt-1">Kifizetésekből (automatikus)</p>
+          </div>
         </div>
 
         <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">

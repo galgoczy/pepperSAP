@@ -17,7 +17,7 @@ const MARK_COLORS = [
   { value: 'purple', label: 'Lila', className: 'bg-purple-500 border-purple-600' },
 ];
 
-export default function DailyRevenueForm({ date, unitId }) {
+export default function DailyRevenueForm({ date, unitId, unitName }) {
   const { revenue, loading: revenueLoading, saveRevenue } = useDailyRevenue(unitId, date);
   const { cashRegisters, loading: registersLoading } = useActiveCashRegisters(unitId);
   const { revenues: cashRegisterRevenues, saveAllRevenues } = useAllCashRegisterRevenue(revenue?.id);
@@ -186,6 +186,8 @@ export default function DailyRevenueForm({ date, unitId }) {
               onChange={handleCashRegisterChange}
               expanded={expandedRegisters[register.id]}
               onToggleExpand={() => toggleExpand(register.id)}
+              unitName={unitName}
+              date={date}
             />
           ))}
         </div>

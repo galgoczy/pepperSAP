@@ -152,6 +152,7 @@ export default function DailyEntryPage() {
               <DailyRevenueForm
                 date={selectedDate}
                 unitId={effectiveUnitId}
+                unitName={selectedUnitName}
               />
             </div>
 
@@ -164,6 +165,7 @@ export default function DailyEntryPage() {
               <HouseCashForm
                 date={selectedDate}
                 unitId={effectiveUnitId}
+                onSaveSuccess={() => setActiveTab('report')}
               />
             </div>
 
@@ -201,6 +203,7 @@ export default function DailyEntryPage() {
           <DailyRevenueForm
             date={selectedDate}
             unitId={effectiveUnitId}
+            unitName={selectedUnitName}
           />
         )}
 
@@ -208,6 +211,7 @@ export default function DailyEntryPage() {
           <HouseCashForm
             date={selectedDate}
             unitId={effectiveUnitId}
+            onSaveSuccess={() => setActiveTab('report')}
           />
         )}
 

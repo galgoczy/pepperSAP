@@ -107,12 +107,26 @@ export function useDailyRevenue(unitId, date) {
 export function useHouseCash(unitId, date) {
   const [houseCash, setHouseCash] = useState(null);
   const [previousDayClosing, setPreviousDayClosing] = useState(null);
+  const [calculatedData, setCalculatedData] = useState({
+    cashInvoiceExpenses: 0,      // Készpénzes számlák (is_official=true, payment_method='cash')
+    nonInvoiceExpenses: 0,       // Nem számlás kifizetések (is_official=false)
+    totalCashRegisterCash: 0,    // Összes pénztárgép készpénz bevétel
+    totalCashRegisterRevenue: 0, // Összes pénztárgép forgalom
+    softwareRevenue: 0,          // Szoftver bevétel
+  });
   const [loading, setLoading] = useState(true);
 
   const fetchHouseCash = useCallback(async () => {
     if (!unitId || !date) {
       setHouseCash(null);
       setPreviousDayClosing(null);
+      setCalculatedData({
+        cashInvoiceExpenses: 0,
+        nonInvoiceExpenses: 0,
+        totalCashRegisterCash: 0,
+        totalCashRegisterRevenue: 0,
+        softwareRevenue: 0,
+      });
       setLoading(false);
       return;
     }
@@ -123,8 +137,8 @@ export function useHouseCash(unitId, date) {
       currentDate.setDate(currentDate.getDate() - 1);
       const previousDay = currentDate.toISOString().split('T')[0];
 
-      // Fetch both current day and previous day in parallel
-      const [currentResult, previousResult] = await Promise.all([
+      // Fetch all needed data in parallel
+      const [currentResult, previousResult, expensesResult, dailyRevenueResult] = await Promise.all([
         supabase
           .from('house_cash')
           .select('*')
@@ -137,16 +151,60 @@ export function useHouseCash(unitId, date) {
           .eq('unit_id', unitId)
           .eq('date', previousDay)
           .maybeSingle(),
+        supabase
+          .from('expenses')
+          .select('amount, is_official, payment_method')
+          .eq('unit_id', unitId)
+          .eq('invoice_date', date),
+        supabase
+          .from('daily_revenue')
+          .select('total_revenue, cash_register_revenue(cash_payment, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips)')
+          .eq('unit_id', unitId)
+          .eq('date', date)
+          .maybeSingle(),
       ]);
 
       if (currentResult.error) throw currentResult.error;
       if (previousResult.error && previousResult.error.code !== 'PGRST116') {
-        // Ignore "no rows" error for previous day
         console.error('Error fetching previous day:', previousResult.error);
       }
 
+      // Calculate expenses
+      const expenses = expensesResult.data || [];
+      const cashInvoiceExpenses = expenses
+        .filter(e => e.is_official === true && e.payment_method === 'cash')
+        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      const nonInvoiceExpenses = expenses
+        .filter(e => e.is_official === false)
+        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+
+      // Calculate cash register totals
+      const cashRegisterRevenues = dailyRevenueResult.data?.cash_register_revenue || [];
+      const totalCashRegisterCash = cashRegisterRevenues.reduce(
+        (sum, cr) => sum + (parseFloat(cr.cash_payment) || 0), 0
+      );
+      const totalCashRegisterRevenue = cashRegisterRevenues.reduce(
+        (sum, cr) => sum +
+          (parseFloat(cr.vat_0_percent) || 0) +
+          (parseFloat(cr.vat_5_percent) || 0) +
+          (parseFloat(cr.vat_18_percent) || 0) +
+          (parseFloat(cr.vat_27_percent) || 0) +
+          (parseFloat(cr.tips) || 0),
+        0
+      );
+
+      // Software revenue
+      const softwareRevenue = parseFloat(dailyRevenueResult.data?.total_revenue) || 0;
+
       setHouseCash(currentResult.data || null);
       setPreviousDayClosing(previousResult.data?.official_total || null);
+      setCalculatedData({
+        cashInvoiceExpenses,
+        nonInvoiceExpenses,
+        totalCashRegisterCash,
+        totalCashRegisterRevenue,
+        softwareRevenue,
+      });
     } catch (error) {
       console.error('Error fetching house cash:', error);
       toast.error('Hiba a házipénztár betöltésekor');
@@ -202,6 +260,7 @@ export function useHouseCash(unitId, date) {
   return {
     houseCash,
     previousDayClosing,
+    calculatedData,
     loading,
     refetch: fetchHouseCash,
     saveHouseCash,

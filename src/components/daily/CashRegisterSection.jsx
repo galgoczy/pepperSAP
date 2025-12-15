@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
-import { Card, Input, Select } from '../common';
+import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp, Printer } from 'lucide-react';
+import { Card, Input, Select, Button } from '../common';
 import { Textarea } from '../common/Input';
-import { formatCurrency } from '../../lib/utils';
+import { formatCurrency, formatDate } from '../../lib/utils';
 import { validateCardPayments } from '../../lib/validations';
+import { jsPDF } from 'jspdf';
 
 // Feature flag: set to true to show SZÉP card fields
 const SHOW_SZEP_FIELDS = false;
@@ -25,14 +26,107 @@ const DEFAULT_FORM_DATA = {
   terminal_discrepancy_note: '',
 };
 
+// Helper to sanitize Hungarian characters for PDF
+function sanitizeForPdf(text) {
+  if (typeof text !== 'string') return text;
+  return text
+    .replace(/ő/g, 'ö')
+    .replace(/Ő/g, 'Ö')
+    .replace(/ű/g, 'ü')
+    .replace(/Ű/g, 'Ü');
+}
+
 export default function CashRegisterSection({
   register,
   existingData,
   onChange,
   expanded,
   onToggleExpand,
+  unitName,
+  date,
 }) {
   const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
+
+  // Generate discrepancy protocol PDF
+  const generateDiscrepancyProtocol = () => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    const pageWidth = doc.internal.pageSize.width;
+
+    // Header
+    doc.setFillColor(211, 47, 47);
+    doc.rect(0, 0, pageWidth, 25, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Elütés Jegyzőkönyv'), pageWidth / 2, 16, { align: 'center' });
+
+    // Unit name and date
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf(unitName || 'Egység'), 20, 40);
+
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text(sanitizeForPdf(`Dátum: ${formatDate(date)}`), 20, 50);
+    doc.text(sanitizeForPdf(`Pénztárgép: ${register.ap_number}${register.name ? ` (${register.name})` : ''}`), 20, 58);
+
+    // Discrepancy details
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Elütés adatai'), 20, 75);
+
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    const amount = parseFloat(formData.discrepancy_amount) || 0;
+    const currency = formData.discrepancy_currency || 'HUF';
+    doc.text(sanitizeForPdf(`Összeg: ${formatCurrency(amount)} ${currency}`), 20, 85);
+
+    // Reason section
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Indoklás:'), 20, 100);
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    const reasonText = formData.discrepancy_note || 'Nincs megadva';
+    const reasonLines = doc.splitTextToSize(sanitizeForPdf(reasonText), pageWidth - 40);
+    doc.text(reasonLines, 20, 110);
+
+    // Signature section at bottom
+    const signatureY = 220;
+    doc.setDrawColor(0, 0, 0);
+
+    // Leader signature
+    doc.text(sanitizeForPdf('Vezető neve:'), 20, signatureY);
+    doc.line(20, signatureY + 15, 90, signatureY + 15);
+
+    doc.text(sanitizeForPdf('Aláírás:'), 20, signatureY + 30);
+    doc.line(20, signatureY + 45, 90, signatureY + 45);
+
+    // Date field
+    doc.text(sanitizeForPdf('Kelt:'), 120, signatureY);
+    doc.line(120, signatureY + 15, 190, signatureY + 15);
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    doc.text(
+      sanitizeForPdf(`Generálva: ${new Date().toLocaleString('hu-HU')}`),
+      pageWidth / 2,
+      doc.internal.pageSize.height - 10,
+      { align: 'center' }
+    );
+
+    // Save
+    const filename = `elutes_jegyzokonyv_${register.ap_number}_${date}.pdf`;
+    doc.save(filename);
+  };
 
   useEffect(() => {
     if (existingData) {
@@ -188,7 +282,20 @@ export default function CashRegisterSection({
 
           {/* Discrepancy */}
           <div>
-            <h4 className="text-sm font-medium text-gray-700 mb-3">Elütés</h4>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-medium text-gray-700">Elütés</h4>
+              {(parseFloat(formData.discrepancy_amount) || 0) !== 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={generateDiscrepancyProtocol}
+                  title="Jegyzőkönyv nyomtatása"
+                >
+                  <Printer className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
             <div className="grid gap-3 md:grid-cols-3">
               <Input
                 label="Összeg"
@@ -213,8 +320,8 @@ export default function CashRegisterSection({
                   label="Indoklás"
                   value={formData.discrepancy_note}
                   onChange={(e) => handleChange('discrepancy_note', e.target.value)}
-                  rows={2}
-                  placeholder="Elütés indoklása..."
+                  rows={3}
+                  placeholder="Elütés indoklása tételenként leírva..."
                 />
               </div>
             </div>
