@@ -987,6 +987,13 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
     grandTotals.terminal_card += unit.totals.terminal_card;
   });
 
+  // Add empty row before grand total
+  data.push({
+    'Dátum': '', '0% ÁFA': '', '5% ÁFA': '', '18% ÁFA': '', '27% ÁFA': '', 'Borravaló': '',
+    'Összesen': '', 'Készpénz': '', 'Kártya': '', 'Terminál': '', 'Eltérés': '',
+    _rowType: 'empty',
+  });
+
   // Add grand total row at the end
   const grandDiscrepancy = grandTotals.card - grandTotals.terminal_card;
   data.push({
