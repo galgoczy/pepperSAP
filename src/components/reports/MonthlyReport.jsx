@@ -774,31 +774,33 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
   // Convert registers object to array and calculate discrepancies
   const data = Object.values(unitData).map((unit) => ({
     ...unit,
-    registers: Object.values(unit.registers).sort((a, b) => a.ap_number.localeCompare(b.ap_number)),
+    registers: Object.values(unit.registers || {}).sort((a, b) => (a.ap_number || '').localeCompare(b.ap_number || '')),
     totals: {
-      ...unit.totals,
-      discrepancy: unit.totals.card - unit.totals.terminal_card,
+      ...(unit.totals || { vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0, total: 0, cash: 0, card: 0, terminal_card: 0 }),
+      discrepancy: (unit.totals?.card || 0) - (unit.totals?.terminal_card || 0),
     },
-  })).sort((a, b) => a.unitName.localeCompare(b.unitName));
+  })).sort((a, b) => (a.unitName || '').localeCompare(b.unitName || ''));
 
   // Add discrepancy to register totals
   data.forEach((unit) => {
-    unit.registers.forEach((reg) => {
-      reg.totals.discrepancy = reg.totals.card - reg.totals.terminal_card;
+    (unit.registers || []).forEach((reg) => {
+      if (reg.totals) {
+        reg.totals.discrepancy = reg.totals.card - reg.totals.terminal_card;
+      }
     });
   });
 
   const totals = {
-    vat_0: data.reduce((sum, r) => sum + r.totals.vat_0, 0),
-    vat_5: data.reduce((sum, r) => sum + r.totals.vat_5, 0),
-    vat_18: data.reduce((sum, r) => sum + r.totals.vat_18, 0),
-    vat_27: data.reduce((sum, r) => sum + r.totals.vat_27, 0),
-    tips: data.reduce((sum, r) => sum + r.totals.tips, 0),
-    total: data.reduce((sum, r) => sum + r.totals.total, 0),
-    cash: data.reduce((sum, r) => sum + r.totals.cash, 0),
-    card: data.reduce((sum, r) => sum + r.totals.card, 0),
-    terminal_card: data.reduce((sum, r) => sum + r.totals.terminal_card, 0),
-    discrepancy: data.reduce((sum, r) => sum + r.totals.discrepancy, 0),
+    vat_0: data.reduce((sum, r) => sum + (r.totals?.vat_0 || 0), 0),
+    vat_5: data.reduce((sum, r) => sum + (r.totals?.vat_5 || 0), 0),
+    vat_18: data.reduce((sum, r) => sum + (r.totals?.vat_18 || 0), 0),
+    vat_27: data.reduce((sum, r) => sum + (r.totals?.vat_27 || 0), 0),
+    tips: data.reduce((sum, r) => sum + (r.totals?.tips || 0), 0),
+    total: data.reduce((sum, r) => sum + (r.totals?.total || 0), 0),
+    cash: data.reduce((sum, r) => sum + (r.totals?.cash || 0), 0),
+    card: data.reduce((sum, r) => sum + (r.totals?.card || 0), 0),
+    terminal_card: data.reduce((sum, r) => sum + (r.totals?.terminal_card || 0), 0),
+    discrepancy: data.reduce((sum, r) => sum + (r.totals?.discrepancy || 0), 0),
   };
 
   return { data, totals };
@@ -1423,17 +1425,17 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                       {/* Register subtotal row */}
                       <tr className="bg-gray-100 font-semibold">
                         <td className="px-3 py-2">{reg.ap_number} összesen</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.vat_0)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.vat_5)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.vat_18)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.vat_27)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.tips)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.total)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.cash)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.card)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals.terminal_card)}</td>
-                        <td className={`px-3 py-2 text-right ${reg.totals.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
-                          {formatCurrency(reg.totals.discrepancy)}
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.vat_0)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.vat_5)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.vat_18)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.vat_27)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.tips)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.total)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.cash)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.card)}</td>
+                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.terminal_card)}</td>
+                        <td className={`px-3 py-2 text-right ${reg.totals?.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
+                          {formatCurrency(reg.totals?.discrepancy)}
                         </td>
                       </tr>
                     </React.Fragment>
@@ -1441,17 +1443,17 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                   {/* Unit grand total row */}
                   <tr className="bg-pepper-red bg-opacity-20 font-bold">
                     <td className="px-3 py-2">{unit.unitName} összesen</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.vat_0)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.vat_5)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.vat_18)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.vat_27)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.tips)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.total)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.cash)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.card)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals.terminal_card)}</td>
-                    <td className={`px-3 py-2 text-right ${unit.totals.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
-                      {formatCurrency(unit.totals.discrepancy)}
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.vat_0)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.vat_5)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.vat_18)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.vat_27)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.tips)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.total)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.cash)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.card)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.terminal_card)}</td>
+                    <td className={`px-3 py-2 text-right ${unit.totals?.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
+                      {formatCurrency(unit.totals?.discrepancy)}
                     </td>
                   </tr>
                 </tbody>
@@ -1465,24 +1467,24 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
           <div className="grid grid-cols-5 gap-4 text-center">
             <div>
               <p className="text-sm text-gray-600">Összes forgalom</p>
-              <p className="text-xl font-bold text-gray-900">{formatCurrency(totals.total)}</p>
+              <p className="text-xl font-bold text-gray-900">{formatCurrency(totals?.total)}</p>
             </div>
             <div>
               <p className="text-sm text-gray-600">Összes KP</p>
-              <p className="text-xl font-bold text-green-700">{formatCurrency(totals.cash)}</p>
+              <p className="text-xl font-bold text-green-700">{formatCurrency(totals?.cash)}</p>
             </div>
             <div>
               <p className="text-sm text-gray-600">Összes kártya</p>
-              <p className="text-xl font-bold text-blue-700">{formatCurrency(totals.card)}</p>
+              <p className="text-xl font-bold text-blue-700">{formatCurrency(totals?.card)}</p>
             </div>
             <div>
               <p className="text-sm text-gray-600">Összes terminál</p>
-              <p className="text-xl font-bold text-purple-700">{formatCurrency(totals.terminal_card)}</p>
+              <p className="text-xl font-bold text-purple-700">{formatCurrency(totals?.terminal_card)}</p>
             </div>
             <div>
               <p className="text-sm text-gray-600">Összes eltérés</p>
-              <p className={`text-xl font-bold ${totals.discrepancy !== 0 ? 'text-orange-600' : 'text-gray-700'}`}>
-                {formatCurrency(totals.discrepancy)}
+              <p className={`text-xl font-bold ${totals?.discrepancy !== 0 ? 'text-orange-600' : 'text-gray-700'}`}>
+                {formatCurrency(totals?.discrepancy)}
               </p>
             </div>
           </div>
