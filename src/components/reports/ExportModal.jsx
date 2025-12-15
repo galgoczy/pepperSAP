@@ -886,7 +886,22 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
   const data = [];
   const units = Object.values(unitData).sort((a, b) => a.unitName.localeCompare(b.unitName));
 
-  units.forEach((unit) => {
+  // Track grand totals
+  const grandTotals = {
+    vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
+    total: 0, cash: 0, card: 0, terminal_card: 0,
+  };
+
+  units.forEach((unit, unitIndex) => {
+    // Add empty row between units (not before the first unit)
+    if (unitIndex > 0) {
+      data.push({
+        'Dátum': '', '0% ÁFA': '', '5% ÁFA': '', '18% ÁFA': '', '27% ÁFA': '', 'Borravaló': '',
+        'Összesen': '', 'Készpénz': '', 'Kártya': '', 'Terminál': '', 'Eltérés': '',
+        _rowType: 'empty',
+      });
+    }
+
     // Unit header row
     data.push({
       'Dátum': `=== ${unit.unitName} ===`,
@@ -959,6 +974,34 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
       'Eltérés': unitDiscrepancy,
       _rowType: 'unitTotal',
     });
+
+    // Add to grand totals
+    grandTotals.vat_0 += unit.totals.vat_0;
+    grandTotals.vat_5 += unit.totals.vat_5;
+    grandTotals.vat_18 += unit.totals.vat_18;
+    grandTotals.vat_27 += unit.totals.vat_27;
+    grandTotals.tips += unit.totals.tips;
+    grandTotals.total += unit.totals.total;
+    grandTotals.cash += unit.totals.cash;
+    grandTotals.card += unit.totals.card;
+    grandTotals.terminal_card += unit.totals.terminal_card;
+  });
+
+  // Add grand total row at the end
+  const grandDiscrepancy = grandTotals.card - grandTotals.terminal_card;
+  data.push({
+    'Dátum': 'Mindösszesen',
+    '0% ÁFA': grandTotals.vat_0,
+    '5% ÁFA': grandTotals.vat_5,
+    '18% ÁFA': grandTotals.vat_18,
+    '27% ÁFA': grandTotals.vat_27,
+    'Borravaló': grandTotals.tips,
+    'Összesen': grandTotals.total,
+    'Készpénz': grandTotals.cash,
+    'Kártya': grandTotals.card,
+    'Terminál': grandTotals.terminal_card,
+    'Eltérés': grandDiscrepancy,
+    _rowType: 'grandTotal',
   });
 
   return { data, headers };
@@ -1111,6 +1154,12 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
             font: { bold: true },
             fill: { fgColor: { rgb: 'FECACA' } },
           };
+        } else if (rowData._rowType === 'grandTotal') {
+          // Grand total: bold, dark red background with white text
+          cellStyle = {
+            font: { bold: true, color: { rgb: 'FFFFFF' } },
+            fill: { fgColor: { rgb: 'B91C1C' } },
+          };
         }
 
         if (cellStyle) {
@@ -1125,34 +1174,37 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
     }
   }
 
-  // Add totals row
-  const cleanTotalsRow = {};
-  headers.forEach((h) => {
-    cleanTotalsRow[h] = totalsRow[h];
-  });
-  XLSX.utils.sheet_add_json(ws, [cleanTotalsRow], {
-    skipHeader: true,
-    origin: -1,
-  });
+  // Add totals row (skip for cash_register_all_detailed since it has its own grandTotal row)
+  if (reportType !== 'cash_register_all_detailed') {
+    const cleanTotalsRow = {};
+    headers.forEach((h) => {
+      cleanTotalsRow[h] = totalsRow[h];
+    });
+    XLSX.utils.sheet_add_json(ws, [cleanTotalsRow], {
+      skipHeader: true,
+      origin: -1,
+    });
 
-  // Update range after adding totals
-  const newRange = XLSX.utils.decode_range(ws['!ref']);
+    // Update range after adding totals
+    const updatedRange = XLSX.utils.decode_range(ws['!ref']);
 
-  // Style totals row (grand total for cash_register or regular totals)
-  const totalsRowIndex = newRange.e.r;
-  for (let col = newRange.s.c; col <= newRange.e.c; col++) {
-    const cell = XLSX.utils.encode_cell({ r: totalsRowIndex, c: col });
-    if (ws[cell]) {
-      ws[cell].s = {
-        font: { bold: true },
-        fill: { fgColor: { rgb: 'FECACA' } },
-      };
+    // Style totals row (grand total for cash_register or regular totals)
+    const totalsRowIndex = updatedRange.e.r;
+    for (let col = updatedRange.s.c; col <= updatedRange.e.c; col++) {
+      const cell = XLSX.utils.encode_cell({ r: totalsRowIndex, c: col });
+      if (ws[cell]) {
+        ws[cell].s = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: 'FECACA' } },
+        };
+      }
     }
   }
 
   // Format numeric cells
-  for (let row = 1; row <= newRange.e.r; row++) {
-    for (let col = 0; col <= newRange.e.c; col++) {
+  const finalRange = XLSX.utils.decode_range(ws['!ref']);
+  for (let row = 1; row <= finalRange.e.r; row++) {
+    for (let col = 0; col <= finalRange.e.c; col++) {
       const cell = XLSX.utils.encode_cell({ r: row, c: col });
       if (ws[cell] && typeof ws[cell].v === 'number') {
         ws[cell].z = '#,##0 Ft';
@@ -1239,13 +1291,15 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
     })
   );
 
-  // Add totals row
-  const totalsPdfRow = headers.map((h) => {
-    const val = totalsRow[h];
-    if (typeof val === 'number') return formatCurrency(val);
-    return sanitizeForPdf(val);
-  });
-  tableData.push(totalsPdfRow);
+  // Add totals row (skip for cash_register_all_detailed since it has its own grandTotal row)
+  if (reportType !== 'cash_register_all_detailed') {
+    const totalsPdfRow = headers.map((h) => {
+      const val = totalsRow[h];
+      if (typeof val === 'number') return formatCurrency(val);
+      return sanitizeForPdf(val);
+    });
+    tableData.push(totalsPdfRow);
+  }
 
   // Sanitize headers
   const sanitizedHeaders = headers.map((h) => sanitizeForPdf(h));
@@ -1303,6 +1357,11 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
           // Unit total: bold, light red background
           hookData.cell.styles.fontStyle = 'bold';
           hookData.cell.styles.fillColor = [254, 202, 202];
+        } else if (rowType === 'grandTotal') {
+          // Grand total: bold, dark red background with white text
+          hookData.cell.styles.fontStyle = 'bold';
+          hookData.cell.styles.fillColor = [185, 28, 28];
+          hookData.cell.styles.textColor = [255, 255, 255];
         }
       }
     },
@@ -1326,27 +1385,30 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
 }
 
 function exportToCsv(data, headers, totalsRow, filename, reportType) {
-  const totalsArray = headers.map((h) => {
-    const val = totalsRow[h];
-    if (typeof val === 'string' && val.includes(',')) {
-      return `"${val}"`;
-    }
-    return val;
-  });
+  const dataRows = data.map((row) =>
+    headers.map((h) => {
+      const val = row[h];
+      if (typeof val === 'string' && val.includes(',')) {
+        return `"${val}"`;
+      }
+      return val;
+    }).join(',')
+  );
 
-  const csvContent = [
-    headers.join(','),
-    ...data.map((row) =>
-      headers.map((h) => {
-        const val = row[h];
-        if (typeof val === 'string' && val.includes(',')) {
-          return `"${val}"`;
-        }
-        return val;
-      }).join(',')
-    ),
-    totalsArray.join(','),
-  ].join('\n');
+  // Add totals row (skip for cash_register_all_detailed since it has its own grandTotal row)
+  const csvRows = [headers.join(','), ...dataRows];
+  if (reportType !== 'cash_register_all_detailed') {
+    const totalsArray = headers.map((h) => {
+      const val = totalsRow[h];
+      if (typeof val === 'string' && val.includes(',')) {
+        return `"${val}"`;
+      }
+      return val;
+    });
+    csvRows.push(totalsArray.join(','));
+  }
+
+  const csvContent = csvRows.join('\n');
 
   const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' });
   const url = window.URL.createObjectURL(blob);
