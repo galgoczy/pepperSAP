@@ -6,7 +6,7 @@ import { formatCurrency, formatDate, PAYMENT_METHODS } from '../../lib/utils';
 
 export default function DailyReport({ date, unitId }) {
   const { revenue, cashRegisterTotals, cashRegisterDetails, loading: revenueLoading } = useDailyRevenue(unitId, date);
-  const { houseCash, calculatedData, loading: cashLoading } = useHouseCash(unitId, date);
+  const { houseCash, calculatedData, discrepancyDetails, loading: cashLoading } = useHouseCash(unitId, date);
   const { expenses, loading: expensesLoading } = useExpenses(unitId, date, date);
 
   const loading = revenueLoading || cashLoading || expensesLoading;
@@ -37,6 +37,8 @@ export default function DailyReport({ date, unitId }) {
     totalCashRegisterCard,
     totalCashRegisterRevenue,
     softwareRevenue,
+    totalDiscrepancies,
+    adjustedCash,
   } = calculatedData;
 
   // Use aggregated cash register totals from the hook
@@ -55,8 +57,8 @@ export default function DailyReport({ date, unitId }) {
   const changeAmount = parseFloat(houseCash?.change_amount) || 0;
   const extraIncome = parseFloat(houseCash?.other_extra_income) || 0;
 
-  // Pénztár zseb összesen: készpénz bevétel - hivatalos kifizetések - EFO
-  const officialTotal = totalCashRegisterCash - officialExpenses - efoPayments;
+  // Pénztár zseb összesen: korrigált készpénz (készpénz - elütések) - hivatalos kifizetések - EFO
+  const officialTotal = adjustedCash - officialExpenses - efoPayments;
 
   // Tartalék: szoftver-pénztárgép különbség + extra bevétel - nem számlás kifizetések
   const revenueDifference = softwareRevenue - totalCashRegisterRevenue;
@@ -196,23 +198,32 @@ export default function DailyReport({ date, unitId }) {
               </div>
             </div>
 
-            {/* Discrepancy */}
-            {parseFloat(revenue.discrepancy_amount) > 0 && (
+            {/* Discrepancies from cash registers */}
+            {discrepancyDetails && discrepancyDetails.length > 0 && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                <div className="flex justify-between items-center">
-                  <span className="font-medium text-red-700">Elütés:</span>
-                  <Badge variant="danger">
-                    {formatCurrency(
-                      revenue.discrepancy_amount,
-                      revenue.discrepancy_currency
-                    )}
-                  </Badge>
+                <h4 className="font-medium text-red-700 mb-2">
+                  Elütések
+                  {totalDiscrepancies > 0 && (
+                    <span className="ml-2 text-sm font-normal">
+                      (HUF összesen: {formatCurrency(totalDiscrepancies)})
+                    </span>
+                  )}
+                </h4>
+                <div className="space-y-2">
+                  {discrepancyDetails.map((disc, index) => (
+                    <div key={index} className="flex justify-between items-start text-sm">
+                      <div>
+                        <span className="text-red-600">{disc.registerName}</span>
+                        {disc.note && (
+                          <p className="text-red-500 text-xs">{disc.note}</p>
+                        )}
+                      </div>
+                      <Badge variant="danger">
+                        {formatCurrency(disc.amount)} {disc.currency}
+                      </Badge>
+                    </div>
+                  ))}
                 </div>
-                {revenue.discrepancy_note && (
-                  <p className="text-sm text-red-600 mt-1">
-                    {revenue.discrepancy_note}
-                  </p>
-                )}
               </div>
             )}
 
@@ -274,6 +285,18 @@ export default function DailyReport({ date, unitId }) {
                 <span className="text-gray-500">Napi készpénz (pénztárgép):</span>
                 <span className="font-medium">{formatCurrency(totalCashRegisterCash)}</span>
               </div>
+              {totalDiscrepancies > 0 && (
+                <div className="flex justify-between text-red-600">
+                  <span>Elütések levonva:</span>
+                  <span>-{formatCurrency(totalDiscrepancies)}</span>
+                </div>
+              )}
+              {totalDiscrepancies > 0 && (
+                <div className="flex justify-between text-gray-700 bg-yellow-50 p-1 rounded">
+                  <span>Korrigált készpénz:</span>
+                  <span className="font-medium">{formatCurrency(adjustedCash)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-red-600">
                 <span>Hivatalos kifizetések:</span>
                 <span>-{formatCurrency(officialExpenses)}</span>

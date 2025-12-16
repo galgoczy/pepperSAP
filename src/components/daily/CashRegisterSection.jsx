@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp, Printer } from 'lucide-react';
+import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp, Printer, Plus, Trash2 } from 'lucide-react';
 import { Card, Input, Select, Button } from '../common';
 import { Textarea } from '../common/Input';
 import { formatCurrency, formatDate } from '../../lib/utils';
@@ -9,15 +9,15 @@ import { jsPDF } from 'jspdf';
 // Feature flag: set to true to show SZÉP card fields
 const SHOW_SZEP_FIELDS = false;
 
+const DEFAULT_DISCREPANCY = { amount: '', currency: 'HUF', note: '' };
+
 const DEFAULT_FORM_DATA = {
   vat_0_percent: '',
   vat_5_percent: '',
   vat_18_percent: '',
   vat_27_percent: '',
   tips: '',
-  discrepancy_amount: '',
-  discrepancy_currency: 'HUF',
-  discrepancy_note: '',
+  discrepancies: [], // Array of {amount, currency, note}
   cash_payment: '',
   card_payment: '',
   szep_card_payment: '',
@@ -46,6 +46,11 @@ export default function CashRegisterSection({
   date,
 }) {
   const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
+
+  // Calculate total HUF discrepancy amount (only HUF entries)
+  const totalHufDiscrepancy = (formData.discrepancies || [])
+    .filter(d => d.currency === 'HUF')
+    .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
 
   // Generate discrepancy protocol PDF
   const generateDiscrepancyProtocol = () => {
@@ -76,27 +81,36 @@ export default function CashRegisterSection({
     doc.text(sanitizeForPdf(`Dátum: ${formatDate(date)}`), 20, 50);
     doc.text(sanitizeForPdf(`Pénztárgép: ${register.ap_number}${register.name ? ` (${register.name})` : ''}`), 20, 58);
 
-    // Discrepancy details
+    // Discrepancy details - now multiple
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text(sanitizeForPdf('Elütés adatai'), 20, 75);
+    doc.text(sanitizeForPdf('Elütések'), 20, 75);
 
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'normal');
-    const amount = parseFloat(formData.discrepancy_amount) || 0;
-    const currency = formData.discrepancy_currency || 'HUF';
-    doc.text(sanitizeForPdf(`Összeg: ${formatCurrency(amount)} ${currency}`), 20, 85);
-
-    // Reason section
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text(sanitizeForPdf('Indoklás:'), 20, 100);
-
+    let yPos = 85;
     doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    const reasonText = formData.discrepancy_note || 'Nincs megadva';
-    const reasonLines = doc.splitTextToSize(sanitizeForPdf(reasonText), pageWidth - 40);
-    doc.text(reasonLines, 20, 110);
+
+    (formData.discrepancies || []).forEach((disc, index) => {
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf(`${index + 1}. elütés:`), 20, yPos);
+      yPos += 7;
+      doc.setFont('helvetica', 'normal');
+      const amount = parseFloat(disc.amount) || 0;
+      doc.text(sanitizeForPdf(`Összeg: ${formatCurrency(amount)} ${disc.currency}`), 25, yPos);
+      yPos += 6;
+      if (disc.note) {
+        const noteLines = doc.splitTextToSize(sanitizeForPdf(`Indoklás: ${disc.note}`), pageWidth - 50);
+        doc.text(noteLines, 25, yPos);
+        yPos += noteLines.length * 5 + 5;
+      }
+      yPos += 3;
+    });
+
+    // Total
+    if (formData.discrepancies?.length > 1) {
+      yPos += 5;
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf(`Összesen (HUF): ${formatCurrency(totalHufDiscrepancy)}`), 20, yPos);
+    }
 
     // Signature section at bottom
     const signatureY = 220;
@@ -130,15 +144,25 @@ export default function CashRegisterSection({
 
   useEffect(() => {
     if (existingData) {
+      // Handle migration from old single discrepancy fields to new array
+      let discrepancies = existingData.discrepancies || [];
+
+      // If discrepancies array is empty but old fields have data, migrate
+      if ((!discrepancies || discrepancies.length === 0) && existingData.discrepancy_amount) {
+        discrepancies = [{
+          amount: existingData.discrepancy_amount || '',
+          currency: existingData.discrepancy_currency || 'HUF',
+          note: existingData.discrepancy_note || '',
+        }];
+      }
+
       setFormData({
         vat_0_percent: existingData.vat_0_percent || '',
         vat_5_percent: existingData.vat_5_percent || '',
         vat_18_percent: existingData.vat_18_percent || '',
         vat_27_percent: existingData.vat_27_percent || '',
         tips: existingData.tips || '',
-        discrepancy_amount: existingData.discrepancy_amount || '',
-        discrepancy_currency: existingData.discrepancy_currency || 'HUF',
-        discrepancy_note: existingData.discrepancy_note || '',
+        discrepancies: discrepancies,
         cash_payment: existingData.cash_payment || '',
         card_payment: existingData.card_payment || '',
         szep_card_payment: existingData.szep_card_payment || '',
@@ -155,6 +179,24 @@ export default function CashRegisterSection({
     const newData = { ...formData, [field]: value };
     setFormData(newData);
     onChange(register.id, newData);
+  };
+
+  // Discrepancy management functions
+  const addDiscrepancy = () => {
+    const newDiscrepancies = [...(formData.discrepancies || []), { ...DEFAULT_DISCREPANCY }];
+    handleChange('discrepancies', newDiscrepancies);
+  };
+
+  const removeDiscrepancy = (index) => {
+    const newDiscrepancies = formData.discrepancies.filter((_, i) => i !== index);
+    handleChange('discrepancies', newDiscrepancies);
+  };
+
+  const updateDiscrepancy = (index, field, value) => {
+    const newDiscrepancies = formData.discrepancies.map((d, i) =>
+      i === index ? { ...d, [field]: value } : d
+    );
+    handleChange('discrepancies', newDiscrepancies);
   };
 
   // Calculate totals
@@ -280,51 +322,91 @@ export default function CashRegisterSection({
             </div>
           </div>
 
-          {/* Discrepancy */}
+          {/* Discrepancies - Multiple entries */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-medium text-gray-700">Elütés</h4>
-              {(parseFloat(formData.discrepancy_amount) || 0) !== 0 && (
+              <h4 className="text-sm font-medium text-gray-700">
+                Elütések
+                {totalHufDiscrepancy > 0 && (
+                  <span className="ml-2 text-red-600 font-normal">
+                    (Össz: {formatCurrency(totalHufDiscrepancy)})
+                  </span>
+                )}
+              </h4>
+              <div className="flex gap-2">
+                {(formData.discrepancies || []).length > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={generateDiscrepancyProtocol}
+                    title="Jegyzőkönyv nyomtatása"
+                  >
+                    <Printer className="h-4 w-4" />
+                  </Button>
+                )}
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={generateDiscrepancyProtocol}
-                  title="Jegyzőkönyv nyomtatása"
+                  onClick={addDiscrepancy}
                 >
-                  <Printer className="h-4 w-4" />
+                  <Plus className="h-4 w-4" />
+                  Új elütés
                 </Button>
-              )}
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <Input
-                label="Összeg"
-                type="number"
-                step="0.01"
-                value={formData.discrepancy_amount}
-                onChange={(e) => handleChange('discrepancy_amount', e.target.value)}
-                size="sm"
-              />
-              <Select
-                label="Deviza"
-                value={formData.discrepancy_currency}
-                onChange={(e) => handleChange('discrepancy_currency', e.target.value)}
-                options={[
-                  { value: 'HUF', label: 'HUF' },
-                  { value: 'EUR', label: 'EUR' },
-                ]}
-                size="sm"
-              />
-              <div className="md:col-span-3">
-                <Textarea
-                  label="Indoklás"
-                  value={formData.discrepancy_note}
-                  onChange={(e) => handleChange('discrepancy_note', e.target.value)}
-                  rows={3}
-                  placeholder="Elütés indoklása tételenként leírva..."
-                />
               </div>
             </div>
+
+            {(formData.discrepancies || []).length === 0 ? (
+              <p className="text-sm text-gray-400 italic">Nincs rögzített elütés</p>
+            ) : (
+              <div className="space-y-4">
+                {formData.discrepancies.map((disc, index) => (
+                  <div key={index} className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-red-700">{index + 1}. elütés</span>
+                      <button
+                        type="button"
+                        onClick={() => removeDiscrepancy(index)}
+                        className="text-red-600 hover:text-red-800 p-1"
+                        title="Törlés"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <Input
+                        label="Összeg"
+                        type="number"
+                        step="0.01"
+                        value={disc.amount}
+                        onChange={(e) => updateDiscrepancy(index, 'amount', e.target.value)}
+                        size="sm"
+                      />
+                      <Select
+                        label="Deviza"
+                        value={disc.currency}
+                        onChange={(e) => updateDiscrepancy(index, 'currency', e.target.value)}
+                        options={[
+                          { value: 'HUF', label: 'HUF' },
+                          { value: 'EUR', label: 'EUR' },
+                        ]}
+                        size="sm"
+                      />
+                      <div className="md:col-span-3">
+                        <Textarea
+                          label="Indoklás"
+                          value={disc.note}
+                          onChange={(e) => updateDiscrepancy(index, 'note', e.target.value)}
+                          rows={2}
+                          placeholder="Elütés indoklása..."
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Payment methods */}

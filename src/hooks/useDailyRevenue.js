@@ -193,7 +193,10 @@ export function useHouseCash(unitId, date) {
     totalCashRegisterCard: 0,    // Összes pénztárgép bankkártya bevétel
     totalCashRegisterRevenue: 0, // Összes pénztárgép forgalom (ÁFA összesen)
     softwareRevenue: 0,          // Szoftver bevétel
+    totalDiscrepancies: 0,       // Összes HUF elütés
+    adjustedCash: 0,             // Készpénz - elütések (korrigált készpénz)
   });
+  const [discrepancyDetails, setDiscrepancyDetails] = useState([]); // All discrepancy entries
   const [loading, setLoading] = useState(true);
 
   const fetchHouseCash = useCallback(async () => {
@@ -207,7 +210,10 @@ export function useHouseCash(unitId, date) {
         totalCashRegisterCard: 0,
         totalCashRegisterRevenue: 0,
         softwareRevenue: 0,
+        totalDiscrepancies: 0,
+        adjustedCash: 0,
       });
+      setDiscrepancyDetails([]);
       setLoading(false);
       return;
     }
@@ -266,7 +272,12 @@ export function useHouseCash(unitId, date) {
       if (dailyRevenueResult.data?.id) {
         const { data: crData, error: crError } = await supabase
           .from('cash_register_revenue')
-          .select('cash_payment, card_payment, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips')
+          .select(`
+            cash_payment, card_payment,
+            vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips,
+            discrepancies, discrepancy_amount, discrepancy_currency, discrepancy_note,
+            cash_registers (ap_number, name)
+          `)
           .eq('daily_revenue_id', dailyRevenueResult.data.id);
 
         if (!crError) {
@@ -291,11 +302,49 @@ export function useHouseCash(unitId, date) {
         0
       );
 
+      // Calculate total HUF discrepancies from all cash registers
+      // Handle both new array format and old single field format
+      let totalDiscrepancies = 0;
+      const allDiscrepancies = [];
+
+      cashRegisterRevenues.forEach(cr => {
+        const registerName = cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Pénztárgép';
+
+        // New array format
+        if (cr.discrepancies && Array.isArray(cr.discrepancies)) {
+          cr.discrepancies.forEach(disc => {
+            if (disc.currency === 'HUF') {
+              totalDiscrepancies += parseFloat(disc.amount) || 0;
+            }
+            allDiscrepancies.push({
+              ...disc,
+              registerName,
+            });
+          });
+        }
+        // Old single field format (fallback)
+        else if (cr.discrepancy_amount && parseFloat(cr.discrepancy_amount) !== 0) {
+          if (cr.discrepancy_currency === 'HUF') {
+            totalDiscrepancies += parseFloat(cr.discrepancy_amount) || 0;
+          }
+          allDiscrepancies.push({
+            amount: cr.discrepancy_amount,
+            currency: cr.discrepancy_currency || 'HUF',
+            note: cr.discrepancy_note || '',
+            registerName,
+          });
+        }
+      });
+
+      // Adjusted cash = total cash - HUF discrepancies
+      const adjustedCash = totalCashRegisterCash - totalDiscrepancies;
+
       // Software revenue
       const softwareRevenue = parseFloat(dailyRevenueResult.data?.total_revenue) || 0;
 
       setHouseCash(currentResult.data || null);
       setPreviousDayClosing(previousResult.data?.official_total || null);
+      setDiscrepancyDetails(allDiscrepancies);
       setCalculatedData({
         officialExpenses,
         nonOfficialExpenses,
@@ -303,6 +352,8 @@ export function useHouseCash(unitId, date) {
         totalCashRegisterCard,
         totalCashRegisterRevenue,
         softwareRevenue,
+        totalDiscrepancies,
+        adjustedCash,
       });
     } catch (error) {
       console.error('Error fetching house cash:', error);
@@ -368,6 +419,7 @@ export function useHouseCash(unitId, date) {
     houseCash,
     previousDayClosing,
     calculatedData,
+    discrepancyDetails,
     loading,
     refetch: fetchHouseCash,
     saveHouseCash,
