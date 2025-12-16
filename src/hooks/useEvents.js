@@ -207,6 +207,8 @@ export function useEvent(eventId) {
         payment_deadline: revenueData.payment_deadline || null,
         fulfillment_date: revenueData.fulfillment_date || null,
         amount: revenueData.amount || null,
+        net_amount: revenueData.net_amount || null,
+        vat_rate: revenueData.vat_rate ?? 27,
       };
 
       const { data, error } = await supabase
@@ -235,6 +237,8 @@ export function useEvent(eventId) {
         payment_deadline: revenueData.payment_deadline || null,
         fulfillment_date: revenueData.fulfillment_date || null,
         amount: revenueData.amount || null,
+        net_amount: revenueData.net_amount || null,
+        vat_rate: revenueData.vat_rate ?? 27,
       };
 
       const { data, error } = await supabase
@@ -279,6 +283,9 @@ export function useEvent(eventId) {
         payment_deadline: expenseData.payment_deadline || null,
         fulfillment_date: expenseData.fulfillment_date || null,
         amount: expenseData.amount || null,
+        net_amount: expenseData.net_amount || null,
+        vat_rate: expenseData.vat_rate || null,
+        is_efo: expenseData.is_efo ?? false,
       };
 
       const { data, error } = await supabase
@@ -307,6 +314,9 @@ export function useEvent(eventId) {
         payment_deadline: expenseData.payment_deadline || null,
         fulfillment_date: expenseData.fulfillment_date || null,
         amount: expenseData.amount || null,
+        net_amount: expenseData.net_amount || null,
+        vat_rate: expenseData.vat_rate || null,
+        is_efo: expenseData.is_efo ?? false,
       };
 
       const { data, error } = await supabase

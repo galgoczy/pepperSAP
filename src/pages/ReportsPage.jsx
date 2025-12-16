@@ -36,12 +36,19 @@ function getPreviousMonthDates() {
 }
 
 export default function ReportsPage() {
-  const { isAdmin, isEvents, unitId } = useAuth();
+  const { isAdmin, isEvents, isAccountant, canViewAllUnits, unitId } = useAuth();
   const { units } = useUnits();
   const [startDate, setStartDate] = useState(getFirstDayOfMonth());
   const [endDate, setEndDate] = useState(getLastDayOfMonth());
-  // Admin defaults to "all units" view with full_monthly_all report
-  const [reportType, setReportType] = useState(isAdmin && !unitId ? 'full_monthly_all' : 'full_monthly');
+  // Set default report type based on user role
+  const getDefaultReportType = () => {
+    if (isEvents) return 'events';
+    if (isAccountant && !unitId) return 'cash_register_all_simple';
+    if (isAccountant) return 'cash_register';
+    if (isAdmin && !unitId) return 'full_monthly_all';
+    return 'full_monthly';
+  };
+  const [reportType, setReportType] = useState(getDefaultReportType());
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState(unitId || '');
 
@@ -52,6 +59,19 @@ export default function ReportsPage() {
   const getAvailableReportTypes = () => {
     if (isEvents) {
       return [{ value: 'events', label: 'Rendezvény összesítő' }];
+    }
+
+    if (isAccountant && !selectedUnit) {
+      // Accountant with "all units" selected - show only cash register reports
+      return [
+        { value: 'cash_register_all_simple', label: 'Pénztárgép forgalom - összes egység (egyszerű)' },
+        { value: 'cash_register_all_detailed', label: 'Pénztárgép forgalom - összes egység (részletes)' },
+      ];
+    }
+
+    if (isAccountant && selectedUnit) {
+      // Accountant with specific unit - show only cash register report
+      return [{ value: 'cash_register', label: 'Pénztárgép jelentés' }];
     }
 
     if (isAdmin && !selectedUnit) {
@@ -68,9 +88,13 @@ export default function ReportsPage() {
   // Reset report type if current selection is not available
   const handleUnitChange = (newUnit) => {
     setSelectedUnit(newUnit);
-    // If switching to/from "all units", reset report type
+    // If switching to/from "all units", reset report type based on role
     if ((newUnit === '' && selectedUnit !== '') || (newUnit !== '' && selectedUnit === '')) {
-      setReportType(newUnit === '' ? 'full_monthly_all' : 'full_monthly');
+      if (isAccountant) {
+        setReportType(newUnit === '' ? 'cash_register_all_simple' : 'cash_register');
+      } else {
+        setReportType(newUnit === '' ? 'full_monthly_all' : 'full_monthly');
+      }
     }
   };
 
@@ -81,7 +105,7 @@ export default function ReportsPage() {
   ];
 
   // Determine effective unit ID for reports
-  const effectiveUnitId = isAdmin ? selectedUnit : unitId;
+  const effectiveUnitId = canViewAllUnits ? selectedUnit : unitId;
 
   return (
     <div className="space-y-6">
@@ -164,7 +188,7 @@ export default function ReportsPage() {
             )}
           </div>
 
-          {isAdmin && (
+          {canViewAllUnits && (
             <Select
               label="Egység"
               value={selectedUnit}

@@ -1,10 +1,11 @@
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import AdminDashboard from '../components/dashboard/AdminDashboard';
 import UnitDashboard from '../components/dashboard/UnitDashboard';
 import EventsDashboard from '../components/dashboard/EventsDashboard';
 
 export default function DashboardPage() {
-  const { isAdmin, isEvents, isUnit } = useAuth();
+  const { isAdmin, isEvents, isUnit, isAccountant } = useAuth();
 
   if (isAdmin) {
     return <AdminDashboard />;
@@ -16,6 +17,11 @@ export default function DashboardPage() {
 
   if (isUnit) {
     return <UnitDashboard />;
+  }
+
+  // Accountant users are redirected to reports page
+  if (isAccountant) {
+    return <Navigate to="/reports" replace />;
   }
 
   return null;

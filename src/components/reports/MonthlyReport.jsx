@@ -19,12 +19,14 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId, 
   const [data, setData] = useState([]);
   const [totals, setTotals] = useState({});
   const [unitName, setUnitName] = useState('');
+  const [eventsList, setEventsList] = useState([]);
 
   useEffect(() => {
     // Reset data immediately when report type changes to prevent rendering old data with new component
     setData([]);
     setTotals({});
     setUnitName('');
+    setEventsList([]);
 
     async function fetchReportData() {
       setLoading(true);
@@ -33,6 +35,7 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId, 
         let reportData = [];
         let reportTotals = {};
         let reportUnitName = '';
+        let reportEventsList = [];
 
         // Single unit reports (or admin with specific unit)
         if (reportType === 'full_monthly') {
@@ -77,11 +80,13 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId, 
           const result = await fetchEventsAllUnits(startDate, endDate);
           reportData = result.data;
           reportTotals = result.totals;
+          reportEventsList = result.eventsList || [];
         }
 
         setData(reportData);
         setTotals(reportTotals);
         setUnitName(reportUnitName);
+        setEventsList(reportEventsList);
       } catch (error) {
         console.error('Error fetching report data:', error);
       } finally {
@@ -137,7 +142,7 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId, 
     return <CashRegisterAllUnitsDetailedReport data={data} totals={totals} />;
   }
   if (reportType === 'events_all') {
-    return <EventsAllUnitsReport data={data} totals={totals} />;
+    return <EventsAllUnitsReport data={data} totals={totals} eventsList={eventsList} />;
   }
 
   return null;
@@ -429,7 +434,7 @@ async function fetchEventsData(startDate, endDate, unitId) {
 
   const [revenuesResult, expensesResult] = await Promise.all([
     supabase.from('event_revenues').select('event_id, amount').in('event_id', eventIds),
-    supabase.from('event_expenses').select('event_id, amount').in('event_id', eventIds),
+    supabase.from('event_expenses').select('event_id, amount, is_efo, is_official').in('event_id', eventIds),
   ]);
 
   const revenueByEvent = {};
@@ -440,19 +445,40 @@ async function fetchEventsData(startDate, endDate, unitId) {
   });
 
   (expensesResult.data || []).forEach((e) => {
-    expenseByEvent[e.event_id] = (expenseByEvent[e.event_id] || 0) + parseFloat(e.amount);
+    if (!expenseByEvent[e.event_id]) {
+      expenseByEvent[e.event_id] = { total: 0, official: 0, efo: 0, nonOfficial: 0 };
+    }
+    const amount = parseFloat(e.amount) || 0;
+    expenseByEvent[e.event_id].total += amount;
+    if (e.is_efo) {
+      expenseByEvent[e.event_id].efo += amount;
+    } else if (e.is_official === false) {
+      expenseByEvent[e.event_id].nonOfficial += amount;
+    } else {
+      expenseByEvent[e.event_id].official += amount;
+    }
   });
 
-  const data = events.map((event) => ({
-    ...event,
-    total_revenue: revenueByEvent[event.id] || 0,
-    total_expenses: expenseByEvent[event.id] || 0,
-    profit: (revenueByEvent[event.id] || 0) - (expenseByEvent[event.id] || 0),
-  }));
+  const data = events.map((event) => {
+    const expenses = expenseByEvent[event.id] || { total: 0, official: 0, efo: 0, nonOfficial: 0 };
+    const revenue = revenueByEvent[event.id] || 0;
+    return {
+      ...event,
+      total_revenue: revenue,
+      total_expenses: expenses.total,
+      official_expenses: expenses.official,
+      efo_expenses: expenses.efo,
+      non_official_expenses: expenses.nonOfficial,
+      profit: revenue - expenses.total,
+    };
+  });
 
   const totals = {
     total_revenue: data.reduce((sum, e) => sum + e.total_revenue, 0),
     total_expenses: data.reduce((sum, e) => sum + e.total_expenses, 0),
+    official_expenses: data.reduce((sum, e) => sum + e.official_expenses, 0),
+    efo_expenses: data.reduce((sum, e) => sum + e.efo_expenses, 0),
+    non_official_expenses: data.reduce((sum, e) => sum + e.non_official_expenses, 0),
     profit: data.reduce((sum, e) => sum + e.profit, 0),
   };
 
@@ -811,17 +837,18 @@ async function fetchEventsAllUnits(startDate, endDate) {
     .from('events')
     .select('*, units(name)')
     .gte('event_date', startDate)
-    .lte('event_date', endDate);
+    .lte('event_date', endDate)
+    .order('event_date', { ascending: true });
 
   if (!events?.length) {
-    return { data: [], totals: {} };
+    return { data: [], totals: {}, eventsList: [] };
   }
 
   const eventIds = events.map((e) => e.id);
 
   const [revenuesResult, expensesResult] = await Promise.all([
     supabase.from('event_revenues').select('event_id, amount').in('event_id', eventIds),
-    supabase.from('event_expenses').select('event_id, amount').in('event_id', eventIds),
+    supabase.from('event_expenses').select('event_id, amount, is_efo, is_official').in('event_id', eventIds),
   ]);
 
   const revenueByEvent = {};
@@ -832,29 +859,61 @@ async function fetchEventsAllUnits(startDate, endDate) {
   });
 
   (expensesResult.data || []).forEach((e) => {
-    expenseByEvent[e.event_id] = (expenseByEvent[e.event_id] || 0) + parseFloat(e.amount);
+    if (!expenseByEvent[e.event_id]) {
+      expenseByEvent[e.event_id] = { total: 0, official: 0, efo: 0, nonOfficial: 0 };
+    }
+    const amount = parseFloat(e.amount) || 0;
+    expenseByEvent[e.event_id].total += amount;
+    if (e.is_efo) {
+      expenseByEvent[e.event_id].efo += amount;
+    } else if (e.is_official === false) {
+      expenseByEvent[e.event_id].nonOfficial += amount;
+    } else {
+      expenseByEvent[e.event_id].official += amount;
+    }
+  });
+
+  // Build events list with details
+  const eventsList = events.map((event) => {
+    const expenses = expenseByEvent[event.id] || { total: 0, official: 0, efo: 0, nonOfficial: 0 };
+    const revenue = revenueByEvent[event.id] || 0;
+    return {
+      ...event,
+      unitName: event.units?.name || 'Ismeretlen',
+      total_revenue: revenue,
+      total_expenses: expenses.total,
+      official_expenses: expenses.official,
+      efo_expenses: expenses.efo,
+      non_official_expenses: expenses.nonOfficial,
+      profit: revenue - expenses.total,
+    };
   });
 
   // Group by unit
   const unitData = {};
-  events.forEach((event) => {
-    const unitName = event.units?.name || 'Ismeretlen';
+  eventsList.forEach((event) => {
     const unitId = event.unit_id;
 
     if (!unitData[unitId]) {
       unitData[unitId] = {
-        unitName,
+        unitName: event.unitName,
         eventCount: 0,
         total_revenue: 0,
         total_expenses: 0,
+        official_expenses: 0,
+        efo_expenses: 0,
+        non_official_expenses: 0,
         profit: 0,
       };
     }
 
     unitData[unitId].eventCount += 1;
-    unitData[unitId].total_revenue += revenueByEvent[event.id] || 0;
-    unitData[unitId].total_expenses += expenseByEvent[event.id] || 0;
-    unitData[unitId].profit += (revenueByEvent[event.id] || 0) - (expenseByEvent[event.id] || 0);
+    unitData[unitId].total_revenue += event.total_revenue;
+    unitData[unitId].total_expenses += event.total_expenses;
+    unitData[unitId].official_expenses += event.official_expenses;
+    unitData[unitId].efo_expenses += event.efo_expenses;
+    unitData[unitId].non_official_expenses += event.non_official_expenses;
+    unitData[unitId].profit += event.profit;
   });
 
   const data = Object.values(unitData).sort((a, b) => a.unitName.localeCompare(b.unitName));
@@ -863,10 +922,13 @@ async function fetchEventsAllUnits(startDate, endDate) {
     eventCount: data.reduce((sum, r) => sum + r.eventCount, 0),
     total_revenue: data.reduce((sum, r) => sum + r.total_revenue, 0),
     total_expenses: data.reduce((sum, r) => sum + r.total_expenses, 0),
+    official_expenses: data.reduce((sum, r) => sum + r.official_expenses, 0),
+    efo_expenses: data.reduce((sum, r) => sum + r.efo_expenses, 0),
+    non_official_expenses: data.reduce((sum, r) => sum + r.non_official_expenses, 0),
     profit: data.reduce((sum, r) => sum + r.profit, 0),
   };
 
-  return { data, totals };
+  return { data, totals, eventsList };
 }
 
 // ============================================
@@ -1184,35 +1246,68 @@ function EventsReport({ data, totals, unitName }) {
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-pepper-red bg-opacity-10">
             <tr>
-              <th className="px-4 py-2 text-left">Dátum</th>
-              <th className="px-4 py-2 text-left">Rendezvény</th>
-              <th className="px-4 py-2 text-right">Bevétel</th>
-              <th className="px-4 py-2 text-right">Költség</th>
-              <th className="px-4 py-2 text-right">Eredmény</th>
+              <th className="px-3 py-2 text-left">Dátum</th>
+              <th className="px-3 py-2 text-left">Rendezvény</th>
+              <th className="px-3 py-2 text-right">Bevétel</th>
+              <th className="px-3 py-2 text-right">Számlás</th>
+              <th className="px-3 py-2 text-right">EFO</th>
+              <th className="px-3 py-2 text-right">Nem számlás</th>
+              <th className="px-3 py-2 text-right">Költség össz.</th>
+              <th className="px-3 py-2 text-right font-semibold bg-pepper-red bg-opacity-20">Eredmény</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {data.map((row) => (
               <tr key={row.id} className="hover:bg-gray-50">
-                <td className="px-4 py-2">{formatDate(row.event_date)}</td>
-                <td className="px-4 py-2">{row.name}</td>
-                <td className="px-4 py-2 text-right text-green-600">{formatCurrency(row.total_revenue)}</td>
-                <td className="px-4 py-2 text-right text-red-600">{formatCurrency(row.total_expenses)}</td>
-                <td className={`px-4 py-2 text-right font-semibold ${row.profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                <td className="px-3 py-2">{formatDate(row.event_date)}</td>
+                <td className="px-3 py-2">{row.name}</td>
+                <td className="px-3 py-2 text-right text-green-600">{formatCurrency(row.total_revenue)}</td>
+                <td className="px-3 py-2 text-right text-red-600">{formatCurrency(row.official_expenses)}</td>
+                <td className="px-3 py-2 text-right text-orange-600">{formatCurrency(row.efo_expenses)}</td>
+                <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(row.non_official_expenses)}</td>
+                <td className="px-3 py-2 text-right text-red-700">{formatCurrency(row.total_expenses)}</td>
+                <td className={`px-3 py-2 text-right font-semibold ${row.profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                   {formatCurrency(row.profit)}
                 </td>
               </tr>
             ))}
             <tr className="bg-gray-100 font-bold">
-              <td className="px-4 py-2" colSpan={2}>Összesen</td>
-              <td className="px-4 py-2 text-right text-green-700">{formatCurrency(totals.total_revenue)}</td>
-              <td className="px-4 py-2 text-right text-red-700">{formatCurrency(totals.total_expenses)}</td>
-              <td className={`px-4 py-2 text-right ${totals.profit >= 0 ? 'text-green-800' : 'text-red-800'}`}>
+              <td className="px-3 py-2" colSpan={2}>Összesen</td>
+              <td className="px-3 py-2 text-right text-green-700">{formatCurrency(totals.total_revenue)}</td>
+              <td className="px-3 py-2 text-right text-red-700">{formatCurrency(totals.official_expenses)}</td>
+              <td className="px-3 py-2 text-right text-orange-700">{formatCurrency(totals.efo_expenses)}</td>
+              <td className="px-3 py-2 text-right text-gray-700">{formatCurrency(totals.non_official_expenses)}</td>
+              <td className="px-3 py-2 text-right text-red-800">{formatCurrency(totals.total_expenses)}</td>
+              <td className={`px-3 py-2 text-right ${totals.profit >= 0 ? 'text-green-800' : 'text-red-800'}`}>
                 {formatCurrency(totals.profit)}
               </td>
             </tr>
           </tbody>
         </table>
+      </div>
+
+      {/* Summary cards */}
+      <div className="mt-4 pt-4 border-t border-gray-200">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+          <div className="bg-green-50 rounded-lg p-3">
+            <p className="text-sm text-green-600">Összes bevétel (bruttó)</p>
+            <p className="text-lg font-bold text-green-700">{formatCurrency(totals.total_revenue)}</p>
+          </div>
+          <div className="bg-red-50 rounded-lg p-3">
+            <p className="text-sm text-red-600">Számlás költség</p>
+            <p className="text-lg font-bold text-red-700">{formatCurrency(totals.official_expenses)}</p>
+          </div>
+          <div className="bg-orange-50 rounded-lg p-3">
+            <p className="text-sm text-orange-600">EFO költség</p>
+            <p className="text-lg font-bold text-orange-700">{formatCurrency(totals.efo_expenses)}</p>
+          </div>
+          <div className={`rounded-lg p-3 ${totals.profit >= 0 ? 'bg-blue-50' : 'bg-red-100'}`}>
+            <p className={`text-sm ${totals.profit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>Eredmény</p>
+            <p className={`text-lg font-bold ${totals.profit >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
+              {formatCurrency(totals.profit)}
+            </p>
+          </div>
+        </div>
       </div>
     </Card>
   );
@@ -1494,44 +1589,134 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
   );
 }
 
-function EventsAllUnitsReport({ data, totals }) {
+function EventsAllUnitsReport({ data, totals, eventsList }) {
+  const [showAllEvents, setShowAllEvents] = useState(false);
+
   return (
-    <Card title="Rendezvény összesítő - összes egység">
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-pepper-red bg-opacity-10">
-            <tr>
-              <th className="px-4 py-2 text-left">Egység</th>
-              <th className="px-4 py-2 text-right">Események</th>
-              <th className="px-4 py-2 text-right">Bevétel</th>
-              <th className="px-4 py-2 text-right">Költség</th>
-              <th className="px-4 py-2 text-right">Eredmény</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {data.map((row) => (
-              <tr key={row.unitName} className="hover:bg-gray-50">
-                <td className="px-4 py-2 font-medium">{row.unitName}</td>
-                <td className="px-4 py-2 text-right">{row.eventCount}</td>
-                <td className="px-4 py-2 text-right text-green-600">{formatCurrency(row.total_revenue)}</td>
-                <td className="px-4 py-2 text-right text-red-600">{formatCurrency(row.total_expenses)}</td>
-                <td className={`px-4 py-2 text-right font-semibold ${row.profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                  {formatCurrency(row.profit)}
+    <div className="space-y-6">
+      <Card title="Rendezvény összesítő - összes egység">
+        {/* Summary by unit */}
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-pepper-red bg-opacity-10">
+              <tr>
+                <th className="px-3 py-2 text-left">Egység</th>
+                <th className="px-3 py-2 text-right">Db</th>
+                <th className="px-3 py-2 text-right">Bevétel</th>
+                <th className="px-3 py-2 text-right">Számlás</th>
+                <th className="px-3 py-2 text-right">EFO</th>
+                <th className="px-3 py-2 text-right">Nem számlás</th>
+                <th className="px-3 py-2 text-right">Költség össz.</th>
+                <th className="px-3 py-2 text-right font-semibold bg-pepper-red bg-opacity-20">Eredmény</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {data.map((row) => (
+                <tr key={row.unitName} className="hover:bg-gray-50">
+                  <td className="px-3 py-2 font-medium">{row.unitName}</td>
+                  <td className="px-3 py-2 text-right">{row.eventCount}</td>
+                  <td className="px-3 py-2 text-right text-green-600">{formatCurrency(row.total_revenue)}</td>
+                  <td className="px-3 py-2 text-right text-red-600">{formatCurrency(row.official_expenses)}</td>
+                  <td className="px-3 py-2 text-right text-orange-600">{formatCurrency(row.efo_expenses)}</td>
+                  <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(row.non_official_expenses)}</td>
+                  <td className="px-3 py-2 text-right text-red-700">{formatCurrency(row.total_expenses)}</td>
+                  <td className={`px-3 py-2 text-right font-semibold ${row.profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                    {formatCurrency(row.profit)}
+                  </td>
+                </tr>
+              ))}
+              <tr className="bg-gray-100 font-bold">
+                <td className="px-3 py-2">Mindösszesen</td>
+                <td className="px-3 py-2 text-right">{totals.eventCount}</td>
+                <td className="px-3 py-2 text-right text-green-700">{formatCurrency(totals.total_revenue)}</td>
+                <td className="px-3 py-2 text-right text-red-700">{formatCurrency(totals.official_expenses)}</td>
+                <td className="px-3 py-2 text-right text-orange-700">{formatCurrency(totals.efo_expenses)}</td>
+                <td className="px-3 py-2 text-right text-gray-700">{formatCurrency(totals.non_official_expenses)}</td>
+                <td className="px-3 py-2 text-right text-red-800">{formatCurrency(totals.total_expenses)}</td>
+                <td className={`px-3 py-2 text-right ${totals.profit >= 0 ? 'text-green-800' : 'text-red-800'}`}>
+                  {formatCurrency(totals.profit)}
                 </td>
               </tr>
-            ))}
-            <tr className="bg-gray-100 font-bold">
-              <td className="px-4 py-2">Mindösszesen</td>
-              <td className="px-4 py-2 text-right">{totals.eventCount}</td>
-              <td className="px-4 py-2 text-right text-green-700">{formatCurrency(totals.total_revenue)}</td>
-              <td className="px-4 py-2 text-right text-red-700">{formatCurrency(totals.total_expenses)}</td>
-              <td className={`px-4 py-2 text-right ${totals.profit >= 0 ? 'text-green-800' : 'text-red-800'}`}>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Summary cards */}
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-sm text-gray-600">Események</p>
+              <p className="text-lg font-bold text-gray-700">{totals.eventCount} db</p>
+            </div>
+            <div className="bg-green-50 rounded-lg p-3">
+              <p className="text-sm text-green-600">Bevétel (bruttó)</p>
+              <p className="text-lg font-bold text-green-700">{formatCurrency(totals.total_revenue)}</p>
+            </div>
+            <div className="bg-red-50 rounded-lg p-3">
+              <p className="text-sm text-red-600">Számlás költség</p>
+              <p className="text-lg font-bold text-red-700">{formatCurrency(totals.official_expenses)}</p>
+            </div>
+            <div className="bg-orange-50 rounded-lg p-3">
+              <p className="text-sm text-orange-600">EFO költség</p>
+              <p className="text-lg font-bold text-orange-700">{formatCurrency(totals.efo_expenses)}</p>
+            </div>
+            <div className={`rounded-lg p-3 ${totals.profit >= 0 ? 'bg-blue-50' : 'bg-red-100'}`}>
+              <p className={`text-sm ${totals.profit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>Eredmény</p>
+              <p className={`text-lg font-bold ${totals.profit >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
                 {formatCurrency(totals.profit)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </Card>
+              </p>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Expandable events list */}
+      {eventsList && eventsList.length > 0 && (
+        <Card>
+          <button
+            onClick={() => setShowAllEvents(!showAllEvents)}
+            className="w-full flex items-center justify-between text-left font-medium text-gray-900 hover:text-pepper-red transition-colors"
+          >
+            <span>Összes rendezvény részletesen ({eventsList.length} db)</span>
+            <span className="text-sm text-gray-500">{showAllEvents ? '▲ Összecsuk' : '▼ Kinyit'}</span>
+          </button>
+
+          {showAllEvents && (
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Dátum</th>
+                    <th className="px-3 py-2 text-left">Egység</th>
+                    <th className="px-3 py-2 text-left">Rendezvény</th>
+                    <th className="px-3 py-2 text-right">Bevétel</th>
+                    <th className="px-3 py-2 text-right">Számlás</th>
+                    <th className="px-3 py-2 text-right">EFO</th>
+                    <th className="px-3 py-2 text-right">Nem sz.</th>
+                    <th className="px-3 py-2 text-right">Eredmény</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {eventsList.map((event) => (
+                    <tr key={event.id} className="hover:bg-gray-50">
+                      <td className="px-3 py-2">{formatDate(event.event_date)}</td>
+                      <td className="px-3 py-2 text-gray-600">{event.unitName}</td>
+                      <td className="px-3 py-2">{event.name}</td>
+                      <td className="px-3 py-2 text-right text-green-600">{formatCurrency(event.total_revenue)}</td>
+                      <td className="px-3 py-2 text-right text-red-600">{formatCurrency(event.official_expenses)}</td>
+                      <td className="px-3 py-2 text-right text-orange-600">{formatCurrency(event.efo_expenses)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(event.non_official_expenses)}</td>
+                      <td className={`px-3 py-2 text-right font-semibold ${event.profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                        {formatCurrency(event.profit)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+    </div>
   );
 }
