@@ -163,8 +163,13 @@ export function useAllCashRegisterRevenue(dailyRevenueId) {
   }, [fetchRevenues]);
 
   // Save all cash register revenues at once
-  const saveAllRevenues = async (revenuesByRegisterId) => {
-    if (!dailyRevenueId) return;
+  // Can pass overrideDailyRevenueId for newly created daily_revenue entries
+  const saveAllRevenues = async (revenuesByRegisterId, overrideDailyRevenueId = null) => {
+    const effectiveId = overrideDailyRevenueId || dailyRevenueId;
+    if (!effectiveId) {
+      console.error('No dailyRevenueId available for saving cash register revenues');
+      return;
+    }
 
     try {
       const promises = Object.entries(revenuesByRegisterId).map(
@@ -173,9 +178,17 @@ export function useAllCashRegisterRevenue(dailyRevenueId) {
             (r) => r.cash_register_id === cashRegisterId
           );
 
+          // Clean data - convert empty strings to null for numeric fields
+          const cleanedData = Object.fromEntries(
+            Object.entries(data).map(([key, value]) => [
+              key,
+              value === '' ? null : value
+            ])
+          );
+
           const dataToSave = {
-            ...data,
-            daily_revenue_id: dailyRevenueId,
+            ...cleanedData,
+            daily_revenue_id: effectiveId,
             cash_register_id: cashRegisterId,
           };
 
@@ -205,8 +218,10 @@ export function useAllCashRegisterRevenue(dailyRevenueId) {
         throw new Error('Hiba a pénztárgép adatok mentésekor');
       }
 
-      // Refetch to get updated data
-      await fetchRevenues();
+      // Refetch to get updated data (only if we have the original ID)
+      if (dailyRevenueId) {
+        await fetchRevenues();
+      }
 
       return results.map((r) => r.data);
     } catch (error) {

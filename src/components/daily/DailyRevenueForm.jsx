@@ -90,8 +90,9 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       const savedRevenue = await saveRevenue(formData);
 
       // Then save all cash register revenues if there are any
+      // Pass the savedRevenue.id to handle new entries where revenue?.id was null
       if (cashRegisters.length > 0 && savedRevenue?.id) {
-        await saveAllRevenues(cashRegisterDataRef.current);
+        await saveAllRevenues(cashRegisterDataRef.current, savedRevenue.id);
       }
 
       toast.success('Napi adatok sikeresen mentve!');

@@ -43,6 +43,7 @@ export default function DailyEntryPage() {
   const urlUnitParam = searchParams.get('unit');
   const [selectedUnit, setSelectedUnit] = useState(urlUnitParam || unitId || '');
   const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [expenseRefreshKey, setExpenseRefreshKey] = useState(0);
 
   // Update date and unit when URL params change
   useEffect(() => {
@@ -101,7 +102,7 @@ export default function DailyEntryPage() {
       const houseCash = houseCashResult.data;
       const expenses = expensesResult.data || [];
 
-      // Fetch aggregated cash register data if revenue exists
+      // Fetch cash register data with register info if revenue exists
       let cashRegisterTotals = {
         vat_0_percent: 0,
         vat_5_percent: 0,
@@ -110,16 +111,24 @@ export default function DailyEntryPage() {
         tips: 0,
         cash_payment: 0,
         card_payment: 0,
-        szep_card_payment: 0,
       };
+      let cashRegisterDetails = [];
 
       if (revenue?.id) {
         const { data: cashRegisterData } = await supabase
           .from('cash_register_revenue')
-          .select('vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment')
+          .select(`
+            *,
+            cash_registers (
+              id,
+              ap_number,
+              name
+            )
+          `)
           .eq('daily_revenue_id', revenue.id);
 
         if (cashRegisterData) {
+          cashRegisterDetails = cashRegisterData;
           cashRegisterTotals = cashRegisterData.reduce(
             (acc, cr) => ({
               vat_0_percent: acc.vat_0_percent + (parseFloat(cr.vat_0_percent) || 0),
@@ -129,7 +138,6 @@ export default function DailyEntryPage() {
               tips: acc.tips + (parseFloat(cr.tips) || 0),
               cash_payment: acc.cash_payment + (parseFloat(cr.cash_payment) || 0),
               card_payment: acc.card_payment + (parseFloat(cr.card_payment) || 0),
-              szep_card_payment: acc.szep_card_payment + (parseFloat(cr.szep_card_payment) || 0),
             }),
             cashRegisterTotals
           );
@@ -168,9 +176,34 @@ export default function DailyEntryPage() {
         doc.text(formatPdfCurrency(revenue.total_revenue), 120, y);
         y += 6;
 
-        // VAT breakdown (from aggregated cash register data)
+        // Per-register cash register data
+        if (cashRegisterDetails.length > 0) {
+          doc.setFont('helvetica', 'bold');
+          doc.text(sanitizeForPdf('Pénztárgép forgalom (pénztárgépenként):'), 20, y);
+          y += 6;
+
+          cashRegisterDetails.forEach((cr) => {
+            const registerName = cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Pénztárgép';
+            const regTotal = (parseFloat(cr.vat_0_percent) || 0) + (parseFloat(cr.vat_5_percent) || 0) +
+              (parseFloat(cr.vat_18_percent) || 0) + (parseFloat(cr.vat_27_percent) || 0) + (parseFloat(cr.tips) || 0);
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.text(sanitizeForPdf(registerName + ' (AP: ' + (cr.cash_registers?.ap_number || '-') + ')'), 25, y);
+            doc.text(formatPdfCurrency(regTotal), 160, y);
+            y += 4;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.text(sanitizeForPdf('0%: ' + formatPdfCurrency(cr.vat_0_percent) + '  5%: ' + formatPdfCurrency(cr.vat_5_percent) + '  18%: ' + formatPdfCurrency(cr.vat_18_percent) + '  27%: ' + formatPdfCurrency(cr.vat_27_percent) + '  Borr: ' + formatPdfCurrency(cr.tips)), 30, y);
+            y += 5;
+            doc.setFontSize(10);
+          });
+          y += 2;
+        }
+
+        // Aggregated VAT breakdown
         doc.setFont('helvetica', 'bold');
-        doc.text(sanitizeForPdf('Pénztárgép forgalom (ÁFA bontás):'), 20, y);
+        doc.text(sanitizeForPdf('Pénztárgép forgalom összesítve:'), 20, y);
         y += 6;
         doc.setFont('helvetica', 'normal');
         doc.text(sanitizeForPdf('0% ÁFA:'), 25, y);
@@ -213,7 +246,7 @@ export default function DailyEntryPage() {
           y += 6;
         }
 
-        // Payment methods (from aggregated cash register data)
+        // Payment methods (from aggregated cash register data) - without SZÉP card
         doc.setFont('helvetica', 'bold');
         doc.text(sanitizeForPdf('Fizetési módok:'), 20, y);
         y += 6;
@@ -223,8 +256,9 @@ export default function DailyEntryPage() {
         doc.text(sanitizeForPdf('Bankkártya:'), 110, y);
         doc.text(formatPdfCurrency(cashRegisterTotals.card_payment), 160, y);
         y += 5;
-        doc.text(sanitizeForPdf('SZÉP kártya:'), 25, y);
-        doc.text(formatPdfCurrency(cashRegisterTotals.szep_card_payment), 80, y);
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf('Összesen:'), 25, y);
+        doc.text(formatPdfCurrency(cashRegisterTotals.cash_payment + cashRegisterTotals.card_payment), 80, y);
         y += 8;
       } else {
         doc.setFontSize(10);
@@ -474,13 +508,16 @@ export default function DailyEntryPage() {
                 <Card className="mb-4">
                   <ExpenseForm
                     unitId={effectiveUnitId}
-                    onSuccess={() => setShowExpenseForm(false)}
+                    onSuccess={() => {
+                      setShowExpenseForm(false);
+                      setExpenseRefreshKey(k => k + 1);
+                    }}
                     onCancel={() => setShowExpenseForm(false)}
                   />
                 </Card>
               )}
 
-              <DailyExpensesList unitId={effectiveUnitId} date={selectedDate} />
+              <DailyExpensesList key={expenseRefreshKey} unitId={effectiveUnitId} date={selectedDate} />
             </div>
           </div>
         )}
@@ -514,13 +551,16 @@ export default function DailyEntryPage() {
               <Card>
                 <ExpenseForm
                   unitId={effectiveUnitId}
-                  onSuccess={() => setShowExpenseForm(false)}
+                  onSuccess={() => {
+                    setShowExpenseForm(false);
+                    setExpenseRefreshKey(k => k + 1);
+                  }}
                   onCancel={() => setShowExpenseForm(false)}
                 />
               </Card>
             )}
 
-            <DailyExpensesList unitId={effectiveUnitId} date={selectedDate} />
+            <DailyExpensesList key={expenseRefreshKey} unitId={effectiveUnitId} date={selectedDate} />
           </div>
         )}
 

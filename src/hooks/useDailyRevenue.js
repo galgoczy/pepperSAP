@@ -12,8 +12,8 @@ export function useDailyRevenue(unitId, date) {
     tips: 0,
     cash_payment: 0,
     card_payment: 0,
-    szep_card_payment: 0,
   });
+  const [cashRegisterDetails, setCashRegisterDetails] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchRevenue = useCallback(async () => {
@@ -27,8 +27,8 @@ export function useDailyRevenue(unitId, date) {
         tips: 0,
         cash_payment: 0,
         card_payment: 0,
-        szep_card_payment: 0,
       });
+      setCashRegisterDetails([]);
       setLoading(false);
       return;
     }
@@ -48,14 +48,24 @@ export function useDailyRevenue(unitId, date) {
 
       setRevenue(dailyRevenue || null);
 
-      // If we have a daily_revenue record, fetch aggregated cash register data
+      // If we have a daily_revenue record, fetch cash register data with register info
       if (dailyRevenue?.id) {
         const { data: cashRegisterData, error: crError } = await supabase
           .from('cash_register_revenue')
-          .select('vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment')
+          .select(`
+            *,
+            cash_registers (
+              id,
+              ap_number,
+              name
+            )
+          `)
           .eq('daily_revenue_id', dailyRevenue.id);
 
         if (!crError && cashRegisterData) {
+          // Store detailed data for per-register display
+          setCashRegisterDetails(cashRegisterData);
+
           // Aggregate all cash register data
           const totals = cashRegisterData.reduce(
             (acc, cr) => ({
@@ -66,7 +76,6 @@ export function useDailyRevenue(unitId, date) {
               tips: acc.tips + (parseFloat(cr.tips) || 0),
               cash_payment: acc.cash_payment + (parseFloat(cr.cash_payment) || 0),
               card_payment: acc.card_payment + (parseFloat(cr.card_payment) || 0),
-              szep_card_payment: acc.szep_card_payment + (parseFloat(cr.szep_card_payment) || 0),
             }),
             {
               vat_0_percent: 0,
@@ -76,10 +85,11 @@ export function useDailyRevenue(unitId, date) {
               tips: 0,
               cash_payment: 0,
               card_payment: 0,
-              szep_card_payment: 0,
             }
           );
           setCashRegisterTotals(totals);
+        } else {
+          setCashRegisterDetails([]);
         }
       } else {
         setCashRegisterTotals({
@@ -90,8 +100,8 @@ export function useDailyRevenue(unitId, date) {
           tips: 0,
           cash_payment: 0,
           card_payment: 0,
-          szep_card_payment: 0,
         });
+        setCashRegisterDetails([]);
       }
     } catch (error) {
       console.error('Error fetching daily revenue:', error);
@@ -166,6 +176,7 @@ export function useDailyRevenue(unitId, date) {
   return {
     revenue,
     cashRegisterTotals,
+    cashRegisterDetails,
     loading,
     refetch: fetchRevenue,
     saveRevenue,

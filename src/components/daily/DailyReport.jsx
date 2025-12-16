@@ -4,7 +4,7 @@ import { Card, LoadingSpinner, Badge } from '../common';
 import { formatCurrency, formatDate, PAYMENT_METHODS } from '../../lib/utils';
 
 export default function DailyReport({ date, unitId }) {
-  const { revenue, cashRegisterTotals, loading: revenueLoading } = useDailyRevenue(unitId, date);
+  const { revenue, cashRegisterTotals, cashRegisterDetails, loading: revenueLoading } = useDailyRevenue(unitId, date);
   const { houseCash, loading: cashLoading } = useHouseCash(unitId, date);
   const { expenses, loading: expensesLoading } = useExpenses(unitId, date, date);
 
@@ -38,13 +38,20 @@ export default function DailyReport({ date, unitId }) {
 
   const paymentMethodsTotal =
     (cashRegisterTotals.cash_payment || 0) +
-    (cashRegisterTotals.card_payment || 0) +
-    (cashRegisterTotals.szep_card_payment || 0);
+    (cashRegisterTotals.card_payment || 0);
 
   const totalExpenses = expenses.reduce(
     (sum, e) => sum + (parseFloat(e.amount) || 0),
     0
   );
+
+  // Helper to calculate register total
+  const getRegisterTotal = (cr) =>
+    (parseFloat(cr.vat_0_percent) || 0) +
+    (parseFloat(cr.vat_5_percent) || 0) +
+    (parseFloat(cr.vat_18_percent) || 0) +
+    (parseFloat(cr.vat_27_percent) || 0) +
+    (parseFloat(cr.tips) || 0);
 
   return (
     <div className="space-y-6 print:space-y-4">
@@ -77,10 +84,59 @@ export default function DailyReport({ date, unitId }) {
               </div>
             </div>
 
-            {/* VAT breakdown */}
+            {/* Per-register cash register data */}
+            {cashRegisterDetails.length > 0 && (
+              <div>
+                <h4 className="font-medium text-gray-700 mb-3">
+                  Pénztárgép forgalom (pénztárgépenként)
+                </h4>
+                <div className="space-y-4">
+                  {cashRegisterDetails.map((cr) => {
+                    const registerTotal = getRegisterTotal(cr);
+                    const registerName = cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Pénztárgép';
+                    return (
+                      <div key={cr.id} className="border rounded-lg p-3 bg-gray-50">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-medium text-gray-800">{registerName}</span>
+                          <span className="text-sm text-gray-500">AP: {cr.cash_registers?.ap_number}</span>
+                        </div>
+                        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-xs">
+                          <div className="text-center">
+                            <div className="text-gray-500">0%</div>
+                            <div className="font-medium">{formatCurrency(cr.vat_0_percent)}</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-gray-500">5%</div>
+                            <div className="font-medium">{formatCurrency(cr.vat_5_percent)}</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-gray-500">18%</div>
+                            <div className="font-medium">{formatCurrency(cr.vat_18_percent)}</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-gray-500">27%</div>
+                            <div className="font-medium">{formatCurrency(cr.vat_27_percent)}</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-gray-500">Borr.</div>
+                            <div className="font-medium">{formatCurrency(cr.tips)}</div>
+                          </div>
+                          <div className="text-center bg-green-100 rounded p-1">
+                            <div className="text-green-700">Össz.</div>
+                            <div className="font-bold text-green-800">{formatCurrency(registerTotal)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Aggregated VAT breakdown */}
             <div>
               <h4 className="font-medium text-gray-700 mb-2">
-                Pénztárgép forgalom (ÁFA bontás)
+                Pénztárgép forgalom összesítve (ÁFA bontás)
               </h4>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
@@ -132,10 +188,10 @@ export default function DailyReport({ date, unitId }) {
               </div>
             )}
 
-            {/* Payment methods */}
+            {/* Payment methods - without SZÉP card */}
             <div>
               <h4 className="font-medium text-gray-700 mb-2">Fizetési módok</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+              <div className="grid grid-cols-3 gap-2 text-sm">
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">Készpénz:</span>
                   <span>{formatCurrency(cashRegisterTotals.cash_payment)}</span>
@@ -143,10 +199,6 @@ export default function DailyReport({ date, unitId }) {
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">Bankkártya:</span>
                   <span>{formatCurrency(cashRegisterTotals.card_payment)}</span>
-                </div>
-                <div className="flex justify-between p-2 bg-gray-50 rounded">
-                  <span className="text-gray-500">SZÉP kártya:</span>
-                  <span>{formatCurrency(cashRegisterTotals.szep_card_payment)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-green-50 rounded font-medium">
                   <span className="text-green-700">Összesen:</span>
