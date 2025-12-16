@@ -102,16 +102,24 @@ export default function DailyEntryPage() {
       const houseCash = houseCashResult.data;
       const expenses = expensesResult.data || [];
 
+      // Sort expenses: official first
+      const sortedExpenses = [...expenses].sort((a, b) => {
+        if (a.is_official === b.is_official) return 0;
+        return a.is_official ? -1 : 1;
+      });
+
+      // Calculate expense totals
+      const officialExpenses = expenses
+        .filter(e => e.is_official === true)
+        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      const nonOfficialExpenses = expenses
+        .filter(e => e.is_official === false)
+        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+
       // Fetch cash register data with register info if revenue exists
-      let cashRegisterTotals = {
-        vat_0_percent: 0,
-        vat_5_percent: 0,
-        vat_18_percent: 0,
-        vat_27_percent: 0,
-        tips: 0,
-        cash_payment: 0,
-        card_payment: 0,
-      };
+      let totalCashRegisterCash = 0;
+      let totalCashRegisterCard = 0;
+      let totalCashRegisterRevenue = 0;
       let cashRegisterDetails = [];
 
       if (revenue?.id) {
@@ -129,20 +137,27 @@ export default function DailyEntryPage() {
 
         if (cashRegisterData) {
           cashRegisterDetails = cashRegisterData;
-          cashRegisterTotals = cashRegisterData.reduce(
-            (acc, cr) => ({
-              vat_0_percent: acc.vat_0_percent + (parseFloat(cr.vat_0_percent) || 0),
-              vat_5_percent: acc.vat_5_percent + (parseFloat(cr.vat_5_percent) || 0),
-              vat_18_percent: acc.vat_18_percent + (parseFloat(cr.vat_18_percent) || 0),
-              vat_27_percent: acc.vat_27_percent + (parseFloat(cr.vat_27_percent) || 0),
-              tips: acc.tips + (parseFloat(cr.tips) || 0),
-              cash_payment: acc.cash_payment + (parseFloat(cr.cash_payment) || 0),
-              card_payment: acc.card_payment + (parseFloat(cr.card_payment) || 0),
-            }),
-            cashRegisterTotals
-          );
+          cashRegisterData.forEach(cr => {
+            totalCashRegisterCash += parseFloat(cr.cash_payment) || 0;
+            totalCashRegisterCard += parseFloat(cr.card_payment) || 0;
+            totalCashRegisterRevenue +=
+              (parseFloat(cr.vat_0_percent) || 0) +
+              (parseFloat(cr.vat_5_percent) || 0) +
+              (parseFloat(cr.vat_18_percent) || 0) +
+              (parseFloat(cr.vat_27_percent) || 0) +
+              (parseFloat(cr.tips) || 0);
+          });
         }
       }
+
+      // Calculate house cash values
+      const softwareRevenue = parseFloat(revenue?.total_revenue) || 0;
+      const efoPayments = parseFloat(houseCash?.official_employment_expenses) || 0;
+      const changeAmount = parseFloat(houseCash?.change_amount) || 0;
+      const extraIncome = parseFloat(houseCash?.other_extra_income) || 0;
+      const officialTotal = totalCashRegisterCash - officialExpenses - efoPayments;
+      const revenueDifference = softwareRevenue - totalCashRegisterRevenue;
+      const reserveTotal = revenueDifference + extraIncome - nonOfficialExpenses;
 
       // Create PDF
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -201,34 +216,10 @@ export default function DailyEntryPage() {
           y += 2;
         }
 
-        // Aggregated VAT breakdown
+        // Aggregated cash register total
         doc.setFont('helvetica', 'bold');
-        doc.text(sanitizeForPdf('Pénztárgép forgalom összesítve:'), 20, y);
-        y += 6;
-        doc.setFont('helvetica', 'normal');
-        doc.text(sanitizeForPdf('0% ÁFA:'), 25, y);
-        doc.text(formatPdfCurrency(cashRegisterTotals.vat_0_percent), 80, y);
-        doc.text(sanitizeForPdf('5% ÁFA:'), 110, y);
-        doc.text(formatPdfCurrency(cashRegisterTotals.vat_5_percent), 160, y);
-        y += 5;
-        doc.text(sanitizeForPdf('18% ÁFA:'), 25, y);
-        doc.text(formatPdfCurrency(cashRegisterTotals.vat_18_percent), 80, y);
-        doc.text(sanitizeForPdf('27% ÁFA:'), 110, y);
-        doc.text(formatPdfCurrency(cashRegisterTotals.vat_27_percent), 160, y);
-        y += 5;
-        doc.text(sanitizeForPdf('Borravaló:'), 25, y);
-        doc.text(formatPdfCurrency(cashRegisterTotals.tips), 80, y);
-        y += 6;
-
-        const cashRegisterTotal =
-          cashRegisterTotals.vat_0_percent +
-          cashRegisterTotals.vat_5_percent +
-          cashRegisterTotals.vat_18_percent +
-          cashRegisterTotals.vat_27_percent +
-          cashRegisterTotals.tips;
-        doc.setFont('helvetica', 'bold');
-        doc.text(sanitizeForPdf('Pénztárgép összesen:'), 25, y);
-        doc.text(formatPdfCurrency(cashRegisterTotal), 80, y);
+        doc.text(sanitizeForPdf('Pénztárgép forgalom összesen:'), 20, y);
+        doc.text(formatPdfCurrency(totalCashRegisterRevenue), 120, y);
         y += 8;
 
         // Discrepancy
@@ -246,19 +237,28 @@ export default function DailyEntryPage() {
           y += 6;
         }
 
-        // Payment methods (from aggregated cash register data) - without SZÉP card
+        // Payment methods - without SZÉP card
         doc.setFont('helvetica', 'bold');
         doc.text(sanitizeForPdf('Fizetési módok:'), 20, y);
         y += 6;
         doc.setFont('helvetica', 'normal');
         doc.text(sanitizeForPdf('Készpénz:'), 25, y);
-        doc.text(formatPdfCurrency(cashRegisterTotals.cash_payment), 80, y);
+        doc.text(formatPdfCurrency(totalCashRegisterCash), 80, y);
         doc.text(sanitizeForPdf('Bankkártya:'), 110, y);
-        doc.text(formatPdfCurrency(cashRegisterTotals.card_payment), 160, y);
+        doc.text(formatPdfCurrency(totalCashRegisterCard), 160, y);
         y += 5;
         doc.setFont('helvetica', 'bold');
         doc.text(sanitizeForPdf('Összesen:'), 25, y);
-        doc.text(formatPdfCurrency(cashRegisterTotals.cash_payment + cashRegisterTotals.card_payment), 80, y);
+        doc.text(formatPdfCurrency(totalCashRegisterCash + totalCashRegisterCard), 80, y);
+        y += 8;
+
+        // Terminal data
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf('Terminál:'), 20, y);
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.text(sanitizeForPdf('Bankkártya (terminál):'), 25, y);
+        doc.text(formatPdfCurrency(totalCashRegisterCard), 80, y);
         y += 8;
       } else {
         doc.setFontSize(10);
@@ -272,57 +272,72 @@ export default function DailyEntryPage() {
       doc.text(sanitizeForPdf('Házipénztár'), 15, y);
       y += 8;
 
-      if (houseCash) {
-        doc.setFontSize(10);
+      doc.setFontSize(10);
 
-        // Official pocket
-        doc.setFont('helvetica', 'bold');
-        doc.text(sanitizeForPdf('Pénztár zseb:'), 20, y);
-        y += 5;
-        doc.setFont('helvetica', 'normal');
-        doc.text(sanitizeForPdf('Váltópénz:'), 25, y);
-        doc.text(formatPdfCurrency(houseCash.change_amount), 80, y);
-        y += 5;
-        doc.text(sanitizeForPdf('Napi készpénz:'), 25, y);
-        doc.text(formatPdfCurrency(houseCash.official_daily_cash), 80, y);
-        y += 5;
-        doc.text(sanitizeForPdf('Egyéb bevétel:'), 25, y);
-        doc.text(formatPdfCurrency(houseCash.official_other_income), 80, y);
-        y += 5;
-        doc.text(sanitizeForPdf('Készpénzes számlák:'), 25, y);
-        doc.text('-' + formatPdfCurrency(houseCash.official_cash_expenses), 80, y);
-        y += 5;
-        doc.text(sanitizeForPdf('EFO kifizetések:'), 25, y);
-        doc.text('-' + formatPdfCurrency(houseCash.official_employment_expenses), 80, y);
-        y += 5;
-        doc.setFont('helvetica', 'bold');
-        doc.text(sanitizeForPdf('Összesen:'), 25, y);
-        doc.text(formatPdfCurrency(houseCash.official_total), 80, y);
-        y += 8;
-
-        // Reserve pocket
-        doc.text(sanitizeForPdf('Tartalék:'), 20, y);
-        y += 5;
-        doc.setFont('helvetica', 'normal');
-        doc.text(sanitizeForPdf('Különbözet:'), 25, y);
-        doc.text(formatPdfCurrency(houseCash.other_difference), 80, y);
-        y += 5;
-        doc.text(sanitizeForPdf('Extra bevétel:'), 25, y);
-        doc.text(formatPdfCurrency(houseCash.other_extra_income), 80, y);
-        y += 5;
-        doc.text(sanitizeForPdf('Kiadások:'), 25, y);
-        doc.text('-' + formatPdfCurrency(houseCash.other_expenses), 80, y);
-        y += 5;
-        doc.setFont('helvetica', 'bold');
-        doc.text(sanitizeForPdf('Összesen:'), 25, y);
-        doc.text(formatPdfCurrency(houseCash.other_total), 80, y);
-        y += 10;
+      // Pénztár zseb
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Pénztár zseb:'), 20, y);
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(128, 128, 128);
+      doc.text(sanitizeForPdf('Váltópénz (info):'), 25, y);
+      doc.text(formatPdfCurrency(changeAmount), 110, y);
+      doc.setTextColor(0, 0, 0);
+      y += 5;
+      doc.text(sanitizeForPdf('Napi készpénz (pénztárgép):'), 25, y);
+      doc.text(formatPdfCurrency(totalCashRegisterCash), 110, y);
+      y += 5;
+      doc.setTextColor(180, 0, 0);
+      doc.text(sanitizeForPdf('Hivatalos kifizetések:'), 25, y);
+      doc.text('-' + formatPdfCurrency(officialExpenses), 110, y);
+      y += 5;
+      doc.text(sanitizeForPdf('EFO kifizetések:'), 25, y);
+      doc.text('-' + formatPdfCurrency(efoPayments), 110, y);
+      doc.setTextColor(0, 0, 0);
+      y += 5;
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Összesen:'), 25, y);
+      if (officialTotal >= 0) {
+        doc.setTextColor(0, 128, 0);
       } else {
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.text(sanitizeForPdf('Nincs rögzített házipénztár adat'), 20, y);
-        y += 10;
+        doc.setTextColor(180, 0, 0);
       }
+      doc.text(formatPdfCurrency(officialTotal), 110, y);
+      doc.setTextColor(0, 0, 0);
+      y += 8;
+
+      // Tartalék
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Tartalék:'), 20, y);
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.text(sanitizeForPdf('Szoftver-pénztárgép különbség:'), 25, y);
+      if (revenueDifference >= 0) {
+        doc.text(formatPdfCurrency(revenueDifference), 110, y);
+      } else {
+        doc.setTextColor(180, 0, 0);
+        doc.text(formatPdfCurrency(revenueDifference), 110, y);
+        doc.setTextColor(0, 0, 0);
+      }
+      y += 5;
+      doc.text(sanitizeForPdf('Extra bevétel:'), 25, y);
+      doc.text(formatPdfCurrency(extraIncome), 110, y);
+      y += 5;
+      doc.setTextColor(180, 0, 0);
+      doc.text(sanitizeForPdf('Nem számlás kifizetések:'), 25, y);
+      doc.text('-' + formatPdfCurrency(nonOfficialExpenses), 110, y);
+      doc.setTextColor(0, 0, 0);
+      y += 5;
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Összesen:'), 25, y);
+      if (reserveTotal >= 0) {
+        doc.setTextColor(0, 0, 180);
+      } else {
+        doc.setTextColor(180, 0, 0);
+      }
+      doc.text(formatPdfCurrency(reserveTotal), 110, y);
+      doc.setTextColor(0, 0, 0);
+      y += 10;
 
       // Expenses section
       doc.setFontSize(14);
@@ -330,24 +345,31 @@ export default function DailyEntryPage() {
       doc.text(sanitizeForPdf('Napi kifizetések'), 15, y);
       y += 8;
 
-      if (expenses.length > 0) {
+      if (sortedExpenses.length > 0) {
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
 
         let totalExpenses = 0;
-        expenses.forEach((expense) => {
+        sortedExpenses.forEach((expense) => {
           if (y > 270) {
             doc.addPage();
             y = 20;
           }
           totalExpenses += parseFloat(expense.amount) || 0;
-          doc.text(sanitizeForPdf(expense.supplier_name), 20, y);
+
+          // Supplier name with "(számlás)" indicator for official expenses
+          const supplierText = expense.is_official
+            ? expense.supplier_name + ' (számlás)'
+            : expense.supplier_name;
+          doc.text(sanitizeForPdf(supplierText), 20, y);
+          doc.setTextColor(180, 0, 0);
           doc.text('-' + formatPdfCurrency(expense.amount), 160, y);
+          doc.setTextColor(0, 0, 0);
           y += 4;
           doc.setFontSize(8);
           doc.setTextColor(100, 100, 100);
           const paymentMethod = PAYMENT_METHODS[expense.payment_method] || expense.payment_method;
-          doc.text(sanitizeForPdf((expense.item_description || '') + ' - ' + paymentMethod), 25, y);
+          doc.text(sanitizeForPdf((expense.item_description || 'Nincs leírás') + ' - ' + paymentMethod), 25, y);
           doc.setTextColor(0, 0, 0);
           doc.setFontSize(10);
           y += 6;
@@ -355,7 +377,9 @@ export default function DailyEntryPage() {
 
         doc.setFont('helvetica', 'bold');
         doc.text(sanitizeForPdf('Kifizetések összesen:'), 20, y);
+        doc.setTextColor(180, 0, 0);
         doc.text('-' + formatPdfCurrency(totalExpenses), 160, y);
+        doc.setTextColor(0, 0, 0);
         y += 10;
       } else {
         doc.setFontSize(10);

@@ -187,10 +187,11 @@ export function useHouseCash(unitId, date) {
   const [houseCash, setHouseCash] = useState(null);
   const [previousDayClosing, setPreviousDayClosing] = useState(null);
   const [calculatedData, setCalculatedData] = useState({
-    cashInvoiceExpenses: 0,      // Készpénzes számlák (is_official=true, payment_method='cash')
-    nonInvoiceExpenses: 0,       // Nem számlás kifizetések (is_official=false)
+    officialExpenses: 0,         // Hivatalos (számlás) kifizetések összesen
+    nonOfficialExpenses: 0,      // Nem számlás kifizetések összesen
     totalCashRegisterCash: 0,    // Összes pénztárgép készpénz bevétel
-    totalCashRegisterRevenue: 0, // Összes pénztárgép forgalom
+    totalCashRegisterCard: 0,    // Összes pénztárgép bankkártya bevétel
+    totalCashRegisterRevenue: 0, // Összes pénztárgép forgalom (ÁFA összesen)
     softwareRevenue: 0,          // Szoftver bevétel
   });
   const [loading, setLoading] = useState(true);
@@ -200,9 +201,10 @@ export function useHouseCash(unitId, date) {
       setHouseCash(null);
       setPreviousDayClosing(null);
       setCalculatedData({
-        cashInvoiceExpenses: 0,
-        nonInvoiceExpenses: 0,
+        officialExpenses: 0,
+        nonOfficialExpenses: 0,
         totalCashRegisterCash: 0,
+        totalCashRegisterCard: 0,
         totalCashRegisterRevenue: 0,
         softwareRevenue: 0,
       });
@@ -250,10 +252,12 @@ export function useHouseCash(unitId, date) {
 
       // Calculate expenses
       const expenses = expensesResult.data || [];
-      const cashInvoiceExpenses = expenses
-        .filter(e => e.is_official === true && e.payment_method === 'cash')
+      // Hivatalos (számlás) kifizetések - minden is_official=true
+      const officialExpenses = expenses
+        .filter(e => e.is_official === true)
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      const nonInvoiceExpenses = expenses
+      // Nem számlás kifizetések - is_official=false
+      const nonOfficialExpenses = expenses
         .filter(e => e.is_official === false)
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
 
@@ -262,7 +266,7 @@ export function useHouseCash(unitId, date) {
       if (dailyRevenueResult.data?.id) {
         const { data: crData, error: crError } = await supabase
           .from('cash_register_revenue')
-          .select('cash_payment, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips')
+          .select('cash_payment, card_payment, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips')
           .eq('daily_revenue_id', dailyRevenueResult.data.id);
 
         if (!crError) {
@@ -273,6 +277,9 @@ export function useHouseCash(unitId, date) {
       // Calculate cash register totals
       const totalCashRegisterCash = cashRegisterRevenues.reduce(
         (sum, cr) => sum + (parseFloat(cr.cash_payment) || 0), 0
+      );
+      const totalCashRegisterCard = cashRegisterRevenues.reduce(
+        (sum, cr) => sum + (parseFloat(cr.card_payment) || 0), 0
       );
       const totalCashRegisterRevenue = cashRegisterRevenues.reduce(
         (sum, cr) => sum +
@@ -290,9 +297,10 @@ export function useHouseCash(unitId, date) {
       setHouseCash(currentResult.data || null);
       setPreviousDayClosing(previousResult.data?.official_total || null);
       setCalculatedData({
-        cashInvoiceExpenses,
-        nonInvoiceExpenses,
+        officialExpenses,
+        nonOfficialExpenses,
         totalCashRegisterCash,
+        totalCashRegisterCard,
         totalCashRegisterRevenue,
         softwareRevenue,
       });

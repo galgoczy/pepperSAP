@@ -1,3 +1,4 @@
+import { FileText } from 'lucide-react';
 import { useDailyRevenue, useHouseCash } from '../../hooks/useDailyRevenue';
 import { useExpenses } from '../../hooks/useExpenses';
 import { Card, LoadingSpinner, Badge } from '../common';
@@ -5,7 +6,7 @@ import { formatCurrency, formatDate, PAYMENT_METHODS } from '../../lib/utils';
 
 export default function DailyReport({ date, unitId }) {
   const { revenue, cashRegisterTotals, cashRegisterDetails, loading: revenueLoading } = useDailyRevenue(unitId, date);
-  const { houseCash, loading: cashLoading } = useHouseCash(unitId, date);
+  const { houseCash, calculatedData, loading: cashLoading } = useHouseCash(unitId, date);
   const { expenses, loading: expensesLoading } = useExpenses(unitId, date, date);
 
   const loading = revenueLoading || cashLoading || expensesLoading;
@@ -28,6 +29,16 @@ export default function DailyReport({ date, unitId }) {
     );
   }
 
+  // Extract calculated data
+  const {
+    officialExpenses,
+    nonOfficialExpenses,
+    totalCashRegisterCash,
+    totalCashRegisterCard,
+    totalCashRegisterRevenue,
+    softwareRevenue,
+  } = calculatedData;
+
   // Use aggregated cash register totals from the hook
   const cashRegisterTotal =
     (cashRegisterTotals.vat_0_percent || 0) +
@@ -36,9 +47,26 @@ export default function DailyReport({ date, unitId }) {
     (cashRegisterTotals.vat_27_percent || 0) +
     (cashRegisterTotals.tips || 0);
 
-  const paymentMethodsTotal =
-    (cashRegisterTotals.cash_payment || 0) +
-    (cashRegisterTotals.card_payment || 0);
+  // Payment methods total (cash + card only, no SZÉP)
+  const paymentMethodsTotal = totalCashRegisterCash + totalCashRegisterCard;
+
+  // Calculate house cash values
+  const efoPayments = parseFloat(houseCash?.official_employment_expenses) || 0;
+  const changeAmount = parseFloat(houseCash?.change_amount) || 0;
+  const extraIncome = parseFloat(houseCash?.other_extra_income) || 0;
+
+  // Pénztár zseb összesen: készpénz bevétel - hivatalos kifizetések - EFO
+  const officialTotal = totalCashRegisterCash - officialExpenses - efoPayments;
+
+  // Tartalék: szoftver-pénztárgép különbség + extra bevétel - nem számlás kifizetések
+  const revenueDifference = softwareRevenue - totalCashRegisterRevenue;
+  const reserveTotal = revenueDifference + extraIncome - nonOfficialExpenses;
+
+  // Sort expenses: official first, then non-official
+  const sortedExpenses = [...expenses].sort((a, b) => {
+    if (a.is_official === b.is_official) return 0;
+    return a.is_official ? -1 : 1;
+  });
 
   const totalExpenses = expenses.reduce(
     (sum, e) => sum + (parseFloat(e.amount) || 0),
@@ -194,11 +222,11 @@ export default function DailyReport({ date, unitId }) {
               <div className="grid grid-cols-3 gap-2 text-sm">
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">Készpénz:</span>
-                  <span>{formatCurrency(cashRegisterTotals.cash_payment)}</span>
+                  <span>{formatCurrency(totalCashRegisterCash)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">Bankkártya:</span>
-                  <span>{formatCurrency(cashRegisterTotals.card_payment)}</span>
+                  <span>{formatCurrency(totalCashRegisterCard)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-green-50 rounded font-medium">
                   <span className="text-green-700">Összesen:</span>
@@ -215,7 +243,7 @@ export default function DailyReport({ date, unitId }) {
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">Bankkártya (terminál):</span>
-                  <span>{formatCurrency(revenue.terminal_card)}</span>
+                  <span>{formatCurrency(totalCashRegisterCard)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">SZÉP (terminál):</span>
@@ -234,69 +262,61 @@ export default function DailyReport({ date, unitId }) {
 
       {/* House cash section */}
       <Card title="Házipénztár" className="print:shadow-none print:border">
-        {!houseCash ? (
-          <p className="text-gray-500 text-center py-4">
-            Nincs rögzített házipénztár adat erre a napra
-          </p>
-        ) : (
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <h4 className="font-medium text-green-700 mb-2">Pénztár zseb</h4>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Váltópénz:</span>
-                  <span>{formatCurrency(houseCash.change_amount)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Napi készpénz:</span>
-                  <span>{formatCurrency(houseCash.official_daily_cash)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Egyéb bevétel:</span>
-                  <span>{formatCurrency(houseCash.official_other_income)}</span>
-                </div>
-                <div className="flex justify-between text-red-600">
-                  <span>Készpénzes számlák:</span>
-                  <span>-{formatCurrency(houseCash.official_cash_expenses)}</span>
-                </div>
-                <div className="flex justify-between text-red-600">
-                  <span>EFO kifizetések:</span>
-                  <span>-{formatCurrency(houseCash.official_employment_expenses)}</span>
-                </div>
-                <div className="flex justify-between font-bold pt-2 border-t">
-                  <span className="text-green-700">Összesen:</span>
-                  <span className="text-green-800">
-                    {formatCurrency(houseCash.official_total)}
-                  </span>
-                </div>
+        <div className="grid md:grid-cols-2 gap-6">
+          <div>
+            <h4 className="font-medium text-green-700 mb-2">Pénztár zseb</h4>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between text-gray-400">
+                <span>Váltópénz (info):</span>
+                <span>{formatCurrency(changeAmount)}</span>
               </div>
-            </div>
-
-            <div>
-              <h4 className="font-medium text-blue-700 mb-2">Tartalék</h4>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Különbözet:</span>
-                  <span>{formatCurrency(houseCash.other_difference)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Extra bevétel:</span>
-                  <span>{formatCurrency(houseCash.other_extra_income)}</span>
-                </div>
-                <div className="flex justify-between text-red-600">
-                  <span>Kiadások:</span>
-                  <span>-{formatCurrency(houseCash.other_expenses)}</span>
-                </div>
-                <div className="flex justify-between font-bold pt-2 border-t">
-                  <span className="text-blue-700">Összesen:</span>
-                  <span className="text-blue-800">
-                    {formatCurrency(houseCash.other_total)}
-                  </span>
-                </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Napi készpénz (pénztárgép):</span>
+                <span className="font-medium">{formatCurrency(totalCashRegisterCash)}</span>
+              </div>
+              <div className="flex justify-between text-red-600">
+                <span>Hivatalos kifizetések:</span>
+                <span>-{formatCurrency(officialExpenses)}</span>
+              </div>
+              <div className="flex justify-between text-red-600">
+                <span>EFO kifizetések:</span>
+                <span>-{formatCurrency(efoPayments)}</span>
+              </div>
+              <div className="flex justify-between font-bold pt-2 border-t">
+                <span className="text-green-700">Összesen:</span>
+                <span className={officialTotal >= 0 ? 'text-green-800' : 'text-red-600'}>
+                  {formatCurrency(officialTotal)}
+                </span>
               </div>
             </div>
           </div>
-        )}
+
+          <div>
+            <h4 className="font-medium text-blue-700 mb-2">Tartalék</h4>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Szoftver-pénztárgép különbség:</span>
+                <span className={revenueDifference >= 0 ? 'font-medium' : 'text-red-600 font-medium'}>
+                  {formatCurrency(revenueDifference)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Extra bevétel:</span>
+                <span>{formatCurrency(extraIncome)}</span>
+              </div>
+              <div className="flex justify-between text-red-600">
+                <span>Nem számlás kifizetések:</span>
+                <span>-{formatCurrency(nonOfficialExpenses)}</span>
+              </div>
+              <div className="flex justify-between font-bold pt-2 border-t">
+                <span className="text-blue-700">Összesen:</span>
+                <span className={reserveTotal >= 0 ? 'text-blue-800' : 'text-red-600'}>
+                  {formatCurrency(reserveTotal)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       </Card>
 
       {/* Expenses section */}
@@ -307,19 +327,27 @@ export default function DailyReport({ date, unitId }) {
           </p>
         ) : (
           <div className="space-y-2">
-            {expenses.map((expense) => (
+            {sortedExpenses.map((expense) => (
               <div
                 key={expense.id}
                 className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0"
               >
-                <div>
-                  <p className="font-medium text-gray-900">
-                    {expense.supplier_name}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    {expense.item_description || 'Nincs leírás'} •{' '}
-                    {PAYMENT_METHODS[expense.payment_method]}
-                  </p>
+                <div className="flex items-start gap-2">
+                  {expense.is_official && (
+                    <FileText className="h-4 w-4 text-blue-500 mt-1 flex-shrink-0" />
+                  )}
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      {expense.supplier_name}
+                      {expense.is_official && (
+                        <span className="text-xs text-blue-600 ml-2">(számlás)</span>
+                      )}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      {expense.item_description || 'Nincs leírás'} •{' '}
+                      {PAYMENT_METHODS[expense.payment_method]}
+                    </p>
+                  </div>
                 </div>
                 <span className="font-semibold text-red-600">
                   -{formatCurrency(expense.amount, expense.currency)}
