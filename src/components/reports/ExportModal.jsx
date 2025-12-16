@@ -577,6 +577,14 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     .gte('invoice_date', startDate)
     .lte('invoice_date', endDate);
 
+  // Fetch events data
+  const { data: events } = await supabase
+    .from('events')
+    .select('*, units(name)')
+    .gte('event_date', startDate)
+    .lte('event_date', endDate)
+    .order('event_date', { ascending: true });
+
   // Group by unit
   const unitData = {};
   (revenues || []).forEach((row) => {
@@ -628,9 +636,141 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
   const headers = ['Egység', 'Szoftver bevétel', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Költség', 'Eredmény'];
 
-  const data = Object.values(unitData)
-    .sort((a, b) => a.unitName.localeCompare(b.unitName))
-    .map((unit) => ({
+  const unitsArray = Object.values(unitData).sort((a, b) => a.unitName.localeCompare(b.unitName));
+
+  // Calculate units totals
+  const unitsTotals = {
+    totalSoftware: unitsArray.reduce((sum, u) => sum + u.totalSoftware, 0),
+    cashRegisterCash: unitsArray.reduce((sum, u) => sum + u.cashRegisterCash, 0),
+    cashRegisterCard: unitsArray.reduce((sum, u) => sum + u.cashRegisterCard, 0),
+    reserveRevenue: unitsArray.reduce((sum, u) => sum + u.reserveRevenue, 0),
+    invoiceExpenses: unitsArray.reduce((sum, u) => sum + u.invoiceExpenses, 0),
+    dailyResult: unitsArray.reduce((sum, u) => sum + u.dailyResult, 0),
+  };
+
+  // Process events data
+  let eventsData = [];
+  let eventsTotals = {
+    eventCount: 0,
+    total_revenue: 0,
+    total_expenses: 0,
+    official_expenses: 0,
+    efo_expenses: 0,
+    non_official_expenses: 0,
+    profit: 0,
+  };
+  let eventsList = [];
+
+  if (events && events.length > 0) {
+    const eventIds = events.map((e) => e.id);
+
+    const [revenuesResult, expensesResult] = await Promise.all([
+      supabase.from('event_revenues').select('event_id, amount').in('event_id', eventIds),
+      supabase.from('event_expenses').select('event_id, amount, is_efo, is_official').in('event_id', eventIds),
+    ]);
+
+    const revenueByEvent = {};
+    const expenseByEvent = {};
+
+    (revenuesResult.data || []).forEach((r) => {
+      revenueByEvent[r.event_id] = (revenueByEvent[r.event_id] || 0) + parseFloat(r.amount);
+    });
+
+    (expensesResult.data || []).forEach((e) => {
+      if (!expenseByEvent[e.event_id]) {
+        expenseByEvent[e.event_id] = { total: 0, official: 0, efo: 0, nonOfficial: 0 };
+      }
+      const amount = parseFloat(e.amount) || 0;
+      expenseByEvent[e.event_id].total += amount;
+      if (e.is_efo) {
+        expenseByEvent[e.event_id].efo += amount;
+      } else if (e.is_official === false) {
+        expenseByEvent[e.event_id].nonOfficial += amount;
+      } else {
+        expenseByEvent[e.event_id].official += amount;
+      }
+    });
+
+    // Build events list with details
+    eventsList = events.map((event) => {
+      const eventExpenses = expenseByEvent[event.id] || { total: 0, official: 0, efo: 0, nonOfficial: 0 };
+      const revenue = revenueByEvent[event.id] || 0;
+      return {
+        event_date: event.event_date,
+        name: event.name,
+        unitName: event.units?.name || 'Ismeretlen',
+        total_revenue: revenue,
+        total_expenses: eventExpenses.total,
+        official_expenses: eventExpenses.official,
+        efo_expenses: eventExpenses.efo,
+        non_official_expenses: eventExpenses.nonOfficial,
+        profit: revenue - eventExpenses.total,
+      };
+    });
+
+    // Group events by unit
+    const eventUnitData = {};
+    eventsList.forEach((event) => {
+      const unitName = event.unitName;
+
+      if (!eventUnitData[unitName]) {
+        eventUnitData[unitName] = {
+          unitName,
+          eventCount: 0,
+          total_revenue: 0,
+          total_expenses: 0,
+          official_expenses: 0,
+          efo_expenses: 0,
+          non_official_expenses: 0,
+          profit: 0,
+        };
+      }
+
+      eventUnitData[unitName].eventCount += 1;
+      eventUnitData[unitName].total_revenue += event.total_revenue;
+      eventUnitData[unitName].total_expenses += event.total_expenses;
+      eventUnitData[unitName].official_expenses += event.official_expenses;
+      eventUnitData[unitName].efo_expenses += event.efo_expenses;
+      eventUnitData[unitName].non_official_expenses += event.non_official_expenses;
+      eventUnitData[unitName].profit += event.profit;
+    });
+
+    eventsData = Object.values(eventUnitData).sort((a, b) => a.unitName.localeCompare(b.unitName));
+
+    eventsTotals = {
+      eventCount: eventsData.reduce((sum, r) => sum + r.eventCount, 0),
+      total_revenue: eventsData.reduce((sum, r) => sum + r.total_revenue, 0),
+      total_expenses: eventsData.reduce((sum, r) => sum + r.total_expenses, 0),
+      official_expenses: eventsData.reduce((sum, r) => sum + r.official_expenses, 0),
+      efo_expenses: eventsData.reduce((sum, r) => sum + r.efo_expenses, 0),
+      non_official_expenses: eventsData.reduce((sum, r) => sum + r.non_official_expenses, 0),
+      profit: eventsData.reduce((sum, r) => sum + r.profit, 0),
+    };
+  }
+
+  // Calculate grand totals
+  const grandTotals = {
+    totalRevenue: unitsTotals.totalSoftware + eventsTotals.total_revenue,
+    totalResult: unitsTotals.dailyResult + eventsTotals.profit,
+  };
+
+  // Build combined data for export
+  const data = [];
+
+  // Section 1: Units
+  data.push({
+    'Egység': '=== EGYSÉGEK ===',
+    'Szoftver bevétel': '',
+    'Pénztárgép KP': '',
+    'Pénztárgép kártya': '',
+    'Tartalék bevétel': '',
+    'Költség': '',
+    'Eredmény': '',
+    _rowType: 'sectionHeader',
+  });
+
+  unitsArray.forEach((unit) => {
+    data.push({
       'Egység': unit.unitName,
       'Szoftver bevétel': unit.totalSoftware,
       'Pénztárgép KP': unit.cashRegisterCash,
@@ -638,9 +778,220 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
       'Tartalék bevétel': unit.reserveRevenue,
       'Költség': -unit.invoiceExpenses,
       'Eredmény': unit.dailyResult,
-    }));
+      _rowType: 'data',
+    });
+  });
 
-  return { data, headers };
+  data.push({
+    'Egység': 'Egységek összesen',
+    'Szoftver bevétel': unitsTotals.totalSoftware,
+    'Pénztárgép KP': unitsTotals.cashRegisterCash,
+    'Pénztárgép kártya': unitsTotals.cashRegisterCard,
+    'Tartalék bevétel': unitsTotals.reserveRevenue,
+    'Költség': -unitsTotals.invoiceExpenses,
+    'Eredmény': unitsTotals.dailyResult,
+    _rowType: 'subtotal',
+  });
+
+  // Section 2: Events (if any)
+  if (eventsData.length > 0) {
+    // Empty row
+    data.push({
+      'Egység': '',
+      'Szoftver bevétel': '',
+      'Pénztárgép KP': '',
+      'Pénztárgép kártya': '',
+      'Tartalék bevétel': '',
+      'Költség': '',
+      'Eredmény': '',
+      _rowType: 'empty',
+    });
+
+    data.push({
+      'Egység': '=== RENDEZVÉNYEK ===',
+      'Szoftver bevétel': '',
+      'Pénztárgép KP': '',
+      'Pénztárgép kártya': '',
+      'Tartalék bevétel': '',
+      'Költség': '',
+      'Eredmény': '',
+      _rowType: 'sectionHeader',
+    });
+
+    // Events headers row
+    data.push({
+      'Egység': 'Egység',
+      'Szoftver bevétel': 'Db',
+      'Pénztárgép KP': 'Bevétel',
+      'Pénztárgép kártya': 'Számlás',
+      'Tartalék bevétel': 'EFO',
+      'Költség': 'Nem számlás',
+      'Eredmény': 'Eredmény',
+      _rowType: 'eventsHeader',
+    });
+
+    eventsData.forEach((event) => {
+      data.push({
+        'Egység': event.unitName,
+        'Szoftver bevétel': event.eventCount,
+        'Pénztárgép KP': event.total_revenue,
+        'Pénztárgép kártya': event.official_expenses,
+        'Tartalék bevétel': event.efo_expenses,
+        'Költség': event.non_official_expenses,
+        'Eredmény': event.profit,
+        _rowType: 'eventData',
+      });
+    });
+
+    data.push({
+      'Egység': 'Rendezvények összesen',
+      'Szoftver bevétel': eventsTotals.eventCount,
+      'Pénztárgép KP': eventsTotals.total_revenue,
+      'Pénztárgép kártya': eventsTotals.official_expenses,
+      'Tartalék bevétel': eventsTotals.efo_expenses,
+      'Költség': eventsTotals.non_official_expenses,
+      'Eredmény': eventsTotals.profit,
+      _rowType: 'eventsSubtotal',
+    });
+
+    // Section 3: Events list
+    data.push({
+      'Egység': '',
+      'Szoftver bevétel': '',
+      'Pénztárgép KP': '',
+      'Pénztárgép kártya': '',
+      'Tartalék bevétel': '',
+      'Költség': '',
+      'Eredmény': '',
+      _rowType: 'empty',
+    });
+
+    data.push({
+      'Egység': '--- Rendezvények részletesen ---',
+      'Szoftver bevétel': '',
+      'Pénztárgép KP': '',
+      'Pénztárgép kártya': '',
+      'Tartalék bevétel': '',
+      'Költség': '',
+      'Eredmény': '',
+      _rowType: 'eventsListHeader',
+    });
+
+    data.push({
+      'Egység': 'Dátum',
+      'Szoftver bevétel': 'Egység',
+      'Pénztárgép KP': 'Rendezvény',
+      'Pénztárgép kártya': 'Bevétel',
+      'Tartalék bevétel': 'Költség',
+      'Költség': '',
+      'Eredmény': 'Eredmény',
+      _rowType: 'eventsListColumns',
+    });
+
+    eventsList.forEach((event) => {
+      data.push({
+        'Egység': formatDate(event.event_date),
+        'Szoftver bevétel': event.unitName,
+        'Pénztárgép KP': event.name,
+        'Pénztárgép kártya': event.total_revenue,
+        'Tartalék bevétel': event.total_expenses,
+        'Költség': '',
+        'Eredmény': event.profit,
+        _rowType: 'eventListItem',
+      });
+    });
+  }
+
+  // Section 4: Grand totals
+  data.push({
+    'Egység': '',
+    'Szoftver bevétel': '',
+    'Pénztárgép KP': '',
+    'Pénztárgép kártya': '',
+    'Tartalék bevétel': '',
+    'Költség': '',
+    'Eredmény': '',
+    _rowType: 'empty',
+  });
+
+  data.push({
+    'Egység': '=== MINDÖSSZESEN ===',
+    'Szoftver bevétel': '',
+    'Pénztárgép KP': '',
+    'Pénztárgép kártya': '',
+    'Tartalék bevétel': '',
+    'Költség': '',
+    'Eredmény': '',
+    _rowType: 'grandTotalHeader',
+  });
+
+  data.push({
+    'Egység': 'Egységek bevétel',
+    'Szoftver bevétel': '',
+    'Pénztárgép KP': '',
+    'Pénztárgép kártya': '',
+    'Tartalék bevétel': '',
+    'Költség': '',
+    'Eredmény': unitsTotals.totalSoftware,
+    _rowType: 'grandTotalRow',
+  });
+
+  data.push({
+    'Egység': 'Rendezvények bevétel',
+    'Szoftver bevétel': '',
+    'Pénztárgép KP': '',
+    'Pénztárgép kártya': '',
+    'Tartalék bevétel': '',
+    'Költség': '',
+    'Eredmény': eventsTotals.total_revenue,
+    _rowType: 'grandTotalRow',
+  });
+
+  data.push({
+    'Egység': 'ÖSSZES BEVÉTEL',
+    'Szoftver bevétel': '',
+    'Pénztárgép KP': '',
+    'Pénztárgép kártya': '',
+    'Tartalék bevétel': '',
+    'Költség': '',
+    'Eredmény': grandTotals.totalRevenue,
+    _rowType: 'grandTotal',
+  });
+
+  data.push({
+    'Egység': 'Egységek eredménye',
+    'Szoftver bevétel': '',
+    'Pénztárgép KP': '',
+    'Pénztárgép kártya': '',
+    'Tartalék bevétel': '',
+    'Költség': '',
+    'Eredmény': unitsTotals.dailyResult,
+    _rowType: 'grandTotalRow',
+  });
+
+  data.push({
+    'Egység': 'Rendezvények eredménye',
+    'Szoftver bevétel': '',
+    'Pénztárgép KP': '',
+    'Pénztárgép kártya': '',
+    'Tartalék bevétel': '',
+    'Költség': '',
+    'Eredmény': eventsTotals.profit,
+    _rowType: 'grandTotalRow',
+  });
+
+  data.push({
+    'Egység': 'ÖSSZES EREDMÉNY',
+    'Szoftver bevétel': '',
+    'Pénztárgép KP': '',
+    'Pénztárgép kártya': '',
+    'Tartalék bevétel': '',
+    'Költség': '',
+    'Eredmény': grandTotals.totalResult,
+    _rowType: 'grandTotal',
+  });
+
+  return { data, headers, hasEvents: eventsData.length > 0 };
 }
 
 async function fetchCashRevenueAllUnitsExport(startDate, endDate) {
@@ -1130,8 +1481,8 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
     }
   }
 
-  // For cash_register and cash_register_all_detailed, style rows based on _rowType
-  if (reportType === 'cash_register' || reportType === 'cash_register_all_detailed') {
+  // For cash_register, cash_register_all_detailed and full_monthly_all, style rows based on _rowType
+  if (reportType === 'cash_register' || reportType === 'cash_register_all_detailed' || reportType === 'full_monthly_all') {
     for (let row = 1; row <= range.e.r; row++) {
       const rowData = data[row - 1];
       if (rowData && rowData._rowType) {
@@ -1149,7 +1500,25 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
             font: { bold: true, color: { rgb: 'FFFFFF' } },
             fill: { fgColor: { rgb: '3B82F6' } },
           };
-        } else if (rowData._rowType === 'subtotal') {
+        } else if (rowData._rowType === 'sectionHeader' || rowData._rowType === 'grandTotalHeader') {
+          // Section header: bold, purple background with white text
+          cellStyle = {
+            font: { bold: true, color: { rgb: 'FFFFFF' } },
+            fill: { fgColor: { rgb: '7C3AED' } },
+          };
+        } else if (rowData._rowType === 'eventsHeader' || rowData._rowType === 'eventsListColumns') {
+          // Events headers: bold, dark blue background with white text
+          cellStyle = {
+            font: { bold: true, color: { rgb: 'FFFFFF' } },
+            fill: { fgColor: { rgb: '3B82F6' } },
+          };
+        } else if (rowData._rowType === 'eventsListHeader') {
+          // Events list header: bold, light blue background
+          cellStyle = {
+            font: { bold: true },
+            fill: { fgColor: { rgb: 'DBEAFE' } },
+          };
+        } else if (rowData._rowType === 'subtotal' || rowData._rowType === 'eventsSubtotal') {
           // Subtotal: bold, gray background
           cellStyle = {
             font: { bold: true },
@@ -1160,6 +1529,11 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
           cellStyle = {
             font: { bold: true },
             fill: { fgColor: { rgb: 'FECACA' } },
+          };
+        } else if (rowData._rowType === 'grandTotalRow') {
+          // Grand total row: regular, light gray background
+          cellStyle = {
+            fill: { fgColor: { rgb: 'F3F4F6' } },
           };
         } else if (rowData._rowType === 'grandTotal') {
           // Grand total: bold, dark red background with white text
@@ -1181,8 +1555,8 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
     }
   }
 
-  // Add totals row (skip for cash_register_all_detailed since it has its own grandTotal row)
-  if (reportType !== 'cash_register_all_detailed') {
+  // Add totals row (skip for cash_register_all_detailed and full_monthly_all since they have their own grandTotal rows)
+  if (reportType !== 'cash_register_all_detailed' && reportType !== 'full_monthly_all') {
     const cleanTotalsRow = {};
     headers.forEach((h) => {
       cleanTotalsRow[h] = totalsRow[h];
@@ -1298,8 +1672,8 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
     })
   );
 
-  // Add totals row (skip for cash_register_all_detailed since it has its own grandTotal row)
-  if (reportType !== 'cash_register_all_detailed') {
+  // Add totals row (skip for cash_register_all_detailed and full_monthly_all since they have their own grandTotal rows)
+  if (reportType !== 'cash_register_all_detailed' && reportType !== 'full_monthly_all') {
     const totalsPdfRow = headers.map((h) => {
       const val = totalsRow[h];
       if (typeof val === 'number') return formatCurrency(val);
@@ -1310,6 +1684,9 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
 
   // Sanitize headers
   const sanitizedHeaders = headers.map((h) => sanitizeForPdf(h));
+
+  // Determine if we should skip default totals row styling
+  const skipDefaultTotalsStyle = reportType === 'cash_register_all_detailed' || reportType === 'full_monthly_all';
 
   // Create table
   autoTable(doc, {
@@ -1338,13 +1715,13 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
       return acc;
     }, {}),
     didParseCell: function (hookData) {
-      // Grand totals row (last row)
-      if (hookData.row.index === tableData.length - 1) {
+      // Grand totals row (last row) - skip for reports that have their own styling
+      if (!skipDefaultTotalsStyle && hookData.row.index === tableData.length - 1) {
         hookData.cell.styles.fontStyle = 'bold';
         hookData.cell.styles.fillColor = [254, 202, 202];
       }
-      // Style rows based on _rowType for cash_register and cash_register_all_detailed
-      else if ((reportType === 'cash_register' || reportType === 'cash_register_all_detailed') && data[hookData.row.index]) {
+      // Style rows based on _rowType for cash_register, cash_register_all_detailed, and full_monthly_all
+      else if ((reportType === 'cash_register' || reportType === 'cash_register_all_detailed' || reportType === 'full_monthly_all') && data[hookData.row.index]) {
         const rowType = data[hookData.row.index]._rowType;
         if (rowType === 'unitHeader') {
           // Unit header: bold, dark red background with white text
@@ -1356,7 +1733,21 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
           hookData.cell.styles.fontStyle = 'bold';
           hookData.cell.styles.fillColor = [59, 130, 246];
           hookData.cell.styles.textColor = [255, 255, 255];
-        } else if (rowType === 'subtotal') {
+        } else if (rowType === 'sectionHeader' || rowType === 'grandTotalHeader') {
+          // Section header: bold, purple background with white text
+          hookData.cell.styles.fontStyle = 'bold';
+          hookData.cell.styles.fillColor = [124, 58, 237];
+          hookData.cell.styles.textColor = [255, 255, 255];
+        } else if (rowType === 'eventsHeader' || rowType === 'eventsListColumns') {
+          // Events headers: bold, dark blue background with white text
+          hookData.cell.styles.fontStyle = 'bold';
+          hookData.cell.styles.fillColor = [59, 130, 246];
+          hookData.cell.styles.textColor = [255, 255, 255];
+        } else if (rowType === 'eventsListHeader') {
+          // Events list header: bold, light blue background
+          hookData.cell.styles.fontStyle = 'bold';
+          hookData.cell.styles.fillColor = [219, 234, 254];
+        } else if (rowType === 'subtotal' || rowType === 'eventsSubtotal') {
           // Subtotal: bold, gray background
           hookData.cell.styles.fontStyle = 'bold';
           hookData.cell.styles.fillColor = [229, 231, 235];
@@ -1364,6 +1755,9 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
           // Unit total: bold, light red background
           hookData.cell.styles.fontStyle = 'bold';
           hookData.cell.styles.fillColor = [254, 202, 202];
+        } else if (rowType === 'grandTotalRow') {
+          // Grand total row: regular, light gray background
+          hookData.cell.styles.fillColor = [243, 244, 246];
         } else if (rowType === 'grandTotal') {
           // Grand total: bold, dark red background with white text
           hookData.cell.styles.fontStyle = 'bold';
@@ -1402,9 +1796,9 @@ function exportToCsv(data, headers, totalsRow, filename, reportType) {
     }).join(',')
   );
 
-  // Add totals row (skip for cash_register_all_detailed since it has its own grandTotal row)
+  // Add totals row (skip for cash_register_all_detailed and full_monthly_all since they have their own grandTotal rows)
   const csvRows = [headers.join(','), ...dataRows];
-  if (reportType !== 'cash_register_all_detailed') {
+  if (reportType !== 'cash_register_all_detailed' && reportType !== 'full_monthly_all') {
     const totalsArray = headers.map((h) => {
       const val = totalsRow[h];
       if (typeof val === 'string' && val.includes(',')) {
