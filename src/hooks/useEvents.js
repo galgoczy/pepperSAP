@@ -200,9 +200,18 @@ export function useEvent(eventId) {
 
   const createRevenue = async (revenueData) => {
     try {
+      // Clean data - convert empty strings to null for date/numeric fields
+      const cleanedData = {
+        ...revenueData,
+        event_id: eventId,
+        payment_deadline: revenueData.payment_deadline || null,
+        fulfillment_date: revenueData.fulfillment_date || null,
+        amount: revenueData.amount || null,
+      };
+
       const { data, error } = await supabase
         .from('event_revenues')
-        .insert([{ ...revenueData, event_id: eventId }])
+        .insert([cleanedData])
         .select()
         .single();
 
@@ -220,9 +229,17 @@ export function useEvent(eventId) {
 
   const updateRevenue = async (id, revenueData) => {
     try {
+      // Clean data - convert empty strings to null for date/numeric fields
+      const cleanedData = {
+        ...revenueData,
+        payment_deadline: revenueData.payment_deadline || null,
+        fulfillment_date: revenueData.fulfillment_date || null,
+        amount: revenueData.amount || null,
+      };
+
       const { data, error } = await supabase
         .from('event_revenues')
-        .update(revenueData)
+        .update(cleanedData)
         .eq('id', id)
         .select()
         .single();
@@ -255,9 +272,18 @@ export function useEvent(eventId) {
 
   const createExpense = async (expenseData) => {
     try {
+      // Clean data - convert empty strings to null for date/numeric fields
+      const cleanedData = {
+        ...expenseData,
+        event_id: eventId,
+        payment_deadline: expenseData.payment_deadline || null,
+        fulfillment_date: expenseData.fulfillment_date || null,
+        amount: expenseData.amount || null,
+      };
+
       const { data, error } = await supabase
         .from('event_expenses')
-        .insert([{ ...expenseData, event_id: eventId }])
+        .insert([cleanedData])
         .select()
         .single();
 
@@ -275,9 +301,17 @@ export function useEvent(eventId) {
 
   const updateExpense = async (id, expenseData) => {
     try {
+      // Clean data - convert empty strings to null for date/numeric fields
+      const cleanedData = {
+        ...expenseData,
+        payment_deadline: expenseData.payment_deadline || null,
+        fulfillment_date: expenseData.fulfillment_date || null,
+        amount: expenseData.amount || null,
+      };
+
       const { data, error } = await supabase
         .from('event_expenses')
-        .update(expenseData)
+        .update(cleanedData)
         .eq('id', id)
         .select()
         .single();
