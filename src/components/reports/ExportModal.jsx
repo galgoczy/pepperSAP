@@ -1501,22 +1501,22 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
             fill: { fgColor: { rgb: '3B82F6' } },
           };
         } else if (rowData._rowType === 'sectionHeader' || rowData._rowType === 'grandTotalHeader') {
-          // Section header: bold, purple background with white text
+          // Section header: bold, dark red background with white text
           cellStyle = {
             font: { bold: true, color: { rgb: 'FFFFFF' } },
-            fill: { fgColor: { rgb: '7C3AED' } },
+            fill: { fgColor: { rgb: 'D32F2F' } },
           };
         } else if (rowData._rowType === 'eventsHeader' || rowData._rowType === 'eventsListColumns') {
-          // Events headers: bold, dark blue background with white text
+          // Events headers: bold, dark gray background with white text
           cellStyle = {
             font: { bold: true, color: { rgb: 'FFFFFF' } },
-            fill: { fgColor: { rgb: '3B82F6' } },
+            fill: { fgColor: { rgb: '4B5563' } },
           };
         } else if (rowData._rowType === 'eventsListHeader') {
-          // Events list header: bold, light blue background
+          // Events list header: bold, medium gray background
           cellStyle = {
             font: { bold: true },
-            fill: { fgColor: { rgb: 'DBEAFE' } },
+            fill: { fgColor: { rgb: 'D1D5DB' } },
           };
         } else if (rowData._rowType === 'subtotal' || rowData._rowType === 'eventsSubtotal') {
           // Subtotal: bold, gray background
@@ -1734,19 +1734,19 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
           hookData.cell.styles.fillColor = [59, 130, 246];
           hookData.cell.styles.textColor = [255, 255, 255];
         } else if (rowType === 'sectionHeader' || rowType === 'grandTotalHeader') {
-          // Section header: bold, purple background with white text
+          // Section header: bold, dark red background with white text
           hookData.cell.styles.fontStyle = 'bold';
-          hookData.cell.styles.fillColor = [124, 58, 237];
+          hookData.cell.styles.fillColor = [211, 47, 47];
           hookData.cell.styles.textColor = [255, 255, 255];
         } else if (rowType === 'eventsHeader' || rowType === 'eventsListColumns') {
-          // Events headers: bold, dark blue background with white text
+          // Events headers: bold, dark gray background with white text
           hookData.cell.styles.fontStyle = 'bold';
-          hookData.cell.styles.fillColor = [59, 130, 246];
+          hookData.cell.styles.fillColor = [75, 85, 99];
           hookData.cell.styles.textColor = [255, 255, 255];
         } else if (rowType === 'eventsListHeader') {
-          // Events list header: bold, light blue background
+          // Events list header: bold, medium gray background
           hookData.cell.styles.fontStyle = 'bold';
-          hookData.cell.styles.fillColor = [219, 234, 254];
+          hookData.cell.styles.fillColor = [209, 213, 219];
         } else if (rowType === 'subtotal' || rowType === 'eventsSubtotal') {
           // Subtotal: bold, gray background
           hookData.cell.styles.fontStyle = 'bold';
