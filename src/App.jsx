@@ -15,6 +15,7 @@ import DocumentsPage from './pages/DocumentsPage';
 import SettingsPage from './pages/SettingsPage';
 import UnitsPage from './pages/UnitsPage';
 import UsersPage from './pages/UsersPage';
+import MicrosoftCallbackPage from './pages/MicrosoftCallbackPage';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/auth/microsoft/callback" element={<MicrosoftCallbackPage />} />
 
           {/* Protected routes */}
           <Route

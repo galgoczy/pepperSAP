@@ -25,6 +25,7 @@ import { useAuth } from '../hooks/useAuth';
 import { Card, Button, Modal, Input, Select } from '../components/common';
 import { supabase } from '../lib/supabase';
 import { formatDate, formatCurrency, cn } from '../lib/utils';
+import { startMicrosoftAuth, isAzureConfigured, MicrosoftGraphClient } from '../lib/microsoft';
 import toast from 'react-hot-toast';
 
 export default function DocumentsPage() {
@@ -39,6 +40,8 @@ export default function DocumentsPage() {
   const [isTopicModalOpen, setIsTopicModalOpen] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [storageConnected, setStorageConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [connectedAccount, setConnectedAccount] = useState(null);
 
   // Filters
   const [filters, setFilters] = useState({
@@ -135,11 +138,17 @@ export default function DocumentsPage() {
       // Check if storage is connected
       const { data: tokenData } = await supabase
         .from('microsoft_tokens')
-        .select('id')
+        .select('id, user_email, user_name')
         .eq('is_storage_account', true)
         .single();
 
       setStorageConnected(!!tokenData);
+      if (tokenData) {
+        setConnectedAccount({
+          email: tokenData.user_email,
+          name: tokenData.user_name,
+        });
+      }
     } catch (error) {
       console.error('Error fetching documents:', error);
       toast.error('Hiba a dokumentumok betöltésekor');
@@ -286,6 +295,75 @@ export default function DocumentsPage() {
     } catch (error) {
       console.error('Error deleting document:', error);
       toast.error('Hiba a törlés során');
+    }
+  };
+
+  // Handle SharePoint connection
+  const handleConnectSharePoint = async () => {
+    if (!isAzureConfigured()) {
+      toast.error('Azure nincs konfigurálva. Add hozzá a VITE_AZURE_CLIENT_ID és VITE_AZURE_TENANT_ID értékeket a .env.local fájlhoz.');
+      return;
+    }
+
+    setConnecting(true);
+
+    try {
+      // Start OAuth flow
+      const tokens = await startMicrosoftAuth();
+
+      // Get user info from Microsoft Graph
+      const client = new MicrosoftGraphClient(tokens.accessToken);
+      const user = await client.getMe();
+
+      // Save tokens to database
+      const { error } = await supabase.from('microsoft_tokens').upsert({
+        user_id: profile.id,
+        user_email: user.mail || user.userPrincipalName,
+        user_name: user.displayName,
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken,
+        expires_at: tokens.expiresAt.toISOString(),
+        is_storage_account: true, // This is the main storage account
+      }, {
+        onConflict: 'user_id',
+      });
+
+      if (error) throw error;
+
+      toast.success(`SharePoint csatlakoztatva: ${user.mail || user.userPrincipalName}`);
+      setStorageConnected(true);
+      setConnectedAccount({
+        email: user.mail || user.userPrincipalName,
+        name: user.displayName,
+      });
+      setIsConnectModalOpen(false);
+      fetchData();
+    } catch (error) {
+      console.error('SharePoint connection error:', error);
+      toast.error(error.message || 'Hiba a SharePoint csatlakoztatásakor');
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  // Handle disconnect SharePoint
+  const handleDisconnectSharePoint = async () => {
+    if (!confirm('Biztosan leválasztod a SharePoint-ot?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('microsoft_tokens')
+        .delete()
+        .eq('is_storage_account', true);
+
+      if (error) throw error;
+
+      toast.success('SharePoint leválasztva');
+      setStorageConnected(false);
+      setConnectedAccount(null);
+    } catch (error) {
+      console.error('Disconnect error:', error);
+      toast.error('Hiba a leválasztáskor');
     }
   };
 
@@ -858,32 +936,95 @@ export default function DocumentsPage() {
         size="md"
       >
         <div className="space-y-4">
-          <div className="p-4 bg-blue-50 rounded-lg">
-            <h3 className="font-medium text-blue-800 mb-2">Microsoft 365 beállítás szükséges</h3>
-            <p className="text-sm text-blue-600">
-              A SharePoint csatlakoztatásához először be kell állítani az Azure App Registration-t.
-              Kérlek, kövesd a dokumentációban leírt lépéseket.
-            </p>
-          </div>
+          {storageConnected && connectedAccount ? (
+            <>
+              <div className="p-4 bg-green-50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                  <div>
+                    <h3 className="font-medium text-green-800">SharePoint csatlakoztatva</h3>
+                    <p className="text-sm text-green-600">
+                      {connectedAccount.name} ({connectedAccount.email})
+                    </p>
+                  </div>
+                </div>
+              </div>
 
-          <div className="space-y-2 text-sm">
-            <p className="font-medium">Szükséges lépések:</p>
-            <ol className="list-decimal list-inside space-y-1 text-gray-600">
-              <li>Azure App Registration létrehozása</li>
-              <li>API engedélyek beállítása (Files.ReadWrite.All, Sites.ReadWrite.All)</li>
-              <li>Supabase Auth provider konfigurálása</li>
-              <li>Bejelentkezés az info@pepperhouse.hu fiókkal</li>
-            </ol>
-          </div>
+              <div className="flex gap-3">
+                <Button variant="secondary" onClick={() => setIsConnectModalOpen(false)}>
+                  Bezárás
+                </Button>
+                <Button variant="danger" onClick={handleDisconnectSharePoint}>
+                  Leválasztás
+                </Button>
+              </div>
+            </>
+          ) : isAzureConfigured() ? (
+            <>
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <h3 className="font-medium text-blue-800 mb-2">Microsoft 365 bejelentkezés</h3>
+                <p className="text-sm text-blue-600">
+                  Jelentkezz be az info@pepperhouse.hu fiókkal a SharePoint csatlakoztatásához.
+                  A dokumentumok ezen a fiókon lesznek tárolva.
+                </p>
+              </div>
 
-          <div className="pt-4 border-t">
-            <p className="text-sm text-gray-500 mb-3">
-              A dokumentáció itt található: <code className="bg-gray-100 px-1 rounded">docs/AZURE_SETUP_GUIDE.md</code>
-            </p>
-            <Button variant="secondary" onClick={() => setIsConnectModalOpen(false)}>
-              Bezárás
-            </Button>
-          </div>
+              <div className="space-y-2 text-sm">
+                <p className="font-medium">Mappa struktúra:</p>
+                <div className="p-3 bg-gray-50 rounded-lg font-mono text-xs">
+                  <p>📁 PepperHouse Documents</p>
+                  <p className="ml-4">📁 Számlák</p>
+                  <p className="ml-8">📁 2024</p>
+                  <p className="ml-8">📁 2025</p>
+                  <p className="ml-4">📁 Szerződések</p>
+                  <p className="ml-4">📁 HR dokumentumok</p>
+                  <p className="ml-4">📁 ...</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t">
+                <Button variant="secondary" onClick={() => setIsConnectModalOpen(false)}>
+                  Mégse
+                </Button>
+                <Button onClick={handleConnectSharePoint} loading={connecting}>
+                  <Link2 className="h-4 w-4" />
+                  Bejelentkezés Microsoft 365-tel
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="p-4 bg-amber-50 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
+                  <div>
+                    <h3 className="font-medium text-amber-800">Azure konfiguráció szükséges</h3>
+                    <p className="text-sm text-amber-600 mt-1">
+                      A SharePoint csatlakoztatásához be kell állítani az Azure App Registration-t
+                      és hozzá kell adni a környezeti változókat.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2 text-sm">
+                <p className="font-medium">Hiányzó konfiguráció:</p>
+                <div className="p-3 bg-gray-50 rounded-lg font-mono text-xs">
+                  <p>VITE_AZURE_CLIENT_ID=your-client-id</p>
+                  <p>VITE_AZURE_TENANT_ID=your-tenant-id</p>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t">
+                <p className="text-sm text-gray-500 mb-3">
+                  A dokumentáció: <code className="bg-gray-100 px-1 rounded">docs/AZURE_SETUP_GUIDE.md</code>
+                </p>
+                <Button variant="secondary" onClick={() => setIsConnectModalOpen(false)}>
+                  Bezárás
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
     </div>
