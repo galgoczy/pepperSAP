@@ -301,6 +301,69 @@ CREATE TABLE event_expenses (
 - `is_official=true, is_efo=true`: EFO költség (alkalmazotti, számlás)
 - `is_official=false, is_efo=false`: Nem számlás költség
 
+### 11. DOCUMENT_TOPICS (Dokumentum témakörök)
+```sql
+CREATE TABLE document_topics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,              -- Témakör neve
+  description TEXT,
+  sort_order INTEGER DEFAULT 0,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+**Alapértelmezett témakörök:**
+- Számlák
+- Szerződések
+- HR dokumentumok
+- Hatósági
+- Pénzügy
+- Egyéb
+
+### 12. DOCUMENTS (Dokumentumok)
+```sql
+CREATE TABLE documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Alap infó
+  title TEXT NOT NULL,                    -- Cím
+  description TEXT,
+
+  -- SharePoint/OneDrive referenciák
+  sharepoint_item_id TEXT,                -- Microsoft Graph item ID
+  sharepoint_drive_id TEXT,               -- Drive ID
+  sharepoint_path TEXT,                   -- Teljes útvonal: /Számlák/2024/invoice.pdf
+  sharepoint_web_url TEXT,                -- Közvetlen link
+
+  -- Fájl infó
+  file_name TEXT NOT NULL,
+  file_size BIGINT,
+  mime_type TEXT,
+
+  -- Metaadatok
+  document_date DATE,                     -- Felhasználó által megadott dátum (opcionális)
+  topic_id UUID REFERENCES document_topics(id),
+  unit_id UUID REFERENCES units(id),      -- Opcionális egység
+  tags TEXT[] DEFAULT '{}',               -- Címkék tömb
+  year INTEGER,                           -- Év (mappából vagy dátumból)
+
+  -- Hozzáférés
+  access_level TEXT DEFAULT 'admin',      -- 'admin' vagy 'all'
+
+  -- Szinkronizálási státusz
+  sync_status TEXT DEFAULT 'synced',      -- 'pending', 'synced', 'error', 'deleted'
+  last_synced_at TIMESTAMPTZ,
+
+  uploaded_by UUID REFERENCES user_profiles(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+**Hozzáférési szintek:**
+- `admin`: Csak adminok látják
+- `all`: Mindenki látja
+
 ---
 
 ## SQL Minták
@@ -614,6 +677,8 @@ ORDER BY e.event_date;
     - EFO: `is_official=true, is_efo=true`
     - Nem számlás: `is_official=false, is_efo=false`
 15. **Discrepancies JSONB formátum:** `[{"amount": 500, "currency": "HUF", "note": "..."}]`
+16. **Dokumentum hozzáférési szintek:** 'admin', 'all'
+17. **Dokumentum szinkronizálási státuszok:** 'pending', 'synced', 'error', 'deleted'
 
 ---
 
@@ -628,9 +693,13 @@ units
   │     └── cash_register_revenue (daily_revenue_id)
   ├── house_cash (unit_id)
   ├── expenses (unit_id)
-  └── events (unit_id)
-        ├── event_revenues (event_id)
-        └── event_expenses (event_id)
+  ├── events (unit_id)
+  │     ├── event_revenues (event_id)
+  │     └── event_expenses (event_id)
+  └── documents (unit_id) [opcionális]
+
+document_topics
+  └── documents (topic_id)
 ```
 
 ---

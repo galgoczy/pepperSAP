@@ -11,6 +11,7 @@ import ExpensesPage from './pages/ExpensesPage';
 import EventsPage from './pages/EventsPage';
 import EventDetailPage from './pages/EventDetailPage';
 import ReportsPage from './pages/ReportsPage';
+import DocumentsPage from './pages/DocumentsPage';
 import SettingsPage from './pages/SettingsPage';
 import UnitsPage from './pages/UnitsPage';
 import UsersPage from './pages/UsersPage';
@@ -65,6 +66,7 @@ function App() {
               }
             />
             <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/documents" element={<DocumentsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
 
             {/* Admin only routes */}

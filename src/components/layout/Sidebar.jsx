@@ -5,6 +5,7 @@ import {
   Receipt,
   PartyPopper,
   FileText,
+  FolderOpen,
   Settings,
   Building2,
   Users,
@@ -48,6 +49,12 @@ export default function Sidebar({ isOpen, onClose }) {
       icon: FileText,
       to: '/reports',
       show: true,
+    },
+    {
+      label: 'Dokumentumok',
+      icon: FolderOpen,
+      to: '/documents',
+      show: noProfileYet || isAdmin || !isAccountant,
     },
     // Admin only items
     {
