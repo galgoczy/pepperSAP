@@ -9,6 +9,9 @@ import {
   Settings,
   Building2,
   Users,
+  Package,
+  Contact,
+  TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
@@ -19,65 +22,96 @@ export default function Sidebar({ isOpen, onClose }) {
   // If no profile exists (database not set up), show all menu items for development
   const noProfileYet = !profile;
 
-  const navItems = [
+  // Menu sections
+  const menuSections = [
     {
-      label: 'Főoldal',
-      icon: LayoutDashboard,
-      to: '/',
-      show: !isAccountant,
+      title: null, // No title for main section
+      items: [
+        {
+          label: 'Főoldal',
+          icon: LayoutDashboard,
+          to: '/',
+          show: !isAccountant,
+        },
+        {
+          label: 'Napi adatok',
+          icon: CalendarDays,
+          to: '/daily',
+          show: noProfileYet || (!isEvents && !isAccountant),
+        },
+        {
+          label: 'Kifizetések',
+          icon: Receipt,
+          to: '/expenses',
+          show: noProfileYet || (!isEvents && !isAccountant),
+        },
+        {
+          label: 'Rendezvények',
+          icon: PartyPopper,
+          to: '/events',
+          show: noProfileYet || isAdmin || isEvents,
+        },
+        {
+          label: 'Riportok',
+          icon: FileText,
+          to: '/reports',
+          show: true,
+        },
+      ],
     },
     {
-      label: 'Napi adatok',
-      icon: CalendarDays,
-      to: '/daily',
-      show: noProfileYet || (!isEvents && !isAccountant),
+      title: 'Adminisztráció',
+      items: [
+        {
+          label: 'Egységek',
+          icon: Building2,
+          to: '/units',
+          show: noProfileYet || isAdmin,
+        },
+        {
+          label: 'Felhasználók',
+          icon: Users,
+          to: '/users',
+          show: noProfileYet || isAdmin,
+        },
+        {
+          label: 'Beállítások',
+          icon: Settings,
+          to: '/settings',
+          show: !isAccountant,
+        },
+      ],
     },
     {
-      label: 'Kifizetések',
-      icon: Receipt,
-      to: '/expenses',
-      show: noProfileYet || (!isEvents && !isAccountant),
-    },
-    {
-      label: 'Rendezvények',
-      icon: PartyPopper,
-      to: '/events',
-      show: noProfileYet || isAdmin || isEvents,
-    },
-    {
-      label: 'Riportok',
-      icon: FileText,
-      to: '/reports',
-      show: true,
-    },
-    {
-      label: 'Dokumentumok',
-      icon: FolderOpen,
-      to: '/documents',
-      show: noProfileYet || isAdmin || !isAccountant,
-    },
-    // Admin only items
-    {
-      label: 'Egységek',
-      icon: Building2,
-      to: '/units',
-      show: noProfileYet || isAdmin,
-    },
-    {
-      label: 'Felhasználók',
-      icon: Users,
-      to: '/users',
-      show: noProfileYet || isAdmin,
-    },
-    {
-      label: 'Beállítások',
-      icon: Settings,
-      to: '/settings',
-      show: !isAccountant,
+      title: 'Ügyvitel',
+      items: [
+        {
+          label: 'Ügyfelek',
+          icon: Contact,
+          to: '/contacts',
+          show: noProfileYet || isAdmin,
+        },
+        {
+          label: 'Sales',
+          icon: TrendingUp,
+          to: '/sales',
+          show: noProfileYet || isAdmin,
+        },
+        {
+          label: 'Készletek',
+          icon: Package,
+          to: '/inventory',
+          show: noProfileYet || isAdmin,
+        },
+        {
+          label: 'Dokumentumok',
+          icon: FolderOpen,
+          to: '/documents',
+          show: noProfileYet || isAdmin || !isAccountant,
+        },
+      ],
     },
   ];
-
-  const filteredNavItems = navItems.filter((item) => item.show);
 
   return (
     <>
@@ -98,25 +132,41 @@ export default function Sidebar({ isOpen, onClose }) {
           isOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <nav className="p-4 space-y-1">
-          {filteredNavItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={onClose}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-pepper-red text-white'
-                    : 'text-gray-700 hover:bg-gray-100'
-                )
-              }
-            >
-              <item.icon className="h-5 w-5" />
-              {item.label}
-            </NavLink>
-          ))}
+        <nav className="p-4 space-y-6 overflow-y-auto h-[calc(100%-5rem)]">
+          {menuSections.map((section, sectionIdx) => {
+            const visibleItems = section.items.filter((item) => item.show);
+            if (visibleItems.length === 0) return null;
+
+            return (
+              <div key={sectionIdx}>
+                {section.title && (
+                  <h3 className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                    {section.title}
+                  </h3>
+                )}
+                <div className="space-y-1">
+                  {visibleItems.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      onClick={onClose}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors',
+                          isActive
+                            ? 'bg-pepper-red text-white'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        )
+                      }
+                    >
+                      <item.icon className="h-5 w-5" />
+                      {item.label}
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </nav>
 
         {/* Footer */}

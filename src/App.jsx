@@ -12,6 +12,9 @@ import EventsPage from './pages/EventsPage';
 import EventDetailPage from './pages/EventDetailPage';
 import ReportsPage from './pages/ReportsPage';
 import DocumentsPage from './pages/DocumentsPage';
+import ContactsPage from './pages/ContactsPage';
+import SalesPage from './pages/SalesPage';
+import InventoryPage from './pages/InventoryPage';
 import SettingsPage from './pages/SettingsPage';
 import UnitsPage from './pages/UnitsPage';
 import UsersPage from './pages/UsersPage';
@@ -69,6 +72,30 @@ function App() {
             />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/documents" element={<DocumentsPage />} />
+            <Route
+              path="/contacts"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <ContactsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/sales"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <SalesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/inventory"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <InventoryPage />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/settings" element={<SettingsPage />} />
 
             {/* Admin only routes */}

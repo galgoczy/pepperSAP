@@ -700,7 +700,67 @@ units
 
 document_topics
   └── documents (topic_id)
+
+companies
+  ├── company_contacts (company_id)
+  └── sales_events (company_id)
 ```
+
+### 13. COMPANIES (Cégek - ügyfelek és beszállítók)
+```sql
+CREATE TABLE companies (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,                    -- Cégnév
+  type TEXT NOT NULL DEFAULT 'customer', -- 'customer', 'supplier', 'both'
+  supplier_category TEXT,                -- Beszállító kategória (ha supplier/both)
+  address TEXT,
+  phone TEXT,
+  email TEXT,
+  website TEXT,
+  tax_number TEXT,                       -- Adószám
+  our_contact_id UUID REFERENCES user_profiles(id), -- Mi kapcsolattartónk
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+**Típusok:** 'customer', 'supplier', 'both'
+**Beszállító kategóriák:** 'vegetables', 'bakery', 'eggs', 'meat', 'game', 'fish', 'softdrinks', 'alcohol', 'mixed'
+
+### 14. COMPANY_CONTACTS (Céges kontaktszemélyek)
+```sql
+CREATE TABLE company_contacts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,                    -- Kontakt neve
+  title TEXT,                            -- Pozíció/titulus
+  phone TEXT,
+  email TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+### 15. SALES_EVENTS (Sales/CRM események)
+```sql
+CREATE TABLE sales_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,              -- Esemény típusa
+  event_date DATE NOT NULL,
+  our_contact_id UUID REFERENCES user_profiles(id), -- Ki kezelte
+  priority TEXT NOT NULL DEFAULT 'normal', -- Fontosság
+  amount DECIMAL(12,2),                  -- Összeg (ajánlat/szerződés/teljesítés)
+  currency TEXT DEFAULT 'HUF',
+  probability INTEGER,                   -- Valószínűség % (csak ajánlatnál)
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+**Esemény típusok:** 'call', 'email', 'meeting', 'inquiry', 'offer', 'contract', 'delivery', 'followup', 'complaint'
+**Fontosság:** 'normal' (!), 'notable' (!!), 'high' (!!!), 'followup' (!!!U - utókövetés)
 
 ---
 
