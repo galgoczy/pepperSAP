@@ -316,16 +316,18 @@ export default function DocumentsPage() {
       const user = await client.getMe();
 
       // Save tokens to database
+      const userEmail = user.mail || user.userPrincipalName;
       const { error } = await supabase.from('microsoft_tokens').upsert({
-        user_id: profile.id,
-        user_email: user.mail || user.userPrincipalName,
+        user_email: userEmail,
         user_name: user.displayName,
+        user_id: profile?.id || null,
         access_token: tokens.accessToken,
         refresh_token: tokens.refreshToken,
         expires_at: tokens.expiresAt.toISOString(),
         is_storage_account: true, // This is the main storage account
+        updated_at: new Date().toISOString(),
       }, {
-        onConflict: 'user_id',
+        onConflict: 'user_email',
       });
 
       if (error) throw error;

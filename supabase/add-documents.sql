@@ -73,6 +73,8 @@ CREATE INDEX IF NOT EXISTS idx_documents_tags ON documents USING GIN(tags);
 CREATE TABLE IF NOT EXISTS microsoft_tokens (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_email TEXT NOT NULL UNIQUE,      -- info@pepperhouse.hu
+  user_name TEXT,                        -- Display name from Microsoft
+  user_id UUID REFERENCES user_profiles(id), -- Admin who connected it
   access_token TEXT,                     -- Encrypted
   refresh_token TEXT,                    -- Encrypted
   expires_at TIMESTAMPTZ,
