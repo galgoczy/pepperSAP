@@ -3,6 +3,14 @@ import { supabase, onAuthError } from '../lib/supabase';
 
 export const AuthContext = createContext(null);
 
+// Predefined user roles based on email
+const EMAIL_ROLE_MAP = {
+  'gergo@pepperhouse.hu': { role: 'admin', unit_name: null },
+  'info@pepperhouse.hu': { role: 'admin', unit_name: null },
+  'szentkiralyi@pepperhouse.hu': { role: 'unit', unit_name: 'Szentkirályi' },
+  'rendezveny@pepperhouse.hu': { role: 'events', unit_name: 'Rendezvény Egység' },
+};
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -16,9 +24,65 @@ export function AuthProvider({ children }) {
     userRef.current = user;
   }, [user]);
 
-  const fetchProfile = useCallback(async (userId) => {
+  // Create or update user profile based on email
+  const ensureUserProfile = useCallback(async (authUser) => {
+    const email = authUser.email?.toLowerCase();
+    const roleConfig = EMAIL_ROLE_MAP[email];
+
+    if (!roleConfig) {
+      console.warn('Unknown user email:', email);
+      // Don't create profile for unknown users
+      return null;
+    }
+
+    // Check if profile exists
+    const { data: existingProfile } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('id', authUser.id)
+      .single();
+
+    if (existingProfile) {
+      return existingProfile;
+    }
+
+    // Get unit_id if needed
+    let unitId = null;
+    if (roleConfig.unit_name) {
+      const { data: unit } = await supabase
+        .from('units')
+        .select('id')
+        .eq('name', roleConfig.unit_name)
+        .single();
+      unitId = unit?.id || null;
+    }
+
+    // Create new profile
+    const newProfile = {
+      id: authUser.id,
+      email: email,
+      full_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || email.split('@')[0],
+      role: roleConfig.role,
+      unit_id: unitId,
+    };
+
+    const { data: createdProfile, error } = await supabase
+      .from('user_profiles')
+      .insert(newProfile)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating user profile:', error);
+      return null;
+    }
+
+    return createdProfile;
+  }, []);
+
+  const fetchProfile = useCallback(async (userId, authUser = null) => {
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('user_profiles')
         .select(`
           *,
@@ -31,20 +95,43 @@ export function AuthProvider({ children }) {
         .eq('id', userId)
         .single();
 
-      if (error) throw error;
+      // If profile doesn't exist and we have authUser, try to create it
+      if (error && authUser) {
+        const newProfile = await ensureUserProfile(authUser);
+        if (newProfile) {
+          // Fetch again with unit relation
+          const { data: refetchedData } = await supabase
+            .from('user_profiles')
+            .select(`
+              *,
+              units (
+                id,
+                name,
+                type
+              )
+            `)
+            .eq('id', userId)
+            .single();
+          data = refetchedData;
+        }
+      }
 
-      setProfile({
-        ...data,
-        unit_name: data.units?.name,
-        unit_type: data.units?.type,
-      });
+      if (data) {
+        setProfile({
+          ...data,
+          unit_name: data.units?.name,
+          unit_type: data.units?.type,
+        });
+      } else {
+        setProfile(null);
+      }
     } catch (error) {
       console.error('Error fetching profile:', error);
       setProfile(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [ensureUserProfile]);
 
   // Session refresh function
   const refreshSession = useCallback(async () => {
@@ -72,7 +159,7 @@ export function AuthProvider({ children }) {
       if (!mounted) return;
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id);
+        fetchProfile(session.user.id, session.user);
       } else {
         setLoading(false);
       }
@@ -94,7 +181,7 @@ export function AuthProvider({ children }) {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         setUser(session?.user ?? null);
         if (session?.user) {
-          await fetchProfile(session.user.id);
+          await fetchProfile(session.user.id, session.user);
         }
       }
     });

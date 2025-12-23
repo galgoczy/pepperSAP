@@ -89,7 +89,7 @@ export default function Sidebar({ isOpen, onClose }) {
           label: 'Ügyfelek',
           icon: Contact,
           to: '/contacts',
-          show: noProfileYet || isAdmin,
+          show: true, // Everyone can see contacts
         },
         {
           label: 'Sales',
@@ -101,13 +101,13 @@ export default function Sidebar({ isOpen, onClose }) {
           label: 'Készletek',
           icon: Package,
           to: '/inventory',
-          show: noProfileYet || isAdmin,
+          show: true, // Everyone can see inventory (will show their unit's data later)
         },
         {
           label: 'Dokumentumok',
           icon: FolderOpen,
           to: '/documents',
-          show: noProfileYet || isAdmin || !isAccountant,
+          show: noProfileYet || isAdmin,
         },
       ],
     },

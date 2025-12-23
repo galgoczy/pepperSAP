@@ -828,3 +828,45 @@ VALUES (
 ON CONFLICT (id) DO UPDATE SET
   role = 'accountant';
 ```
+
+**Példa kérés:** "Adj hozzá egy beszállító céget, neve Metro, kategória vegyes"
+
+**Válasz:**
+```sql
+INSERT INTO companies (name, type, supplier_category)
+VALUES ('Metro', 'supplier', 'mixed')
+ON CONFLICT DO NOTHING;
+```
+
+**Példa kérés:** "Adj hozzá egy kontaktszemélyt a Metro-hoz, neve Kovács Péter, pozíció: Értékesítő, tel: +36301234567"
+
+**Válasz:**
+```sql
+INSERT INTO company_contacts (company_id, name, title, phone)
+SELECT id, 'Kovács Péter', 'Értékesítő', '+36301234567'
+FROM companies WHERE name = 'Metro';
+```
+
+**Példa kérés:** "Adj hozzá egy ajánlatot az ABC Kft-hez, 2 millió Ft, 60% esély, ma"
+
+**Válasz:**
+```sql
+INSERT INTO sales_events (company_id, event_type, event_date, amount, probability, priority)
+SELECT id, 'offer', CURRENT_DATE, 2000000, 60, 'normal'
+FROM companies WHERE name = 'ABC Kft';
+```
+
+**Példa kérés:** "Jelöld meg az ABC Kft legutóbbi ajánlatát utókövetésre"
+
+**Válasz:**
+```sql
+UPDATE sales_events
+SET priority = 'followup', updated_at = NOW()
+WHERE id = (
+  SELECT se.id FROM sales_events se
+  JOIN companies c ON se.company_id = c.id
+  WHERE c.name = 'ABC Kft' AND se.event_type = 'offer'
+  ORDER BY se.event_date DESC
+  LIMIT 1
+);
+```

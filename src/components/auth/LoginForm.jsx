@@ -1,99 +1,42 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Eye, EyeOff, LogIn, Shield, Building2, PartyPopper } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
-import { Button, Input, Card } from '../common';
+import { LogIn, Loader2 } from 'lucide-react';
+import { Button, Card } from '../common';
+import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
-// Test accounts for quick login
-const TEST_ACCOUNTS = [
-  {
-    email: 'gergo@pepperhouse.hu',
-    password: 'admin123',
-    label: 'Admin',
-    icon: Shield,
-    color: 'bg-red-600 hover:bg-red-700',
-  },
-  {
-    email: 'unit@pepperhouse.hu',
-    password: 'unit123',
-    label: 'Éttermi egység',
-    icon: Building2,
-    color: 'bg-blue-600 hover:bg-blue-700',
-  },
-  {
-    email: 'events@pepperhouse.hu',
-    password: 'events123',
-    label: 'Rendezvény',
-    icon: PartyPopper,
-    color: 'bg-purple-600 hover:bg-purple-700',
-  },
-];
-
 export default function LoginForm() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-
   const from = location.state?.from?.pathname || '/';
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleMicrosoftLogin = async () => {
     setError('');
     setLoading(true);
 
     try {
-      const { error: signInError } = await signIn(email, password);
+      const { error: signInError } = await supabase.auth.signInWithOAuth({
+        provider: 'azure',
+        options: {
+          scopes: 'email profile openid',
+          redirectTo: `${window.location.origin}/`,
+        },
+      });
 
       if (signInError) {
-        if (signInError.message.includes('Invalid login')) {
-          setError('Hibás email cím vagy jelszó');
-        } else {
-          setError('Hiba történt a bejelentkezés során');
-        }
+        console.error('Microsoft login error:', signInError);
+        setError('Hiba történt a bejelentkezés során');
+        setLoading(false);
         return;
       }
 
-      toast.success('Sikeres bejelentkezés!');
-      navigate(from, { replace: true });
+      // OAuth will redirect, so we don't need to do anything else
     } catch (err) {
+      console.error('Login error:', err);
       setError('Váratlan hiba történt');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleQuickLogin = async (account) => {
-    setEmail(account.email);
-    setPassword(account.password);
-    setError('');
-    setLoading(true);
-
-    try {
-      const { error: signInError } = await signIn(account.email, account.password);
-
-      if (signInError) {
-        if (signInError.message.includes('Invalid login')) {
-          setError(`Teszt fiók nem található: ${account.email}. Hozd létre a Supabase-ben!`);
-        } else {
-          setError('Hiba történt a bejelentkezés során');
-        }
-        return;
-      }
-
-      toast.success('Sikeres bejelentkezés!');
-      navigate(from, { replace: true });
-    } catch (err) {
-      setError('Váratlan hiba történt');
-      console.error(err);
-    } finally {
       setLoading(false);
     }
   };
@@ -112,100 +55,63 @@ export default function LoginForm() {
             Pénzügyi Nyilvántartó Rendszer
           </h1>
           <p className="text-gray-500 mt-2">
-            Jelentkezz be a folytatáshoz
+            Jelentkezz be Microsoft 365 fiókkal
           </p>
         </div>
 
-        {/* Quick Login Buttons */}
-        <Card className="p-4 mb-4">
-          <p className="text-sm text-gray-600 mb-3 text-center font-medium">
-            Gyors belépés (teszt)
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            {TEST_ACCOUNTS.map((account) => (
-              <button
-                key={account.email}
-                onClick={() => handleQuickLogin(account)}
-                disabled={loading}
-                className={`${account.color} text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex flex-col items-center gap-1 disabled:opacity-50`}
-              >
-                <account.icon className="h-5 w-5" />
-                {account.label}
-              </button>
-            ))}
+        {/* Login Card */}
+        <Card className="p-8">
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-6">
+              {error}
+            </div>
+          )}
+
+          <Button
+            onClick={handleMicrosoftLogin}
+            disabled={loading}
+            className="w-full"
+            size="lg"
+          >
+            {loading ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <>
+                <svg className="h-5 w-5" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+                  <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+                  <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+                  <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+                </svg>
+                Bejelentkezés Microsoft 365-tel
+              </>
+            )}
+          </Button>
+
+          <div className="mt-6 text-center">
+            <p className="text-sm text-gray-500">
+              Használd a @pepperhouse.hu céges fiókodat
+            </p>
           </div>
         </Card>
 
-        {/* Login Card */}
-        <Card className="p-8">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-                {error}
-              </div>
-            )}
-
-            <Input
-              label="Email cím"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="pelda@pepperhouse.hu"
-              required
-              autoComplete="email"
-            />
-
-            <div className="relative">
-              <Input
-                label="Jelszó"
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                autoComplete="current-password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-9 text-gray-400 hover:text-gray-600"
-              >
-                {showPassword ? (
-                  <EyeOff className="h-5 w-5" />
-                ) : (
-                  <Eye className="h-5 w-5" />
-                )}
-              </button>
-            </div>
-
-            <Button
-              type="submit"
-              loading={loading}
-              className="w-full"
-              size="lg"
-            >
-              <LogIn className="h-5 w-5" />
-              Bejelentkezés
-            </Button>
-          </form>
-        </Card>
-
-        {/* Test Account Info */}
-        <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <p className="text-sm text-yellow-800 font-medium mb-2">
-            Teszt fiókok létrehozása Supabase-ben:
+        {/* Allowed accounts info */}
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-sm text-blue-800 font-medium mb-2">
+            Engedélyezett fiókok:
           </p>
-          <ul className="text-xs text-yellow-700 space-y-1">
-            <li>1. Supabase Dashboard → Authentication → Users</li>
-            <li>2. "Add user" gomb → email + jelszó megadása</li>
-            <li>3. user_profiles táblába INSERT a role-lal</li>
+          <ul className="text-xs text-blue-700 space-y-1">
+            <li>• gergo@pepperhouse.hu (admin)</li>
+            <li>• info@pepperhouse.hu (admin)</li>
+            <li>• szentkiralyi@pepperhouse.hu (Szentkirályi egység)</li>
+            <li>• rendezveny@pepperhouse.hu (Rendezvények)</li>
           </ul>
         </div>
 
         {/* Footer */}
         <p className="text-center text-sm text-gray-500 mt-6">
           Problémád van a bejelentkezéssel?{' '}
-          <a href="mailto:support@pepperhouse.hu" className="text-pepper-red hover:underline">
+          <a href="mailto:gergo@pepperhouse.hu" className="text-pepper-red hover:underline">
             Lépj kapcsolatba velünk
           </a>
         </p>

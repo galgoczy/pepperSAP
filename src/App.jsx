@@ -71,15 +71,15 @@ function App() {
               }
             />
             <Route path="/reports" element={<ReportsPage />} />
-            <Route path="/documents" element={<DocumentsPage />} />
             <Route
-              path="/contacts"
+              path="/documents"
               element={
                 <ProtectedRoute requireAdmin>
-                  <ContactsPage />
+                  <DocumentsPage />
                 </ProtectedRoute>
               }
             />
+            <Route path="/contacts" element={<ContactsPage />} />
             <Route
               path="/sales"
               element={
@@ -88,14 +88,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/inventory"
-              element={
-                <ProtectedRoute requireAdmin>
-                  <InventoryPage />
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/inventory" element={<InventoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
 
             {/* Admin only routes */}
