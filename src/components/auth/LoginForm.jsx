@@ -1,29 +1,66 @@
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Shield, Store, PartyPopper } from 'lucide-react';
 import { Button, Card } from '../common';
 import { supabase } from '../../lib/supabase';
 
+// Test accounts for quick login
+const TEST_ACCOUNTS = [
+  {
+    email: 'gergo@pepperhouse.hu',
+    label: 'Gergo',
+    role: 'Admin',
+    icon: Shield,
+    color: 'bg-red-600 hover:bg-red-700',
+  },
+  {
+    email: 'szentkiralyi@pepperhouse.hu',
+    label: 'Szentkirályi',
+    role: 'Étterem',
+    icon: Store,
+    color: 'bg-blue-600 hover:bg-blue-700',
+  },
+  {
+    email: 'rendezveny@pepperhouse.hu',
+    label: 'Rendezvény',
+    role: 'Events',
+    icon: PartyPopper,
+    color: 'bg-purple-600 hover:bg-purple-700',
+  },
+];
+
 export default function LoginForm() {
   const [loading, setLoading] = useState(false);
+  const [loadingAccount, setLoadingAccount] = useState(null);
   const [error, setError] = useState('');
 
-  const handleMicrosoftLogin = async () => {
+  const handleMicrosoftLogin = async (loginHint = null) => {
     setError('');
     setLoading(true);
+    if (loginHint) setLoadingAccount(loginHint);
 
     try {
+      const options = {
+        scopes: 'email profile openid',
+        redirectTo: `${window.location.origin}/`,
+      };
+
+      // Add login_hint to pre-fill the email
+      if (loginHint) {
+        options.queryParams = {
+          login_hint: loginHint,
+        };
+      }
+
       const { error: signInError } = await supabase.auth.signInWithOAuth({
         provider: 'azure',
-        options: {
-          scopes: 'email profile openid',
-          redirectTo: `${window.location.origin}/`,
-        },
+        options,
       });
 
       if (signInError) {
         console.error('Microsoft login error:', signInError);
         setError('Hiba történt a bejelentkezés során');
         setLoading(false);
+        setLoadingAccount(null);
         return;
       }
 
@@ -32,6 +69,7 @@ export default function LoginForm() {
       console.error('Login error:', err);
       setError('Váratlan hiba történt');
       setLoading(false);
+      setLoadingAccount(null);
     }
   };
 
@@ -62,12 +100,12 @@ export default function LoginForm() {
           )}
 
           <Button
-            onClick={handleMicrosoftLogin}
+            onClick={() => handleMicrosoftLogin()}
             disabled={loading}
             className="w-full"
             size="lg"
           >
-            {loading ? (
+            {loading && !loadingAccount ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
               <>
@@ -89,17 +127,33 @@ export default function LoginForm() {
           </div>
         </Card>
 
-        {/* Allowed accounts info */}
-        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-800 font-medium mb-2">
-            Engedélyezett fiókok:
+        {/* Quick Login Buttons for Testing */}
+        <div className="mt-4">
+          <p className="text-xs text-gray-500 text-center mb-3">
+            Gyors belépés teszteléshez:
           </p>
-          <ul className="text-xs text-blue-700 space-y-1">
-            <li>• gergo@pepperhouse.hu (admin)</li>
-            <li>• info@pepperhouse.hu (admin)</li>
-            <li>• szentkiralyi@pepperhouse.hu (Szentkirályi egység)</li>
-            <li>• rendezveny@pepperhouse.hu (Rendezvények)</li>
-          </ul>
+          <div className="grid grid-cols-3 gap-2">
+            {TEST_ACCOUNTS.map((account) => {
+              const Icon = account.icon;
+              const isLoading = loadingAccount === account.email;
+              return (
+                <button
+                  key={account.email}
+                  onClick={() => handleMicrosoftLogin(account.email)}
+                  disabled={loading}
+                  className={`${account.color} text-white rounded-lg p-3 flex flex-col items-center gap-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Icon className="h-5 w-5" />
+                  )}
+                  <span className="text-xs font-medium">{account.label}</span>
+                  <span className="text-[10px] opacity-80">{account.role}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Footer */}
