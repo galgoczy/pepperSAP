@@ -7,7 +7,7 @@ import { formatCurrency } from '../../lib/utils';
 const DEFAULT_CHANGE_AMOUNT = 30000;
 
 export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
-  const { houseCash, previousDayClosing, calculatedData, loading, saveHouseCash, refetch } = useHouseCash(unitId, date);
+  const { houseCash, previousDayClosing, calculatedData, loading, saveHouseCash } = useHouseCash(unitId, date);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     change_amount: DEFAULT_CHANGE_AMOUNT,

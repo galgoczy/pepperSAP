@@ -54,7 +54,7 @@ export default function UsersPage() {
       await updateUser(editingUser.id, formData);
       toast.success('Felhasználó sikeresen frissítve!');
       setIsFormOpen(false);
-    } catch (error) {
+    } catch {
       toast.error('Hiba történt!');
     } finally {
       setFormLoading(false);
@@ -67,7 +67,7 @@ export default function UsersPage() {
       toast.success('Felhasználó sikeresen törölve!');
       setIsDeleteOpen(false);
       setDeletingUser(null);
-    } catch (error) {
+    } catch {
       toast.error('Hiba történt a törlés során!');
     }
   };

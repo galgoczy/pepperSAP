@@ -58,7 +58,7 @@ export default function UnitsPage() {
         toast.success('Egység sikeresen létrehozva!');
       }
       setIsFormOpen(false);
-    } catch (error) {
+    } catch {
       toast.error('Hiba történt!');
     } finally {
       setFormLoading(false);
@@ -71,7 +71,7 @@ export default function UnitsPage() {
       toast.success('Egység sikeresen törölve!');
       setIsDeleteOpen(false);
       setDeletingUnit(null);
-    } catch (error) {
+    } catch {
       toast.error('Hiba történt a törlés során!');
     }
   };

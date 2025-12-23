@@ -327,7 +327,7 @@ export class MicrosoftGraphClient {
       try {
         // Try to get the folder
         await this.getFolderByPath(currentPath);
-      } catch (error) {
+      } catch {
         // Folder doesn't exist, create it
         const parentPath = currentPath.split('/').slice(0, -1).join('/');
         let parentId = 'root';

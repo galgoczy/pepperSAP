@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp, Printer, Plus, Trash2 } from 'lucide-react';
 import { Card, Input, Select, Button } from '../common';
 import { Textarea } from '../common/Input';
@@ -26,6 +26,35 @@ const DEFAULT_FORM_DATA = {
   terminal_discrepancy_note: '',
 };
 
+// Helper to compute initial form data from existingData
+function computeFormData(existingData) {
+  if (!existingData) return DEFAULT_FORM_DATA;
+
+  let discrepancies = existingData.discrepancies || [];
+  if ((!discrepancies || discrepancies.length === 0) && existingData.discrepancy_amount) {
+    discrepancies = [{
+      amount: existingData.discrepancy_amount || '',
+      currency: existingData.discrepancy_currency || 'HUF',
+      note: existingData.discrepancy_note || '',
+    }];
+  }
+
+  return {
+    vat_0_percent: existingData.vat_0_percent || '',
+    vat_5_percent: existingData.vat_5_percent || '',
+    vat_18_percent: existingData.vat_18_percent || '',
+    vat_27_percent: existingData.vat_27_percent || '',
+    tips: existingData.tips || '',
+    discrepancies: discrepancies,
+    cash_payment: existingData.cash_payment || '',
+    card_payment: existingData.card_payment || '',
+    szep_card_payment: existingData.szep_card_payment || '',
+    terminal_card: existingData.terminal_card || '',
+    terminal_szep: existingData.terminal_szep || '',
+    terminal_discrepancy_note: existingData.terminal_discrepancy_note || '',
+  };
+}
+
 // Helper to sanitize Hungarian characters for PDF
 function sanitizeForPdf(text) {
   if (typeof text !== 'string') return text;
@@ -45,7 +74,18 @@ export default function CashRegisterSection({
   unitName,
   date,
 }) {
-  const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
+  const [formData, setFormData] = useState(() => computeFormData(existingData));
+  const prevExistingDataRef = useRef(existingData);
+
+  // Sync formData when existingData changes - this is a controlled form syncing from props
+  useEffect(() => {
+    // Only update if existingData identity changed
+    if (prevExistingDataRef.current !== existingData) {
+      prevExistingDataRef.current = existingData;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setFormData(computeFormData(existingData));
+    }
+  }, [existingData]);
 
   // Calculate total HUF discrepancy amount (only HUF entries)
   const totalHufDiscrepancy = (formData.discrepancies || [])
@@ -141,39 +181,6 @@ export default function CashRegisterSection({
     const filename = `elutes_jegyzokonyv_${register.ap_number}_${date}.pdf`;
     doc.save(filename);
   };
-
-  useEffect(() => {
-    if (existingData) {
-      // Handle migration from old single discrepancy fields to new array
-      let discrepancies = existingData.discrepancies || [];
-
-      // If discrepancies array is empty but old fields have data, migrate
-      if ((!discrepancies || discrepancies.length === 0) && existingData.discrepancy_amount) {
-        discrepancies = [{
-          amount: existingData.discrepancy_amount || '',
-          currency: existingData.discrepancy_currency || 'HUF',
-          note: existingData.discrepancy_note || '',
-        }];
-      }
-
-      setFormData({
-        vat_0_percent: existingData.vat_0_percent || '',
-        vat_5_percent: existingData.vat_5_percent || '',
-        vat_18_percent: existingData.vat_18_percent || '',
-        vat_27_percent: existingData.vat_27_percent || '',
-        tips: existingData.tips || '',
-        discrepancies: discrepancies,
-        cash_payment: existingData.cash_payment || '',
-        card_payment: existingData.card_payment || '',
-        szep_card_payment: existingData.szep_card_payment || '',
-        terminal_card: existingData.terminal_card || '',
-        terminal_szep: existingData.terminal_szep || '',
-        terminal_discrepancy_note: existingData.terminal_discrepancy_note || '',
-      });
-    } else {
-      setFormData(DEFAULT_FORM_DATA);
-    }
-  }, [existingData]);
 
   const handleChange = (field, value) => {
     const newData = { ...formData, [field]: value };

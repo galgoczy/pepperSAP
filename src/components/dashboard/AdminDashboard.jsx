@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { Card, Badge, LoadingSpinner } from '../common';
 import { supabase } from '../../lib/supabase';
-import { formatCurrency, formatDate, getToday } from '../../lib/utils';
+import { formatCurrency, formatDate } from '../../lib/utils';
 import { useAnimatedNumber } from '../../hooks/useAnimatedNumber';
 import { MiniTrendChart } from '../charts/RevenueTrendChart';
 
@@ -50,7 +50,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     async function fetchDashboardData() {
       try {
-        const today = getToday();
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = yesterday.toISOString().split('T')[0];

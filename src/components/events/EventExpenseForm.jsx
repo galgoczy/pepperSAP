@@ -18,7 +18,7 @@ const EXPENSE_TYPE_OPTIONS = [
   { value: 'other', label: 'Nem szamlas', icon: ShoppingBag },
 ];
 
-export default function EventExpenseForm({ expense, eventId, unitId, onSuccess, onCancel }) {
+export default function EventExpenseForm({ expense, unitId, onSuccess, onCancel }) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     unit_id: unitId || '',
@@ -138,25 +138,28 @@ export default function EventExpenseForm({ expense, eventId, unitId, onSuccess, 
           Koltseg tipusa
         </label>
         <div className="flex gap-2">
-          {EXPENSE_TYPE_OPTIONS.map(({ value, label, icon: Icon }) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => handleChange('expense_type', value)}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-colors ${
-                formData.expense_type === value
-                  ? value === 'official'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : value === 'efo'
-                    ? 'border-orange-500 bg-orange-50 text-orange-700'
-                    : 'border-gray-500 bg-gray-50 text-gray-700'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <Icon className="h-5 w-5" />
-              <span className="font-medium">{label}</span>
-            </button>
-          ))}
+          {EXPENSE_TYPE_OPTIONS.map((option) => {
+            const IconComponent = option.icon;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => handleChange('expense_type', option.value)}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 transition-colors ${
+                  formData.expense_type === option.value
+                    ? option.value === 'official'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : option.value === 'efo'
+                      ? 'border-orange-500 bg-orange-50 text-orange-700'
+                      : 'border-gray-500 bg-gray-50 text-gray-700'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <IconComponent className="h-5 w-5" />
+                <span className="font-medium">{option.label}</span>
+              </button>
+            );
+          })}
         </div>
         <p className="text-xs text-gray-500 mt-1">
           {formData.expense_type === 'official' && 'Szamlaval igazolt koltseg - AFA-s netto osszeg'}

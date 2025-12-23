@@ -14,7 +14,7 @@ const MARK_COLORS = {
   purple: 'bg-purple-50 border-l-4 border-l-purple-500',
 };
 
-export default function MonthlyReport({ startDate, endDate, reportType, unitId, isAdmin }) {
+export default function MonthlyReport({ startDate, endDate, reportType, unitId }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   const [totals, setTotals] = useState({});

@@ -34,7 +34,7 @@ import { formatDate, formatCurrency, EVENT_TYPES, PAYMENT_METHODS } from '../lib
 export default function EventDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isAdmin, unitId } = useAuth();
+  useAuth();
 
   const {
     event,

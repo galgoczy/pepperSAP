@@ -1,6 +1,7 @@
 import { createContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, onAuthError } from '../lib/supabase';
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const AuthContext = createContext(null);
 
 // Predefined user roles based on email

@@ -24,7 +24,7 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { Card, Button, Modal, Input, Select } from '../components/common';
 import { supabase } from '../lib/supabase';
-import { formatDate, formatCurrency, cn } from '../lib/utils';
+import { formatDate, cn } from '../lib/utils';
 import { startMicrosoftAuth, isAzureConfigured, MicrosoftGraphClient } from '../lib/microsoft';
 import toast from 'react-hot-toast';
 

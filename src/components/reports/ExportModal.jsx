@@ -21,7 +21,7 @@ const reportTypeLabels = {
   events_all: 'Rendezvény összesítő - összes egység',
 };
 
-export default function ExportModal({ isOpen, onClose, startDate, endDate, unitId, reportType, isAdmin }) {
+export default function ExportModal({ isOpen, onClose, startDate, endDate, unitId, reportType }) {
   const [format, setFormat] = useState('xlsx');
   const [loading, setLoading] = useState(false);
 
@@ -1635,7 +1635,7 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
       doc.addImage(logoBase64, 'PNG', 10, 5, 50, 15);
       logoLoaded = true;
     }
-  } catch (e) {
+  } catch {
     // Logo not available, use text fallback
   }
 
@@ -1664,7 +1664,7 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
   doc.text(sanitizeForPdf(`Idöszak: ${formatDate(startDate)} - ${formatDate(endDate)}`), 14, 42);
 
   // Format data for PDF table - sanitize all strings
-  const tableData = data.map((row, rowIndex) =>
+  const tableData = data.map((row) =>
     headers.map((h) => {
       const val = row[h];
       if (typeof val === 'number') return formatCurrency(val);

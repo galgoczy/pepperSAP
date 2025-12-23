@@ -115,7 +115,7 @@ export default function CashRegistersManager({ unitId, unitName }) {
       toast.success('Pénztárgép selejtezve!');
       setIsDeactivateOpen(false);
       setSelectedRegister(null);
-    } catch (error) {
+    } catch {
       toast.error('Hiba történt a selejtezés során!');
     }
   };
@@ -125,7 +125,7 @@ export default function CashRegistersManager({ unitId, unitName }) {
       const isSuspended = register.status === 'suspended';
       await suspendCashRegister(register.id, !isSuspended);
       toast.success(isSuspended ? 'Pénztárgép aktiválva!' : 'Pénztárgép szüneteltetve!');
-    } catch (error) {
+    } catch {
       toast.error('Hiba történt!');
     }
   };
@@ -136,7 +136,7 @@ export default function CashRegistersManager({ unitId, unitName }) {
       toast.success('Pénztárgép törölve!');
       setIsDeleteOpen(false);
       setSelectedRegister(null);
-    } catch (error) {
+    } catch {
       toast.error('Hiba történt a törlés során!');
     }
   };

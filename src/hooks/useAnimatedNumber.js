@@ -14,6 +14,8 @@ export function useAnimatedNumber(targetValue, duration = 1000, enabled = true) 
 
   useEffect(() => {
     if (!enabled || targetValue === null || targetValue === undefined) {
+      // Early return for disabled state - legitimate sync
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDisplayValue(targetValue || 0);
       return;
     }

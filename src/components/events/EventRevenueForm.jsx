@@ -11,7 +11,7 @@ const VAT_OPTIONS = [
   { value: '0', label: '0%' },
 ];
 
-export default function EventRevenueForm({ revenue, eventId, unitId, onSuccess, onCancel }) {
+export default function EventRevenueForm({ revenue, unitId, onSuccess, onCancel }) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     unit_id: unitId || '',

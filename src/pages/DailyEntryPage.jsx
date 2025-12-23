@@ -34,7 +34,7 @@ const tabs = [
 ];
 
 export default function DailyEntryPage() {
-  const { isAdmin, unitId, profile } = useAuth();
+  const { isAdmin, unitId } = useAuth();
   const { units, loading: unitsLoading } = useUnits();
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('all');
@@ -45,27 +45,25 @@ export default function DailyEntryPage() {
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [expenseRefreshKey, setExpenseRefreshKey] = useState(0);
 
-  // Update date and unit when URL params change
-  useEffect(() => {
-    const dateParam = searchParams.get('date');
-    const unitParam = searchParams.get('unit');
-    if (dateParam) {
-      setSelectedDate(dateParam);
-    }
-    if (unitParam && isAdmin) {
-      setSelectedUnit(unitParam);
-    }
-  }, [searchParams, isAdmin]);
-
   // Get restaurant units only
   const restaurantUnits = units.filter(u => u.type === 'restaurant');
 
-  // Auto-select first unit for admin if none selected
-  useEffect(() => {
-    if (isAdmin && !selectedUnit && restaurantUnits.length > 0) {
-      setSelectedUnit(restaurantUnits[0].id);
-    }
-  }, [isAdmin, selectedUnit, restaurantUnits]);
+  // Sync with URL params during render (avoids useEffect setState warning)
+  const dateParam = searchParams.get('date');
+  const unitParam = searchParams.get('unit');
+
+  // Update local state to match URL when it changes
+  if (dateParam && dateParam !== selectedDate) {
+    setSelectedDate(dateParam);
+  }
+  if (isAdmin && unitParam && unitParam !== selectedUnit) {
+    setSelectedUnit(unitParam);
+  }
+
+  // Auto-select first unit for admin if none selected (during render, not in effect)
+  if (isAdmin && !selectedUnit && !unitParam && restaurantUnits.length > 0 && selectedUnit !== restaurantUnits[0].id) {
+    setSelectedUnit(restaurantUnits[0].id);
+  }
 
   // Use user's unit if not admin
   const effectiveUnitId = isAdmin ? selectedUnit : unitId;

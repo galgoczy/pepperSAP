@@ -9,7 +9,6 @@ export default function SettingsPage() {
   const { user, profile, refetchProfile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || '');
-  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -57,7 +56,6 @@ export default function SettingsPage() {
 
       if (error) throw error;
 
-      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       toast.success('Jelszó sikeresen megváltoztatva!');

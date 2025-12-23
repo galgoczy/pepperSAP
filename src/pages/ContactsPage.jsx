@@ -40,7 +40,7 @@ const SUPPLIER_CATEGORIES = [
 ];
 
 export default function ContactsPage() {
-  const { isAdmin, profile } = useAuth();
+  const { isAdmin } = useAuth();
   const [companies, setCompanies] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [users, setUsers] = useState([]);
@@ -59,7 +59,7 @@ export default function ContactsPage() {
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
   const [editingContact, setEditingContact] = useState(null);
-  const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+  const [_selectedCompanyId, setSelectedCompanyId] = useState(null);
 
   // Company form
   const [companyForm, setCompanyForm] = useState({
