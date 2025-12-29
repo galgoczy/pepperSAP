@@ -19,6 +19,7 @@ const reportTypeLabels = {
   cash_register_all_simple: 'Pénztárgép forgalom - összes egység (egyszerű)',
   cash_register_all_detailed: 'Pénztárgép forgalom - összes egység (részletes)',
   events_all: 'Rendezvény összesítő - összes egység',
+  monthly_table: 'Havi tábla (költség-bevétel)',
 };
 
 export default function ExportModal({ isOpen, onClose, startDate, endDate, unitId, reportType }) {
@@ -118,6 +119,11 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         data = result.data;
         headers = result.headers;
         filename = `rendezvenyek_osszes_egyseg_${startDate}_${endDate}`;
+      } else if (reportType === 'monthly_table') {
+        const result = await fetchMonthlyTableExport(startDate);
+        data = result.data;
+        headers = result.headers;
+        filename = `havi_tabla_${startDate.substring(0, 7)}`;
       }
 
       if (data.length === 0) {
@@ -1365,6 +1371,274 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
   return { data, headers };
 }
 
+async function fetchMonthlyTableExport(startDate) {
+  // Extract year-month from startDate (YYYY-MM-DD -> YYYY-MM)
+  const yearMonth = startDate.substring(0, 7);
+  const [year, month] = yearMonth.split('-').map(Number);
+  const monthStartDate = `${year}-${String(month).padStart(2, '0')}-01`;
+  const monthEndDate = new Date(year, month, 0).toISOString().split('T')[0];
+
+  // Fetch all required data in parallel
+  const [
+    unitsResult,
+    dailyRevenueResult,
+    expensesResult,
+    eventsResult,
+    eventRevenuesResult,
+    eventExpensesResult,
+    monthlyDataResult,
+  ] = await Promise.all([
+    supabase.from('units').select('*').eq('is_active', true),
+    supabase.from('daily_revenue').select('*').gte('date', monthStartDate).lte('date', monthEndDate),
+    supabase.from('expenses').select('*').gte('invoice_date', monthStartDate).lte('invoice_date', monthEndDate),
+    supabase.from('events').select('*').gte('event_date', monthStartDate).lte('event_date', monthEndDate),
+    supabase.from('event_revenues').select('*, events!inner(*)').gte('events.event_date', monthStartDate).lte('events.event_date', monthEndDate),
+    supabase.from('event_expenses').select('*, events!inner(*)').gte('events.event_date', monthStartDate).lte('events.event_date', monthEndDate),
+    supabase.from('monthly_financial_data').select('*').eq('year_month', yearMonth),
+  ]);
+
+  const units = unitsResult.data || [];
+  const restaurantUnits = units.filter(u => u.type === 'restaurant');
+  const eventsUnit = units.find(u => u.type === 'events');
+  const dailyRevenue = dailyRevenueResult.data || [];
+  const expenses = expensesResult.data || [];
+  const events = eventsResult.data || [];
+  const eventRevenues = eventRevenuesResult.data || [];
+  const eventExpenses = eventExpensesResult.data || [];
+  const monthlyData = monthlyDataResult.data || [];
+
+  const headers = [
+    'Egység',
+    'Napi bevétel',
+    'Szubvenció',
+    'Bevétel összesen',
+    'Készpénz költség',
+    'EFO',
+    'Utalásos',
+    'Bér+járulék',
+    'Eszköz/Bérlet',
+    'Disztribúció',
+    'Költség összesen',
+    'Eredmény',
+  ];
+
+  const data = [];
+
+  // Process each restaurant unit
+  let totalRevenue = 0;
+  let totalCosts = 0;
+
+  for (const unit of restaurantUnits) {
+    const unitDailyRevenue = dailyRevenue.filter(r => r.unit_id === unit.id);
+    const unitExpenses = expenses.filter(e => e.unit_id === unit.id);
+    const unitMonthlyData = monthlyData.find(m => m.unit_id === unit.id) || {};
+
+    const dailyRevenueSum = unitDailyRevenue.reduce((sum, r) => sum + (parseFloat(r.total_revenue) || 0), 0);
+    const cashExpenses = unitExpenses.filter(e => e.payment_method === 'cash').reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+    const efoExpenses = unitExpenses.filter(e => e.is_efo).reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+
+    const transferExpenses = parseFloat(unitMonthlyData.transfer_expenses) || 0;
+    const paidWages = parseFloat(unitMonthlyData.paid_wages) || 0;
+    const wageContributions = parseFloat(unitMonthlyData.wage_contributions) || 0;
+    const equipmentExpenses = parseFloat(unitMonthlyData.equipment_expenses) || 0;
+    const rentUtilities = parseFloat(unitMonthlyData.rent_utilities) || 0;
+    const rawMaterialDist = parseFloat(unitMonthlyData.raw_material_distribution) || 0;
+    const wageDist = parseFloat(unitMonthlyData.wage_distribution) || 0;
+    const subvention = parseFloat(unitMonthlyData.subvention) || 0;
+
+    const unitTotalCosts = cashExpenses + efoExpenses + transferExpenses +
+      paidWages + wageContributions + equipmentExpenses + rentUtilities +
+      rawMaterialDist + wageDist;
+    const unitTotalRevenue = dailyRevenueSum + subvention;
+    const profit = unitTotalRevenue - unitTotalCosts;
+
+    totalRevenue += unitTotalRevenue;
+    totalCosts += unitTotalCosts;
+
+    data.push({
+      'Egység': unit.name,
+      'Napi bevétel': dailyRevenueSum,
+      'Szubvenció': subvention,
+      'Bevétel összesen': unitTotalRevenue,
+      'Készpénz költség': cashExpenses,
+      'EFO': efoExpenses,
+      'Utalásos': transferExpenses,
+      'Bér+járulék': paidWages + wageContributions,
+      'Eszköz/Bérlet': equipmentExpenses + rentUtilities,
+      'Disztribúció': rawMaterialDist + wageDist,
+      'Költség összesen': unitTotalCosts,
+      'Eredmény': profit,
+      _rowType: 'data',
+    });
+  }
+
+  // Process events unit
+  if (eventsUnit) {
+    const eventsRevenueSum = eventRevenues.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+    const eventsExpensesSum = eventExpenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+    const eventsMonthlyData = monthlyData.find(m => m.unit_id === eventsUnit.id) || {};
+    const eventsTransferExpenses = parseFloat(eventsMonthlyData.transfer_expenses) || 0;
+    const eventsTotalCosts = eventsExpensesSum + eventsTransferExpenses;
+    const eventsProfit = eventsRevenueSum - eventsTotalCosts;
+
+    totalRevenue += eventsRevenueSum;
+    totalCosts += eventsTotalCosts;
+
+    data.push({
+      'Egység': `${eventsUnit.name} (${events.length} esemény)`,
+      'Napi bevétel': eventsRevenueSum,
+      'Szubvenció': 0,
+      'Bevétel összesen': eventsRevenueSum,
+      'Készpénz költség': eventsExpensesSum,
+      'EFO': 0,
+      'Utalásos': eventsTransferExpenses,
+      'Bér+járulék': 0,
+      'Eszköz/Bérlet': 0,
+      'Disztribúció': 0,
+      'Költség összesen': eventsTotalCosts,
+      'Eredmény': eventsProfit,
+      _rowType: 'data',
+    });
+  }
+
+  // Add empty row before special categories
+  data.push({
+    'Egység': '',
+    'Napi bevétel': '',
+    'Szubvenció': '',
+    'Bevétel összesen': '',
+    'Készpénz költség': '',
+    'EFO': '',
+    'Utalásos': '',
+    'Bér+járulék': '',
+    'Eszköz/Bérlet': '',
+    'Disztribúció': '',
+    'Költség összesen': '',
+    'Eredmény': '',
+    _rowType: 'empty',
+  });
+
+  // Special categories header
+  data.push({
+    'Egység': '=== SPECIÁLIS KATEGÓRIÁK ===',
+    'Napi bevétel': '',
+    'Szubvenció': '',
+    'Bevétel összesen': '',
+    'Készpénz költség': '',
+    'EFO': '',
+    'Utalásos': '',
+    'Bér+járulék': '',
+    'Eszköz/Bérlet': '',
+    'Disztribúció': '',
+    'Költség összesen': '',
+    'Eredmény': '',
+    _rowType: 'sectionHeader',
+  });
+
+  // K0
+  const k0Data = monthlyData.find(m => m.category === 'K0') || {};
+  const k0Revenue = parseFloat(k0Data.k0_revenue) || 0;
+  const k0Costs = (parseFloat(k0Data.transfer_expenses) || 0) +
+    (parseFloat(k0Data.paid_wages) || 0) +
+    (parseFloat(k0Data.wage_contributions) || 0);
+  totalRevenue += k0Revenue;
+  totalCosts += k0Costs;
+
+  data.push({
+    'Egység': 'K0',
+    'Napi bevétel': k0Revenue,
+    'Szubvenció': 0,
+    'Bevétel összesen': k0Revenue,
+    'Készpénz költség': 0,
+    'EFO': 0,
+    'Utalásos': parseFloat(k0Data.transfer_expenses) || 0,
+    'Bér+járulék': (parseFloat(k0Data.paid_wages) || 0) + (parseFloat(k0Data.wage_contributions) || 0),
+    'Eszköz/Bérlet': 0,
+    'Disztribúció': 0,
+    'Költség összesen': k0Costs,
+    'Eredmény': k0Revenue - k0Costs,
+    _rowType: 'data',
+  });
+
+  // K00
+  const k00Data = monthlyData.find(m => m.category === 'K00') || {};
+  const k00Costs = parseFloat(k00Data.transfer_expenses) || 0;
+  totalCosts += k00Costs;
+
+  data.push({
+    'Egység': 'K00',
+    'Napi bevétel': 0,
+    'Szubvenció': 0,
+    'Bevétel összesen': 0,
+    'Készpénz költség': 0,
+    'EFO': 0,
+    'Utalásos': k00Costs,
+    'Bér+járulék': 0,
+    'Eszköz/Bérlet': 0,
+    'Disztribúció': 0,
+    'Költség összesen': k00Costs,
+    'Eredmény': -k00Costs,
+    _rowType: 'data',
+  });
+
+  // Bank costs
+  const bankCostsData = monthlyData.find(m => m.category === 'bank_costs') || {};
+  const bankCosts = parseFloat(bankCostsData.bank_costs_amount) || 0;
+  totalCosts += bankCosts;
+
+  data.push({
+    'Egység': 'Bankköltségek',
+    'Napi bevétel': 0,
+    'Szubvenció': 0,
+    'Bevétel összesen': 0,
+    'Készpénz költség': 0,
+    'EFO': 0,
+    'Utalásos': bankCosts,
+    'Bér+járulék': 0,
+    'Eszköz/Bérlet': 0,
+    'Disztribúció': 0,
+    'Költség összesen': bankCosts,
+    'Eredmény': -bankCosts,
+    _rowType: 'data',
+  });
+
+  // Add empty row before totals
+  data.push({
+    'Egység': '',
+    'Napi bevétel': '',
+    'Szubvenció': '',
+    'Bevétel összesen': '',
+    'Készpénz költség': '',
+    'EFO': '',
+    'Utalásos': '',
+    'Bér+járulék': '',
+    'Eszköz/Bérlet': '',
+    'Disztribúció': '',
+    'Költség összesen': '',
+    'Eredmény': '',
+    _rowType: 'empty',
+  });
+
+  // Grand totals
+  data.push({
+    'Egység': 'MINDÖSSZESEN',
+    'Napi bevétel': '',
+    'Szubvenció': '',
+    'Bevétel összesen': totalRevenue,
+    'Készpénz költség': '',
+    'EFO': '',
+    'Utalásos': '',
+    'Bér+járulék': '',
+    'Eszköz/Bérlet': '',
+    'Disztribúció': '',
+    'Költség összesen': totalCosts,
+    'Eredmény': totalRevenue - totalCosts,
+    _rowType: 'grandTotal',
+  });
+
+  return { data, headers };
+}
+
 async function fetchEventsAllUnitsExport(startDate, endDate) {
   const { data: events } = await supabase
     .from('events')
@@ -1481,8 +1755,8 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
     }
   }
 
-  // For cash_register, cash_register_all_detailed and full_monthly_all, style rows based on _rowType
-  if (reportType === 'cash_register' || reportType === 'cash_register_all_detailed' || reportType === 'full_monthly_all') {
+  // For cash_register, cash_register_all_detailed, full_monthly_all and monthly_table, style rows based on _rowType
+  if (reportType === 'cash_register' || reportType === 'cash_register_all_detailed' || reportType === 'full_monthly_all' || reportType === 'monthly_table') {
     for (let row = 1; row <= range.e.r; row++) {
       const rowData = data[row - 1];
       if (rowData && rowData._rowType) {
@@ -1555,8 +1829,8 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
     }
   }
 
-  // Add totals row (skip for cash_register_all_detailed and full_monthly_all since they have their own grandTotal rows)
-  if (reportType !== 'cash_register_all_detailed' && reportType !== 'full_monthly_all') {
+  // Add totals row (skip for cash_register_all_detailed, full_monthly_all, and monthly_table since they have their own grandTotal rows)
+  if (reportType !== 'cash_register_all_detailed' && reportType !== 'full_monthly_all' && reportType !== 'monthly_table') {
     const cleanTotalsRow = {};
     headers.forEach((h) => {
       cleanTotalsRow[h] = totalsRow[h];
@@ -1672,8 +1946,8 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
     })
   );
 
-  // Add totals row (skip for cash_register_all_detailed and full_monthly_all since they have their own grandTotal rows)
-  if (reportType !== 'cash_register_all_detailed' && reportType !== 'full_monthly_all') {
+  // Add totals row (skip for cash_register_all_detailed, full_monthly_all, and monthly_table since they have their own grandTotal rows)
+  if (reportType !== 'cash_register_all_detailed' && reportType !== 'full_monthly_all' && reportType !== 'monthly_table') {
     const totalsPdfRow = headers.map((h) => {
       const val = totalsRow[h];
       if (typeof val === 'number') return formatCurrency(val);
@@ -1686,7 +1960,7 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
   const sanitizedHeaders = headers.map((h) => sanitizeForPdf(h));
 
   // Determine if we should skip default totals row styling
-  const skipDefaultTotalsStyle = reportType === 'cash_register_all_detailed' || reportType === 'full_monthly_all';
+  const skipDefaultTotalsStyle = reportType === 'cash_register_all_detailed' || reportType === 'full_monthly_all' || reportType === 'monthly_table';
 
   // Create table
   autoTable(doc, {
@@ -1720,8 +1994,8 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
         hookData.cell.styles.fontStyle = 'bold';
         hookData.cell.styles.fillColor = [254, 202, 202];
       }
-      // Style rows based on _rowType for cash_register, cash_register_all_detailed, and full_monthly_all
-      else if ((reportType === 'cash_register' || reportType === 'cash_register_all_detailed' || reportType === 'full_monthly_all') && data[hookData.row.index]) {
+      // Style rows based on _rowType for cash_register, cash_register_all_detailed, full_monthly_all, and monthly_table
+      else if ((reportType === 'cash_register' || reportType === 'cash_register_all_detailed' || reportType === 'full_monthly_all' || reportType === 'monthly_table') && data[hookData.row.index]) {
         const rowType = data[hookData.row.index]._rowType;
         if (rowType === 'unitHeader') {
           // Unit header: bold, dark red background with white text
@@ -1796,9 +2070,9 @@ function exportToCsv(data, headers, totalsRow, filename, reportType) {
     }).join(',')
   );
 
-  // Add totals row (skip for cash_register_all_detailed and full_monthly_all since they have their own grandTotal rows)
+  // Add totals row (skip for cash_register_all_detailed, full_monthly_all, and monthly_table since they have their own grandTotal rows)
   const csvRows = [headers.join(','), ...dataRows];
-  if (reportType !== 'cash_register_all_detailed' && reportType !== 'full_monthly_all') {
+  if (reportType !== 'cash_register_all_detailed' && reportType !== 'full_monthly_all' && reportType !== 'monthly_table') {
     const totalsArray = headers.map((h) => {
       const val = totalsRow[h];
       if (typeof val === 'string' && val.includes(',')) {
