@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, ChevronLeft, ChevronRight, FileSpreadsheet } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Select } from '../components/common';
 import MonthlyReport from '../components/reports/MonthlyReport';
+import MonthlyTableReport from '../components/reports/MonthlyTableReport';
 import ExportModal from '../components/reports/ExportModal';
 import { getFirstDayOfMonth, getLastDayOfMonth } from '../lib/utils';
 
@@ -17,6 +19,7 @@ const baseReportTypes = [
 
 // Admin-only aggregated report types (when "all units" selected)
 const adminAggregateReportTypes = [
+  { value: 'monthly_table', label: '📊 Havi tábla (költség-bevétel)' },
   { value: 'full_monthly_all', label: 'Teljes havi forgalom - összes egység' },
   { value: 'cash_revenue_all', label: 'Készpénz bevételek - összes egység' },
   { value: 'cash_register_all_simple', label: 'Pénztárgép forgalom - összes egység (egyszerű)' },
@@ -206,14 +209,39 @@ export default function ReportsPage() {
         </div>
       </Card>
 
+      {/* Admin link for monthly data entry */}
+      {isAdmin && reportType === 'monthly_table' && (
+        <Card className="bg-blue-50 border-blue-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <FileSpreadsheet className="h-5 w-5 text-blue-600" />
+              <div>
+                <p className="font-medium text-blue-900">Havi pénzügyi adatok rögzítése</p>
+                <p className="text-sm text-blue-700">Kézi adatbevitel és Excel import a havi táblához</p>
+              </div>
+            </div>
+            <Link to="/monthly-data">
+              <Button variant="secondary">
+                Adatok kezelése
+              </Button>
+            </Link>
+          </div>
+        </Card>
+      )}
+
       {/* Report content */}
-      <MonthlyReport
-        startDate={startDate}
-        endDate={endDate}
-        reportType={reportType}
-        unitId={effectiveUnitId}
-        isAdmin={isAdmin}
-      />
+      {reportType === 'monthly_table' ? (
+        <MonthlyTableReport
+          yearMonth={`${startDate.substring(0, 7)}`}
+        />
+      ) : (
+        <MonthlyReport
+          startDate={startDate}
+          endDate={endDate}
+          reportType={reportType}
+          unitId={effectiveUnitId}
+        />
+      )}
 
       {/* Export modal */}
       <ExportModal
@@ -223,7 +251,6 @@ export default function ReportsPage() {
         endDate={endDate}
         unitId={effectiveUnitId}
         reportType={reportType}
-        isAdmin={isAdmin}
       />
     </div>
   );

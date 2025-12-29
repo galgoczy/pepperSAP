@@ -469,6 +469,175 @@ export class MicrosoftGraphClient {
       body: JSON.stringify({ type, scope }),
     });
   }
+
+  // ============================================
+  // EXCEL WORKBOOK OPERATIONS
+  // ============================================
+
+  /**
+   * Get Excel workbook worksheets list
+   * @param {string} itemId - The file item ID
+   */
+  async getExcelWorksheets(itemId) {
+    return this.request(`/me/drive/items/${itemId}/workbook/worksheets`);
+  }
+
+  /**
+   * Get Excel worksheet by name
+   * @param {string} itemId - The file item ID
+   * @param {string} worksheetName - Name of the worksheet
+   */
+  async getExcelWorksheet(itemId, worksheetName) {
+    const encodedName = encodeURIComponent(worksheetName);
+    return this.request(`/me/drive/items/${itemId}/workbook/worksheets('${encodedName}')`);
+  }
+
+  /**
+   * Get Excel range data
+   * @param {string} itemId - The file item ID
+   * @param {string} worksheetName - Name of the worksheet
+   * @param {string} range - Range in A1 notation (e.g., 'A1:Z100')
+   */
+  async getExcelRange(itemId, worksheetName, range) {
+    const encodedName = encodeURIComponent(worksheetName);
+    return this.request(
+      `/me/drive/items/${itemId}/workbook/worksheets('${encodedName}')/range(address='${range}')`
+    );
+  }
+
+  /**
+   * Get Excel used range (all data in worksheet)
+   * @param {string} itemId - The file item ID
+   * @param {string} worksheetName - Name of the worksheet
+   */
+  async getExcelUsedRange(itemId, worksheetName) {
+    const encodedName = encodeURIComponent(worksheetName);
+    return this.request(
+      `/me/drive/items/${itemId}/workbook/worksheets('${encodedName}')/usedRange`
+    );
+  }
+
+  /**
+   * Find a value in Excel and get its cell address
+   * Searches through the used range for a matching value
+   * @param {string} itemId - The file item ID
+   * @param {string} worksheetName - Name of the worksheet
+   * @param {string} searchValue - Value to search for
+   * @returns {object} - {row, column, address} or null if not found
+   */
+  async findExcelCell(itemId, worksheetName, searchValue) {
+    const usedRange = await this.getExcelUsedRange(itemId, worksheetName);
+    const values = usedRange.values;
+    const searchLower = searchValue.toLowerCase();
+
+    for (let row = 0; row < values.length; row++) {
+      for (let col = 0; col < values[row].length; col++) {
+        const cellValue = values[row][col];
+        if (cellValue && String(cellValue).toLowerCase().includes(searchLower)) {
+          // Convert to Excel address (A1 notation)
+          const colLetter = this.columnToLetter(col);
+          const rowNum = row + 1;
+          return {
+            row,
+            column: col,
+            address: `${colLetter}${rowNum}`,
+            value: cellValue,
+          };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Get cell value relative to a found cell
+   * @param {Array} values - 2D array of values from getExcelUsedRange
+   * @param {number} baseRow - Base row index
+   * @param {number} baseCol - Base column index
+   * @param {number} rowOffset - Rows to move (positive = down)
+   * @param {number} colOffset - Columns to move (positive = right)
+   */
+  getRelativeCell(values, baseRow, baseCol, rowOffset = 0, colOffset = 0) {
+    const targetRow = baseRow + rowOffset;
+    const targetCol = baseCol + colOffset;
+
+    if (targetRow >= 0 && targetRow < values.length &&
+        targetCol >= 0 && targetCol < values[targetRow].length) {
+      return values[targetRow][targetCol];
+    }
+    return null;
+  }
+
+  /**
+   * Convert column index to letter (0 = A, 1 = B, etc.)
+   */
+  columnToLetter(col) {
+    let letter = '';
+    while (col >= 0) {
+      letter = String.fromCharCode((col % 26) + 65) + letter;
+      col = Math.floor(col / 26) - 1;
+    }
+    return letter;
+  }
+
+  /**
+   * Convert letter to column index (A = 0, B = 1, etc.)
+   */
+  letterToColumn(letter) {
+    let col = 0;
+    for (let i = 0; i < letter.length; i++) {
+      col = col * 26 + (letter.charCodeAt(i) - 64);
+    }
+    return col - 1;
+  }
+
+  /**
+   * Read monthly data from Excel file
+   * Searches for month name in headers and unit name in rows
+   * @param {string} itemId - The file item ID
+   * @param {string} worksheetName - Name of the worksheet
+   * @param {string} monthName - Month to search for (e.g., 'Január', '2025-01')
+   * @param {Array} unitNames - List of unit names to search for
+   * @param {number} dataColumnOffset - Offset from month column to data (default 0)
+   */
+  async readMonthlyExcelData(itemId, worksheetName, monthName, unitNames, dataColumnOffset = 0) {
+    const usedRange = await this.getExcelUsedRange(itemId, worksheetName);
+    const values = usedRange.values;
+    const results = {};
+
+    // Find month column in first few rows (header area)
+    let monthCol = -1;
+    for (let row = 0; row < Math.min(5, values.length); row++) {
+      for (let col = 0; col < values[row].length; col++) {
+        const cellValue = String(values[row][col] || '').toLowerCase();
+        if (cellValue.includes(monthName.toLowerCase())) {
+          monthCol = col + dataColumnOffset;
+          break;
+        }
+      }
+      if (monthCol >= 0) break;
+    }
+
+    if (monthCol < 0) {
+      throw new Error(`Hónap nem található: ${monthName}`);
+    }
+
+    // Find each unit row and get value from month column
+    for (const unitName of unitNames) {
+      const unitLower = unitName.toLowerCase();
+
+      for (let row = 0; row < values.length; row++) {
+        const firstCellValue = String(values[row][0] || '').toLowerCase();
+        if (firstCellValue.includes(unitLower)) {
+          const value = values[row][monthCol];
+          results[unitName] = typeof value === 'number' ? value : parseFloat(value) || 0;
+          break;
+        }
+      }
+    }
+
+    return results;
+  }
 }
 
 /**
