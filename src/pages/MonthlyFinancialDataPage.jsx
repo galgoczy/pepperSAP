@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Save,
   ChevronLeft,
@@ -67,8 +67,11 @@ export default function MonthlyFinancialDataPage() {
   const [originalData, setOriginalData] = useState({});
   const [isExcelImportOpen, setIsExcelImportOpen] = useState(false);
 
-  // Get restaurant units only
-  const restaurantUnits = units.filter(u => u.type === 'restaurant');
+  // Get restaurant units only - memoize to prevent infinite re-renders
+  const restaurantUnits = useMemo(
+    () => units.filter(u => u.type === 'restaurant'),
+    [units]
+  );
 
   // Fetch existing data for the selected month
   const fetchData = useCallback(async () => {
