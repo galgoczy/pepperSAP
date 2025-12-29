@@ -1,9 +1,18 @@
 -- HAVI PÉNZÜGYI ADATOK SÉMA
 -- Kézi bevitel és Excel importhoz
+-- FONTOS: Futtasd MIUTÁN a schema-complete.sql már lefutott és létezik a units tábla!
 
 -- ============================================
 -- 1. HAVI PÉNZÜGYI ADATOK TÁBLA
 -- ============================================
+
+-- Ellenőrizzük, hogy a units tábla létezik-e
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'units') THEN
+    RAISE EXCEPTION 'A units tábla nem létezik! Először futtasd a schema-complete.sql fájlt.';
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS monthly_financial_data (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
