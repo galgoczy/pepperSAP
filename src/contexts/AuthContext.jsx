@@ -155,16 +155,35 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!mounted) return;
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id, session.user);
-      } else {
+    // Get initial session with timeout
+    const sessionTimeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.error('Session fetch timeout - setting loading to false');
         setLoading(false);
       }
-    });
+    }, 10000); // 10 second timeout
+
+    supabase.auth.getSession()
+      .then(({ data: { session }, error }) => {
+        clearTimeout(sessionTimeout);
+        if (!mounted) return;
+        if (error) {
+          console.error('Error getting session:', error);
+          setLoading(false);
+          return;
+        }
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          fetchProfile(session.user.id, session.user);
+        } else {
+          setLoading(false);
+        }
+      })
+      .catch((error) => {
+        clearTimeout(sessionTimeout);
+        console.error('Session fetch failed:', error);
+        if (mounted) setLoading(false);
+      });
 
     // Listen for auth changes
     const {
