@@ -11,6 +11,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
   });
 }
 
+// Check for orphaned PKCE code verifier (incomplete OAuth flow)
+// This can cause getSession() to hang waiting for a token exchange that never completes
+const hasCodeVerifier = localStorage.getItem('supabase.auth.token-code-verifier');
+const hasSessionToken = localStorage.getItem('supabase.auth.token');
+if (hasCodeVerifier && !hasSessionToken) {
+  console.log('Found orphaned PKCE code verifier without session, clearing...');
+  localStorage.removeItem('supabase.auth.token-code-verifier');
+}
+
 // Check if we had a previous timeout (set by AuthContext)
 const hadPreviousTimeout = localStorage.getItem('supabase_session_timeout') === 'true';
 if (hadPreviousTimeout) {
