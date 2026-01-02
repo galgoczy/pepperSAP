@@ -155,6 +155,10 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
+    console.log('AuthContext: Starting session fetch...');
+    console.log('AuthContext: Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+    console.log('AuthContext: Anon key set:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+
     // Get initial session with timeout
     const sessionTimeout = setTimeout(() => {
       if (mounted && loading) {
@@ -165,6 +169,7 @@ export function AuthProvider({ children }) {
 
     supabase.auth.getSession()
       .then(({ data: { session }, error }) => {
+        console.log('AuthContext: getSession resolved', { hasSession: !!session, error });
         clearTimeout(sessionTimeout);
         if (!mounted) return;
         if (error) {
