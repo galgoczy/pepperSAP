@@ -160,12 +160,22 @@ export function AuthProvider({ children }) {
     console.log('AuthContext: Anon key set:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
 
     // Get initial session with timeout
-    const sessionTimeout = setTimeout(() => {
+    const sessionTimeout = setTimeout(async () => {
       if (mounted && loading) {
-        console.error('Session fetch timeout - setting loading to false');
+        console.error('Session fetch timeout - clearing auth data and reloading');
+        // Clear Supabase auth data from localStorage
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('supabase') || key.includes('sb-'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+        console.log('Auth data cleared, please log in again');
         setLoading(false);
       }
-    }, 10000); // 10 second timeout
+    }, 5000); // 5 second timeout
 
     supabase.auth.getSession()
       .then(({ data: { session }, error }) => {
