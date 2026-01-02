@@ -17,9 +17,27 @@ if (!supabaseUrl || !supabaseAnonKey) {
 const hasCodeVerifier = localStorage.getItem('supabase.auth.token-code-verifier');
 const hasSessionToken = localStorage.getItem('supabase.auth.token');
 const urlParams = new URLSearchParams(window.location.search);
-const hasAuthCodeInUrl = urlParams.has('code') && urlParams.has('state');
+const hashParams = new URLSearchParams(window.location.hash.substring(1));
+const hasAuthCodeInUrl = urlParams.has('code') || hashParams.has('access_token');
+const hasError = urlParams.has('error') || hashParams.has('error');
 
-if (hasCodeVerifier && !hasSessionToken && !hasAuthCodeInUrl) {
+console.log('OAuth debug:', {
+  hasCodeVerifier: !!hasCodeVerifier,
+  hasSessionToken: !!hasSessionToken,
+  hasAuthCodeInUrl,
+  hasError,
+  urlCode: urlParams.get('code')?.substring(0, 20) + '...',
+  urlError: urlParams.get('error'),
+  errorDescription: urlParams.get('error_description'),
+  hash: window.location.hash ? 'present' : 'none',
+  fullUrl: window.location.href.substring(0, 100) + '...'
+});
+
+if (hasError) {
+  console.error('OAuth error detected:', urlParams.get('error'), urlParams.get('error_description'));
+}
+
+if (hasCodeVerifier && !hasSessionToken && !hasAuthCodeInUrl && !hasError) {
   console.log('Found orphaned PKCE code verifier without session (no OAuth callback in progress), clearing...');
   localStorage.removeItem('supabase.auth.token-code-verifier');
 } else if (hasCodeVerifier && hasAuthCodeInUrl) {
