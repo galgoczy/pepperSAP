@@ -1,7 +1,54 @@
 import { useState } from 'react';
-import { Loader2, Shield, Store, PartyPopper } from 'lucide-react';
+import { Loader2, Shield, Store, PartyPopper, Trash2 } from 'lucide-react';
 import { Button, Card } from '../common';
 import { supabase } from '../../lib/supabase';
+
+// Function to clear all stored data (Safari-compatible)
+const clearAllStoredData = async () => {
+  // Clear localStorage
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key) keysToRemove.push(key);
+  }
+  keysToRemove.forEach(key => localStorage.removeItem(key));
+
+  // Clear sessionStorage
+  sessionStorage.clear();
+
+  // Clear cookies
+  document.cookie.split(";").forEach((c) => {
+    document.cookie = c
+      .replace(/^ +/, "")
+      .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+  });
+
+  // Try to clear IndexedDB (Safari-compatible)
+  const knownDatabases = [
+    'supabase-auth',
+    'supabase.auth.token',
+    'supabase-local-storage'
+  ];
+  for (const dbName of knownDatabases) {
+    try {
+      indexedDB.deleteDatabase(dbName);
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  // Also try enumeration for browsers that support it
+  if (typeof indexedDB.databases === 'function') {
+    try {
+      const dbs = await indexedDB.databases();
+      for (const db of dbs) {
+        if (db.name) indexedDB.deleteDatabase(db.name);
+      }
+    } catch (e) {
+      // Ignore
+    }
+  }
+};
 
 // Test accounts for quick login
 const TEST_ACCOUNTS = [
@@ -156,8 +203,24 @@ export default function LoginForm() {
           </div>
         </div>
 
+        {/* Troubleshooting Button */}
+        <div className="mt-6 text-center">
+          <button
+            onClick={async () => {
+              if (window.confirm('Ez törli az összes tárolt adatot és újratölti az oldalt. Folytatod?')) {
+                await clearAllStoredData();
+                window.location.reload();
+              }
+            }}
+            className="text-xs text-gray-400 hover:text-gray-600 inline-flex items-center gap-1"
+          >
+            <Trash2 className="h-3 w-3" />
+            Nem tölt be az oldal? Kattints ide az adatok törléséhez
+          </button>
+        </div>
+
         {/* Footer */}
-        <p className="text-center text-sm text-gray-500 mt-6">
+        <p className="text-center text-sm text-gray-500 mt-4">
           Problémád van a bejelentkezéssel?{' '}
           <a href="mailto:gergo@pepperhouse.hu" className="text-pepper-red hover:underline">
             Lépj kapcsolatba velünk

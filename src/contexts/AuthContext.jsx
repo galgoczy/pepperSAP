@@ -188,11 +188,29 @@ export function AuthProvider({ children }) {
         }
         keysToRemove.forEach(key => localStorage.removeItem(key));
         sessionStorage.clear();
-        // Try to clear IndexedDB
+        // Try to clear IndexedDB (Safari-compatible)
         try {
-          const dbs = await indexedDB.databases();
-          for (const db of dbs) {
-            if (db.name) indexedDB.deleteDatabase(db.name);
+          // indexedDB.databases() is not supported in Safari
+          // So we try to delete known Supabase database names directly
+          const knownDatabases = [
+            'supabase-auth',
+            'supabase.auth.token',
+            'supabase-local-storage'
+          ];
+          knownDatabases.forEach(dbName => {
+            try {
+              indexedDB.deleteDatabase(dbName);
+            } catch (e) {
+              // Ignore individual deletion errors
+            }
+          });
+
+          // Also try the enumeration method for browsers that support it
+          if (typeof indexedDB.databases === 'function') {
+            const dbs = await indexedDB.databases();
+            for (const db of dbs) {
+              if (db.name) indexedDB.deleteDatabase(db.name);
+            }
           }
         } catch (e) {
           console.log('Could not clear IndexedDB:', e);

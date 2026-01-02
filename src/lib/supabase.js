@@ -34,16 +34,31 @@ if (hadPreviousTimeout) {
   localStorage.removeItem('supabase_session_timeout');
 }
 
+// Custom fetch with timeout for Safari compatibility
+const fetchWithTimeout = (url, options = {}) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+  return fetch(url, {
+    ...options,
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeout));
+};
+
 export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder', {
   auth: {
     autoRefreshToken: !hadPreviousTimeout, // Disable auto refresh if we had timeout
     persistSession: !hadPreviousTimeout,   // Disable persistence if we had timeout
     detectSessionInUrl: true,
+    flowType: 'pkce', // Explicit PKCE flow for better cross-browser compatibility
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    storageKey: 'supabase.auth.token',
   },
   global: {
     headers: {
       'x-client-info': 'pepper-house-app',
     },
+    fetch: fetchWithTimeout,
   },
   // Add reasonable timeouts to prevent hanging
   realtime: {
