@@ -36,13 +36,23 @@ if (hadPreviousTimeout) {
 
 // Custom fetch with timeout for Safari compatibility
 const fetchWithTimeout = (url, options = {}) => {
+  console.log('Supabase fetch:', url);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
   return fetch(url, {
     ...options,
     signal: controller.signal,
-  }).finally(() => clearTimeout(timeout));
+  })
+    .then(response => {
+      console.log('Supabase fetch response:', url, response.status);
+      return response;
+    })
+    .catch(error => {
+      console.error('Supabase fetch error:', url, error.message);
+      throw error;
+    })
+    .finally(() => clearTimeout(timeout));
 };
 
 export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder', {

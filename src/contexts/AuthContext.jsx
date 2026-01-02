@@ -173,6 +173,8 @@ export function AuthProvider({ children }) {
     console.log('AuthContext: Starting session fetch...');
     console.log('AuthContext: Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
     console.log('AuthContext: Anon key set:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+    console.log('AuthContext: localStorage keys:', Object.keys(localStorage));
+    console.log('AuthContext: Browser:', navigator.userAgent);
 
     // Get initial session with timeout
     const sessionTimeout = setTimeout(async () => {
@@ -222,6 +224,7 @@ export function AuthProvider({ children }) {
       }
     }, 5000); // 5 second timeout
 
+    console.log('AuthContext: Calling supabase.auth.getSession()...');
     supabase.auth.getSession()
       .then(({ data: { session }, error }) => {
         console.log('AuthContext: getSession resolved', { hasSession: !!session, error });
