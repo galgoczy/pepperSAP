@@ -30,12 +30,14 @@ if (hadPreviousTimeout) {
   } catch (e) {
     console.log('Could not clear IndexedDB:', e);
   }
+  // Clear the flag
+  localStorage.removeItem('supabase_session_timeout');
 }
 
 export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder', {
   auth: {
-    autoRefreshToken: true,
-    persistSession: true,
+    autoRefreshToken: !hadPreviousTimeout, // Disable auto refresh if we had timeout
+    persistSession: !hadPreviousTimeout,   // Disable persistence if we had timeout
     detectSessionInUrl: true,
   },
   global: {

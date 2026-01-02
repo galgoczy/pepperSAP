@@ -162,16 +162,32 @@ export function AuthProvider({ children }) {
     // Get initial session with timeout
     const sessionTimeout = setTimeout(async () => {
       if (mounted && loading) {
-        console.error('Session fetch timeout - setting flag and reloading');
-        // Set flag so next page load will clear auth data BEFORE Supabase initializes
-        localStorage.setItem('supabase_session_timeout', 'true');
-        // Force reload to trigger the cleanup in supabase.js
-        window.location.reload();
+        console.error('Session fetch timeout - clearing data and showing login');
+        // Clear all storage
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('supabase') || key.includes('sb-'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+        sessionStorage.clear();
+        // Try to clear IndexedDB
+        try {
+          const dbs = await indexedDB.databases();
+          for (const db of dbs) {
+            if (db.name) indexedDB.deleteDatabase(db.name);
+          }
+        } catch (e) {
+          console.log('Could not clear IndexedDB:', e);
+        }
+        // Show login page
+        setUser(null);
+        setProfile(null);
+        setLoading(false);
       }
     }, 5000); // 5 second timeout
-
-    // Clear the timeout flag if we get here (successful load)
-    localStorage.removeItem('supabase_session_timeout');
 
     supabase.auth.getSession()
       .then(({ data: { session }, error }) => {
