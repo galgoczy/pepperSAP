@@ -155,6 +155,21 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
+    // DEBUG: Skip auth with ?skip_auth=true URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('skip_auth') === 'true') {
+      console.log('DEBUG: Skipping auth, using mock admin user');
+      setUser({ id: 'debug-user', email: 'debug@pepperhouse.hu' });
+      setProfile({
+        id: 'debug-user',
+        role: 'admin',
+        full_name: 'Debug Admin',
+        email: 'debug@pepperhouse.hu'
+      });
+      setLoading(false);
+      return;
+    }
+
     console.log('AuthContext: Starting session fetch...');
     console.log('AuthContext: Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
     console.log('AuthContext: Anon key set:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
