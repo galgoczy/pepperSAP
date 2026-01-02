@@ -13,11 +13,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 // Check for orphaned PKCE code verifier (incomplete OAuth flow)
 // This can cause getSession() to hang waiting for a token exchange that never completes
+// BUT: Don't clear if we're in the middle of an OAuth callback (code in URL)
 const hasCodeVerifier = localStorage.getItem('supabase.auth.token-code-verifier');
 const hasSessionToken = localStorage.getItem('supabase.auth.token');
-if (hasCodeVerifier && !hasSessionToken) {
-  console.log('Found orphaned PKCE code verifier without session, clearing...');
+const urlParams = new URLSearchParams(window.location.search);
+const hasAuthCodeInUrl = urlParams.has('code') && urlParams.has('state');
+
+if (hasCodeVerifier && !hasSessionToken && !hasAuthCodeInUrl) {
+  console.log('Found orphaned PKCE code verifier without session (no OAuth callback in progress), clearing...');
   localStorage.removeItem('supabase.auth.token-code-verifier');
+} else if (hasCodeVerifier && hasAuthCodeInUrl) {
+  console.log('PKCE code verifier found with OAuth callback in URL - completing auth flow...');
 }
 
 // Check if we had a previous timeout (set by AuthContext)
