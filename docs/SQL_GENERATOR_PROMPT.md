@@ -870,3 +870,161 @@ WHERE id = (
   LIMIT 1
 );
 ```
+
+---
+
+## 16. MONTHLY_FINANCIAL_DATA (Havi pénzügyi adatok)
+```sql
+CREATE TABLE monthly_financial_data (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Időszak
+  year_month TEXT NOT NULL,              -- Format: '2025-01'
+
+  -- Egység vagy speciális kategória
+  unit_id UUID REFERENCES units(id) ON DELETE CASCADE,
+  category TEXT CHECK (category IN ('K0', 'K00', 'bank_costs')), -- Speciális kategóriák
+
+  -- Kézi bevitelű mezők (admin tölti ki)
+  paid_wages DECIMAL(12,2) DEFAULT 0,              -- Kifizetett bér
+  wage_contributions DECIMAL(12,2) DEFAULT 0,      -- Bérjárulékok
+  raw_material_distribution DECIMAL(12,2) DEFAULT 0, -- Nyersanyag disztribúció (+/-)
+  wage_distribution DECIMAL(12,2) DEFAULT 0,       -- Bér disztribúció (+/-)
+  subvention DECIMAL(12,2) DEFAULT 0,              -- Szubvenció (bevétel)
+  k0_revenue DECIMAL(12,2) DEFAULT 0,              -- K0 bevétel (csak K0 kategóriánál)
+  bank_costs_amount DECIMAL(12,2) DEFAULT 0,       -- Bankköltségek (csak bank_costs kategóriánál)
+
+  -- Excel importból származó mezők
+  transfer_expenses DECIMAL(12,2) DEFAULT 0,       -- Utalásos költségek
+  equipment_expenses DECIMAL(12,2) DEFAULT 0,      -- Eszközbeszerzés/javítás
+  rent_utilities DECIMAL(12,2) DEFAULT 0,          -- Bérlet - közmű
+
+  -- Metaadatok
+  notes TEXT,
+  created_by UUID,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  -- Egy rekord per egység/kategória per hónap
+  UNIQUE(year_month, unit_id),
+  UNIQUE(year_month, category),
+
+  -- Vagy unit_id VAGY category kell lennie, de nem mindkettő
+  CHECK (
+    (unit_id IS NOT NULL AND category IS NULL) OR
+    (unit_id IS NULL AND category IS NOT NULL)
+  )
+);
+```
+**Speciális kategóriák:**
+- `K0`: Költséghely (van bevétele és költsége)
+- `K00`: Költséghely (csak költség)
+- `bank_costs`: Bankköltségek (globális)
+
+**Mezők magyarázata:**
+- `paid_wages`: Kifizetett bér
+- `wage_contributions`: Bérjárulékok (TB, SZJA, stb.)
+- `raw_material_distribution`: Nyersanyag disztribúció egységek között (+/-, összegük 0 kell legyen)
+- `wage_distribution`: Bér disztribúció egységek között (+/-, összegük 0 kell legyen)
+- `subvention`: Szubvenció (kiegészítő bevétel)
+- `transfer_expenses`: Utalásos költségek (Excel import)
+- `equipment_expenses`: Eszközbeszerzés/javítás (Excel import)
+- `rent_utilities`: Bérlet és közmű költségek (Excel import)
+
+### Havi pénzügyi adat hozzáadása egységhez
+```sql
+INSERT INTO monthly_financial_data (year_month, unit_id, paid_wages, wage_contributions, subvention)
+SELECT '2025-01', id, 1500000, 450000, 200000
+FROM units WHERE name = 'Knorr 105'
+ON CONFLICT (year_month, unit_id) DO UPDATE SET
+  paid_wages = EXCLUDED.paid_wages,
+  wage_contributions = EXCLUDED.wage_contributions,
+  subvention = EXCLUDED.subvention,
+  updated_at = NOW();
+```
+
+### K0 kategória adatok hozzáadása
+```sql
+INSERT INTO monthly_financial_data (year_month, category, k0_revenue, paid_wages, transfer_expenses)
+VALUES ('2025-01', 'K0', 500000, 300000, 150000)
+ON CONFLICT (year_month, category) DO UPDATE SET
+  k0_revenue = EXCLUDED.k0_revenue,
+  paid_wages = EXCLUDED.paid_wages,
+  transfer_expenses = EXCLUDED.transfer_expenses,
+  updated_at = NOW();
+```
+
+### Bankköltségek hozzáadása
+```sql
+INSERT INTO monthly_financial_data (year_month, category, bank_costs_amount)
+VALUES ('2025-01', 'bank_costs', 85000)
+ON CONFLICT (year_month, category) DO UPDATE SET
+  bank_costs_amount = EXCLUDED.bank_costs_amount,
+  updated_at = NOW();
+```
+
+### Disztribúciók beállítása (összegük 0 kell legyen!)
+```sql
+-- Nyersanyag disztribúció: Knorr 105 kap, RSR ad
+UPDATE monthly_financial_data mfd
+SET raw_material_distribution = CASE
+  WHEN u.name = 'Knorr 105' THEN 50000
+  WHEN u.name = 'RSR' THEN -50000
+  ELSE 0
+END,
+updated_at = NOW()
+FROM units u
+WHERE mfd.unit_id = u.id AND mfd.year_month = '2025-01';
+```
+
+### Havi összesítő lekérdezés
+```sql
+SELECT
+  COALESCE(u.name, mfd.category) as nev,
+  mfd.subvention + COALESCE(mfd.k0_revenue, 0) as bevetel,
+  mfd.paid_wages + mfd.wage_contributions + mfd.transfer_expenses +
+    mfd.equipment_expenses + mfd.rent_utilities + mfd.raw_material_distribution +
+    mfd.wage_distribution + COALESCE(mfd.bank_costs_amount, 0) as koltseg
+FROM monthly_financial_data mfd
+LEFT JOIN units u ON mfd.unit_id = u.id
+WHERE mfd.year_month = '2025-01'
+ORDER BY u.name NULLS LAST;
+```
+
+---
+
+## Frissített tábla kapcsolatok
+
+```
+units
+  ├── user_profiles (unit_id)
+  ├── cash_registers (unit_id)
+  │     └── cash_register_revenue (cash_register_id)
+  ├── daily_revenue (unit_id)
+  │     └── cash_register_revenue (daily_revenue_id)
+  ├── house_cash (unit_id)
+  ├── expenses (unit_id)
+  ├── events (unit_id)
+  │     ├── event_revenues (event_id)
+  │     └── event_expenses (event_id)
+  ├── documents (unit_id) [opcionális]
+  └── monthly_financial_data (unit_id) [havi tábla]
+
+document_topics
+  └── documents (topic_id)
+
+companies
+  ├── company_contacts (company_id)
+  └── sales_events (company_id)
+
+monthly_financial_data [speciális kategóriák: K0, K00, bank_costs]
+```
+
+---
+
+## Fontos szabályok (kiegészítve)
+
+18. **Havi időszak formátum:** 'YYYY-MM' (pl. '2025-01')
+19. **Havi pénzügyi adat:** Vagy `unit_id` VAGY `category`, de nem mindkettő
+20. **Disztribúciók:** A `raw_material_distribution` és `wage_distribution` mezők összege az összes egységre 0 kell legyen
+21. **Speciális kategóriák:** 'K0', 'K00', 'bank_costs'
