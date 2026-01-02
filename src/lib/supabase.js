@@ -11,6 +11,27 @@ if (!supabaseUrl || !supabaseAnonKey) {
   });
 }
 
+// Check if we had a previous timeout (set by AuthContext)
+const hadPreviousTimeout = localStorage.getItem('supabase_session_timeout') === 'true';
+if (hadPreviousTimeout) {
+  console.log('Previous session timeout detected, clearing all auth data...');
+  // Clear all Supabase-related data
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.includes('supabase') || key.includes('sb-'))) {
+      keysToRemove.push(key);
+    }
+  }
+  keysToRemove.forEach(key => localStorage.removeItem(key));
+  // Also try to clear IndexedDB
+  try {
+    indexedDB.deleteDatabase('supabase-auth');
+  } catch (e) {
+    console.log('Could not clear IndexedDB:', e);
+  }
+}
+
 export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder', {
   auth: {
     autoRefreshToken: true,
