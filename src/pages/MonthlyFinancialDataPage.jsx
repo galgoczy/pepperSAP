@@ -528,26 +528,55 @@ function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportCompl
 
     const checkConnection = async () => {
       try {
-        const { data: tokens } = await supabase
+        console.log('Checking SharePoint connection...');
+        const { data: tokens, error: tokenError } = await supabase
           .from('microsoft_tokens')
           .select('*')
           .eq('is_storage_account', true)
           .single();
 
+        console.log('Token query result:', { tokens: tokens ? 'found' : 'not found', error: tokenError });
+
+        if (tokenError) {
+          console.error('Token query error:', tokenError);
+          setConnected(false);
+          return;
+        }
+
         if (tokens?.access_token) {
+          console.log('Token found, testing connection...');
           const client = new MicrosoftGraphClient(tokens.access_token);
+
           // Test the connection
-          await client.getMe();
+          try {
+            await client.getMe();
+            console.log('getMe() successful');
+          } catch (meError) {
+            console.error('getMe() failed:', meError);
+            throw meError;
+          }
+
           setGraphClient(client);
           setConnected(true);
 
           // Load files from PepperHouse Documents
-          const folder = await client.getFolderByPath('PepperHouse Documents');
-          const contents = await client.listFolder(folder.id);
-          const excelFiles = contents.value.filter(f =>
-            f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
-          );
-          setFiles(excelFiles);
+          try {
+            const folder = await client.getFolderByPath('PepperHouse Documents');
+            console.log('Folder found:', folder.name);
+            const contents = await client.listFolder(folder.id);
+            const excelFiles = contents.value.filter(f =>
+              f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+            );
+            console.log('Excel files found:', excelFiles.length);
+            setFiles(excelFiles);
+          } catch (folderError) {
+            console.error('Folder access error:', folderError);
+            // Still connected, just no files
+            setFiles([]);
+          }
+        } else {
+          console.log('No access token found');
+          setConnected(false);
         }
       } catch (error) {
         console.error('SharePoint connection check failed:', error);
