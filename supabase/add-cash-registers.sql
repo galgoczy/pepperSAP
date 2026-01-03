@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS cash_registers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   unit_id UUID NOT NULL REFERENCES units(id) ON DELETE CASCADE,
-  ap_number VARCHAR(12) NOT NULL, -- AP number (e.g., AP1234567890)
+  ap_number VARCHAR(13) NOT NULL, -- AP number (e.g., APA12345678)
   terminal_number VARCHAR(50), -- Associated card terminal number
   status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
   -- active: in use, data required
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS cash_registers (
   deactivated_at TIMESTAMP WITH TIME ZONE, -- When the register was decommissioned
 
   CONSTRAINT unique_ap_number UNIQUE (ap_number),
-  CONSTRAINT ap_number_format CHECK (ap_number ~ '^AP[0-9]{1,10}$')
+  CONSTRAINT ap_number_format CHECK (ap_number ~ '^AP[A-Z]?[0-9]{1,10}$')
 );
 
 -- Create index for faster lookups
@@ -70,6 +70,6 @@ CREATE TRIGGER update_cash_registers_timestamp
 
 -- Add comment explaining the table
 COMMENT ON TABLE cash_registers IS 'Cash registers (pénztárgépek) per unit. Each unit can have multiple cash registers.';
-COMMENT ON COLUMN cash_registers.ap_number IS 'Official AP number (starts with AP, followed by up to 10 digits)';
+COMMENT ON COLUMN cash_registers.ap_number IS 'Official AP number (starts with AP, optionally followed by a letter, then up to 10 digits, e.g., APA12345678)';
 COMMENT ON COLUMN cash_registers.terminal_number IS 'Associated card terminal identifier';
 COMMENT ON COLUMN cash_registers.status IS 'active = in use, inactive = decommissioned, suspended = temporarily not in use';

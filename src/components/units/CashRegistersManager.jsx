@@ -73,7 +73,8 @@ export default function CashRegistersManager({ unitId, unitName }) {
   };
 
   const validateApNumber = (value) => {
-    const pattern = /^AP[0-9]{1,10}$/;
+    // Format: AP + optional letter (A-Z) + 1-10 digits (e.g., AP12345678 or APA12345678)
+    const pattern = /^AP[A-Z]?[0-9]{1,10}$/;
     return pattern.test(value);
   };
 
@@ -83,7 +84,7 @@ export default function CashRegistersManager({ unitId, unitName }) {
 
     // Validate AP number format
     if (!validateApNumber(formData.ap_number)) {
-      setFormError('Az AP szám formátuma: AP + max 10 számjegy (pl. AP1234567890)');
+      setFormError('Az AP szám formátuma: AP + opcionális betű + max 10 számjegy (pl. APA12345678)');
       return;
     }
 
@@ -324,8 +325,8 @@ export default function CashRegistersManager({ unitId, unitName }) {
               setFormData({ ...formData, ap_number: e.target.value.toUpperCase() })
             }
             required
-            placeholder="AP1234567890"
-            helper="Formátum: AP + max 10 számjegy"
+            placeholder="APA12345678"
+            helper="Formátum: AP + opcionális betű + max 10 számjegy"
             disabled={!!editingRegister}
           />
 

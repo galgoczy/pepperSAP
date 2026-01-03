@@ -52,7 +52,7 @@ CREATE TABLE user_profiles (
 CREATE TABLE cash_registers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   unit_id UUID NOT NULL REFERENCES units(id) ON DELETE CASCADE,
-  ap_number VARCHAR(12) NOT NULL UNIQUE,  -- AP szám (pl. "AP1234567890")
+  ap_number VARCHAR(13) NOT NULL UNIQUE,  -- AP szám (pl. "APA12345678")
   terminal_number VARCHAR(50),            -- Kapcsolódó bankkártya terminál száma
   status VARCHAR(20) DEFAULT 'active',    -- 'active', 'inactive', 'suspended'
   name VARCHAR(100),                      -- Opcionális név (pl. "Főkassza", "Terasz kassza")
@@ -61,7 +61,7 @@ CREATE TABLE cash_registers (
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   deactivated_at TIMESTAMPTZ,             -- Mikor lett kiiktatva
 
-  CONSTRAINT ap_number_format CHECK (ap_number ~ '^AP[0-9]{1,10}$')
+  CONSTRAINT ap_number_format CHECK (ap_number ~ '^AP[A-Z]?[0-9]{1,10}$')
 );
 ```
 **Státuszok:**
@@ -383,7 +383,7 @@ UPDATE units SET name = 'Új Név' WHERE name = 'Régi Név';
 ### Pénztárgép hozzáadása egységhez
 ```sql
 INSERT INTO cash_registers (unit_id, ap_number, terminal_number, name)
-SELECT id, 'AP1234567890', 'TERM001', 'Főkassza'
+SELECT id, 'APA12345678', 'TERM001', 'Főkassza'
 FROM units WHERE name = 'Knorr 105'
 ON CONFLICT (ap_number) DO NOTHING;
 ```
@@ -392,14 +392,14 @@ ON CONFLICT (ap_number) DO NOTHING;
 ```sql
 UPDATE cash_registers
 SET status = 'suspended', updated_at = NOW()
-WHERE ap_number = 'AP1234567890';
+WHERE ap_number = 'APA12345678';
 ```
 
 ### Pénztárgép kiiktatása
 ```sql
 UPDATE cash_registers
 SET status = 'inactive', deactivated_at = NOW(), updated_at = NOW()
-WHERE ap_number = 'AP1234567890';
+WHERE ap_number = 'APA12345678';
 ```
 
 ### Napi forgalom hozzáadása (egyedi)
@@ -424,7 +424,7 @@ WITH dr AS (
 cr AS (
   SELECT id as cash_register_id
   FROM cash_registers
-  WHERE ap_number = 'AP1234567890'
+  WHERE ap_number = 'APA12345678'
 )
 INSERT INTO cash_register_revenue (
   daily_revenue_id, cash_register_id,
@@ -451,7 +451,7 @@ WITH dr AS (
 cr AS (
   SELECT id as cash_register_id
   FROM cash_registers
-  WHERE ap_number = 'AP1234567890'
+  WHERE ap_number = 'APA12345678'
 )
 INSERT INTO cash_register_revenue (
   daily_revenue_id, cash_register_id,
@@ -669,7 +669,7 @@ ORDER BY e.event_date;
 8. **Rendezvény típusok:** 'protocol', 'event', 'lunch_service', 'delivery', 'other'
 9. **Megjelölés színek:** 'red', 'yellow', 'green', 'blue', 'purple' vagy NULL
 10. **Pénztárgép státuszok:** 'active', 'inactive', 'suspended'
-11. **AP szám formátum:** 'AP' + 1-10 számjegy (pl. 'AP1234567890')
+11. **AP szám formátum:** 'AP' + opcionális betű (A-Z) + 1-10 számjegy (pl. 'APA12345678')
 12. **SZÉP kártya mezők:** A DB-ben léteznek, de a UI-ban jelenleg el vannak rejtve
 13. **ÁFA kulcsok:** 0, 5, 18, 27 (egész számok)
 14. **Rendezvény költség típusok:**
@@ -780,12 +780,12 @@ ON CONFLICT (unit_id, date) DO UPDATE SET
   updated_at = NOW();
 ```
 
-**Példa kérés:** "Adj hozzá egy új pénztárgépet a Knorr 105-höz, AP száma AP9876543210, terminál száma TRM-001, neve Főkassza"
+**Példa kérés:** "Adj hozzá egy új pénztárgépet a Knorr 105-höz, AP száma APB98765432, terminál száma TRM-001, neve Főkassza"
 
 **Válasz:**
 ```sql
 INSERT INTO cash_registers (unit_id, ap_number, terminal_number, name)
-SELECT id, 'AP9876543210', 'TRM-001', 'Főkassza'
+SELECT id, 'APB98765432', 'TRM-001', 'Főkassza'
 FROM units WHERE name = 'Knorr 105'
 ON CONFLICT (ap_number) DO NOTHING;
 ```
