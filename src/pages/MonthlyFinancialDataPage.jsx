@@ -531,6 +531,7 @@ function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportCompl
         const { data: tokens } = await supabase
           .from('microsoft_tokens')
           .select('*')
+          .eq('is_storage_account', true)
           .single();
 
         if (tokens?.access_token) {
@@ -548,7 +549,8 @@ function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportCompl
           );
           setFiles(excelFiles);
         }
-      } catch {
+      } catch (error) {
+        console.error('SharePoint connection check failed:', error);
         setConnected(false);
       }
     };
