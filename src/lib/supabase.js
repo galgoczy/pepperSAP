@@ -92,7 +92,7 @@ export const supabase = createClient(supabaseUrl || 'https://placeholder.supabas
   auth: {
     autoRefreshToken: !hadPreviousTimeout, // Disable auto refresh if we had timeout
     persistSession: !hadPreviousTimeout,   // Disable persistence if we had timeout
-    detectSessionInUrl: true,
+    detectSessionInUrl: false, // Disable automatic - we handle OAuth callback manually in AuthContext for Safari compatibility
     flowType: 'pkce', // Explicit PKCE flow for better cross-browser compatibility
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
     storageKey: 'supabase.auth.token',

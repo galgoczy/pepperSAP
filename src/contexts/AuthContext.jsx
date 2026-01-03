@@ -176,6 +176,45 @@ export function AuthProvider({ children }) {
     console.log('AuthContext: localStorage keys:', Object.keys(localStorage));
     console.log('AuthContext: Browser:', navigator.userAgent);
 
+    // Check if we're in an OAuth callback (code in URL) - handle manually for Safari compatibility
+    const authCode = urlParams.get('code');
+    if (authCode) {
+      console.log('AuthContext: OAuth callback detected, manually exchanging code...');
+
+      supabase.auth.exchangeCodeForSession(authCode)
+        .then(({ data, error }) => {
+          console.log('AuthContext: exchangeCodeForSession result:', { hasSession: !!data?.session, error });
+
+          // Clear the URL params regardless of result
+          window.history.replaceState({}, '', window.location.pathname);
+
+          if (!mounted) return;
+
+          if (error) {
+            console.error('AuthContext: Code exchange failed:', error);
+            setLoading(false);
+            return;
+          }
+
+          if (data?.session) {
+            console.log('AuthContext: Session established via manual exchange');
+            setUser(data.session.user);
+            fetchProfile(data.session.user.id, data.session.user);
+          } else {
+            console.log('AuthContext: No session after exchange');
+            setLoading(false);
+          }
+        })
+        .catch(err => {
+          console.error('AuthContext: exchangeCodeForSession error:', err);
+          window.history.replaceState({}, '', window.location.pathname);
+          if (mounted) setLoading(false);
+        });
+
+      // Don't run the normal getSession flow when handling OAuth callback
+      return () => { mounted = false; };
+    }
+
     // Get initial session with timeout
     const sessionTimeout = setTimeout(async () => {
       if (mounted && loading) {
