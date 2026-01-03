@@ -17,7 +17,7 @@ import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Input, LoadingSpinner, Modal } from '../components/common';
 import { supabase } from '../lib/supabase';
 import { formatCurrency } from '../lib/utils';
-import { MicrosoftGraphClient } from '../lib/microsoft';
+import { MicrosoftGraphClient, refreshAccessToken } from '../lib/microsoft';
 import toast from 'react-hot-toast';
 
 // Hungarian month names for display
@@ -543,40 +543,78 @@ function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportCompl
           return;
         }
 
-        if (tokens?.access_token) {
-          console.log('Token found, testing connection...');
-          const client = new MicrosoftGraphClient(tokens.access_token);
-
-          // Test the connection
-          try {
-            await client.getMe();
-            console.log('getMe() successful');
-          } catch (meError) {
-            console.error('getMe() failed:', meError);
-            throw meError;
-          }
-
-          setGraphClient(client);
-          setConnected(true);
-
-          // Load files from PepperHouse Documents
-          try {
-            const folder = await client.getFolderByPath('PepperHouse Documents');
-            console.log('Folder found:', folder.name);
-            const contents = await client.listFolder(folder.id);
-            const excelFiles = contents.value.filter(f =>
-              f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
-            );
-            console.log('Excel files found:', excelFiles.length);
-            setFiles(excelFiles);
-          } catch (folderError) {
-            console.error('Folder access error:', folderError);
-            // Still connected, just no files
-            setFiles([]);
-          }
-        } else {
+        if (!tokens?.access_token) {
           console.log('No access token found');
           setConnected(false);
+          return;
+        }
+
+        let accessToken = tokens.access_token;
+        let client = new MicrosoftGraphClient(accessToken);
+
+        // Test the connection, refresh token if expired
+        try {
+          console.log('Token found, testing connection...');
+          await client.getMe();
+          console.log('getMe() successful');
+        } catch (meError) {
+          console.error('getMe() failed, trying to refresh token:', meError);
+
+          // Try to refresh the token
+          if (tokens.refresh_token) {
+            try {
+              console.log('Refreshing token...');
+              const newTokens = await refreshAccessToken(tokens.refresh_token);
+              console.log('Token refreshed successfully');
+
+              // Save new tokens to database
+              await supabase
+                .from('microsoft_tokens')
+                .update({
+                  access_token: newTokens.accessToken,
+                  refresh_token: newTokens.refreshToken,
+                  expires_at: newTokens.expiresAt.toISOString(),
+                })
+                .eq('id', tokens.id);
+
+              // Use new access token
+              accessToken = newTokens.accessToken;
+              client = new MicrosoftGraphClient(accessToken);
+
+              // Test again
+              await client.getMe();
+              console.log('getMe() successful after token refresh');
+            } catch (refreshError) {
+              console.error('Token refresh failed:', refreshError);
+              toast.error('SharePoint token lejárt. Kérlek csatlakozz újra a Dokumentumok oldalon.');
+              setConnected(false);
+              return;
+            }
+          } else {
+            console.error('No refresh token available');
+            toast.error('SharePoint token lejárt. Kérlek csatlakozz újra a Dokumentumok oldalon.');
+            setConnected(false);
+            return;
+          }
+        }
+
+        setGraphClient(client);
+        setConnected(true);
+
+        // Load files from PepperHouse Documents
+        try {
+          const folder = await client.getFolderByPath('PepperHouse Documents');
+          console.log('Folder found:', folder.name);
+          const contents = await client.listFolder(folder.id);
+          const excelFiles = contents.value.filter(f =>
+            f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+          );
+          console.log('Excel files found:', excelFiles.length);
+          setFiles(excelFiles);
+        } catch (folderError) {
+          console.error('Folder access error:', folderError);
+          // Still connected, just no files
+          setFiles([]);
         }
       } catch (error) {
         console.error('SharePoint connection check failed:', error);
