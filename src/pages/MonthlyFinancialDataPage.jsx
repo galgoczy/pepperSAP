@@ -48,6 +48,13 @@ function getCurrentMonth() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
+// Get previous month in YYYY-MM format (default for data entry)
+function getPreviousMonth() {
+  const now = new Date();
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
+}
+
 // Parse YYYY-MM to year and month index
 function parseYearMonth(yearMonth) {
   const [year, month] = yearMonth.split('-').map(Number);
@@ -69,7 +76,7 @@ function navigateMonth(yearMonth, direction) {
 
 export default function MonthlyFinancialDataPage() {
   const { units, loading: unitsLoading } = useUnits();
-  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
+  const [selectedMonth, setSelectedMonth] = useState(getPreviousMonth());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [data, setData] = useState({});
