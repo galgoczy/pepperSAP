@@ -33,6 +33,15 @@ const SPECIAL_CATEGORIES = [
   { id: 'bank_costs', name: 'Bankköltségek', description: 'Globális költség' },
 ];
 
+// Excel column name to database unit name mapping
+// Excel columns: K00, KR, MÁK, Knorr69, Knorr86, Knorr105, RSR, KTI, Pepsi, K0
+const EXCEL_UNIT_NAME_MAP = {
+  'Knorr69': 'Knorr 69',
+  'Knorr86': 'Knorr 86',
+  'Knorr105': 'Knorr 105',
+  // Add more mappings if needed
+};
+
 // Get current month in YYYY-MM format
 function getCurrentMonth() {
   const now = new Date();
@@ -571,13 +580,12 @@ function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportCompl
     try {
       const { month } = parseYearMonth(selectedMonth);
       const monthName = MONTH_NAMES[month - 1];
-      const unitNames = units.map(u => u.name);
 
-      const importedData = await graphClient.readMonthlyExcelData(
+      // Use new function that reads all 3 expense sections
+      const importedData = await graphClient.readMonthlyExpensesFromExcel(
         selectedFile.id,
         selectedWorksheet,
-        monthName,
-        [...unitNames, 'K0', 'K00']
+        monthName
       );
 
       setPreviewData(importedData);
@@ -595,15 +603,24 @@ function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportCompl
     // Convert preview data to app format
     const importedData = {};
 
-    for (const [name, value] of Object.entries(previewData)) {
-      // Find matching unit
-      const unit = units.find(u => u.name.toLowerCase() === name.toLowerCase());
+    for (const [excelName, values] of Object.entries(previewData)) {
+      // Map Excel name to database name if mapping exists
+      const dbName = EXCEL_UNIT_NAME_MAP[excelName] || excelName;
+
+      // Find matching unit (try exact match first, then case-insensitive)
+      const unit = units.find(u => u.name === dbName) ||
+                   units.find(u => u.name.toLowerCase() === dbName.toLowerCase());
+
       if (unit) {
-        importedData[`unit_${unit.id}`] = { transfer_expenses: value };
-      } else if (name === 'K0') {
-        importedData['cat_K0'] = { transfer_expenses: value };
-      } else if (name === 'K00') {
-        importedData['cat_K00'] = { transfer_expenses: value };
+        importedData[`unit_${unit.id}`] = {
+          transfer_expenses: values.transfer_expenses || 0,
+          rent_utilities: values.rent_utilities || 0,
+          equipment_expenses: values.equipment_expenses || 0,
+        };
+      } else if (excelName === 'K0') {
+        importedData['cat_K0'] = { transfer_expenses: values.transfer_expenses || 0 };
+      } else if (excelName === 'K00') {
+        importedData['cat_K00'] = { transfer_expenses: values.transfer_expenses || 0 };
       }
     }
 
@@ -681,20 +698,28 @@ function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportCompl
 
             {/* Preview data */}
             {previewData && (
-              <div className="border rounded-lg overflow-hidden">
+              <div className="border rounded-lg overflow-hidden overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-3 py-2 text-left">Egység</th>
-                      <th className="px-3 py-2 text-right">Érték</th>
+                      <th className="px-3 py-2 text-right">Utalásos</th>
+                      <th className="px-3 py-2 text-right">Rezsi</th>
+                      <th className="px-3 py-2 text-right">Eszköz</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(previewData).map(([name, value]) => (
+                    {Object.entries(previewData).map(([name, values]) => (
                       <tr key={name} className="border-t">
-                        <td className="px-3 py-2">{name}</td>
+                        <td className="px-3 py-2 font-medium">{name}</td>
                         <td className="px-3 py-2 text-right font-mono">
-                          {formatCurrency(value)}
+                          {formatCurrency(values.transfer_expenses || 0)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          {formatCurrency(values.rent_utilities || 0)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          {formatCurrency(values.equipment_expenses || 0)}
                         </td>
                       </tr>
                     ))}

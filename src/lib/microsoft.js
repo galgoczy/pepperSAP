@@ -592,7 +592,7 @@ export class MicrosoftGraphClient {
   }
 
   /**
-   * Read monthly data from Excel file
+   * Read monthly data from Excel file (legacy single-section format)
    * Searches for month name in headers and unit name in rows
    * @param {string} itemId - The file item ID
    * @param {string} worksheetName - Name of the worksheet
@@ -633,6 +633,87 @@ export class MicrosoftGraphClient {
           results[unitName] = typeof value === 'number' ? value : parseFloat(value) || 0;
           break;
         }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Read monthly expense data from Excel file with 3 sections
+   * Structure: Sections (utalásos költségek, Rezsi, eszközbeszerzés) with months as rows, units as columns
+   * @param {string} itemId - The file item ID
+   * @param {string} worksheetName - Name of the worksheet (e.g., 'Összesítő')
+   * @param {string} monthName - Month to search for (e.g., 'december')
+   * @returns {object} - { unitName: { transfer_expenses, rent_utilities, equipment_expenses } }
+   */
+  async readMonthlyExpensesFromExcel(itemId, worksheetName, monthName) {
+    const usedRange = await this.getExcelUsedRange(itemId, worksheetName);
+    const values = usedRange.values;
+    const results = {};
+
+    // Section headers to find
+    const sections = {
+      'utalásos költségek': 'transfer_expenses',
+      'rezsi': 'rent_utilities',
+      'eszközbeszerzés': 'equipment_expenses',
+    };
+
+    // Find header row with unit names (first row typically)
+    // Header format: [category_label, K00, KR, MÁK, Knorr69, Knorr86, Knorr105, RSR, KTI, Pepsi, K0]
+    const headerRow = values[0] || [];
+    const unitColumns = {}; // { unitName: columnIndex }
+
+    for (let col = 1; col < headerRow.length; col++) {
+      const cellValue = String(headerRow[col] || '').trim();
+      if (cellValue) {
+        unitColumns[cellValue] = col;
+        // Initialize result object for this unit
+        results[cellValue] = {
+          transfer_expenses: 0,
+          rent_utilities: 0,
+          equipment_expenses: 0,
+        };
+      }
+    }
+
+    // Find each section and read the month row
+    const monthLower = monthName.toLowerCase();
+    let currentSection = null;
+
+    for (let row = 0; row < values.length; row++) {
+      const firstCell = String(values[row][0] || '').trim().toLowerCase();
+
+      // Check if this is a section header
+      for (const [sectionName, fieldName] of Object.entries(sections)) {
+        if (firstCell === sectionName || firstCell.includes(sectionName)) {
+          currentSection = fieldName;
+          break;
+        }
+      }
+
+      // Check if this is the target month row within a section
+      if (currentSection && firstCell === monthLower) {
+        // Read values for each unit from this row
+        for (const [unitName, colIndex] of Object.entries(unitColumns)) {
+          const cellValue = values[row][colIndex];
+          let numValue = 0;
+
+          if (typeof cellValue === 'number') {
+            numValue = cellValue;
+          } else if (typeof cellValue === 'string') {
+            // Parse Hungarian number format (e.g., "156 204 Ft" or "1 273 953 Ft")
+            const cleaned = cellValue.replace(/[^\d,-]/g, '').replace(',', '.');
+            numValue = parseFloat(cleaned) || 0;
+          }
+
+          if (results[unitName]) {
+            results[unitName][currentSection] = numValue;
+          }
+        }
+
+        // Reset section after reading (prepare for next section's month row)
+        currentSection = null;
       }
     }
 
