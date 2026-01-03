@@ -44,16 +44,35 @@ function getPreviousMonthDates() {
   };
 }
 
-// Get previous month's year-month string (for monthly table report)
+// Get previous month's year-month string (for monthly table report default)
 function getPreviousMonthYearMonth() {
   const now = new Date();
   const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return {
-    yearMonth: `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`,
-    year: prevMonth.getFullYear(),
-    month: prevMonth.getMonth(), // 0-indexed
-    monthName: MONTH_NAMES[prevMonth.getMonth()],
-  };
+  return `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// Generate month options for monthly table (from Oct 2024 to previous month)
+function getMonthlyTableMonthOptions() {
+  const options = [];
+  const now = new Date();
+  const endDate = new Date(now.getFullYear(), now.getMonth() - 1, 1); // Previous month
+  const startDate = new Date(2024, 9, 1); // October 2024
+
+  let current = new Date(endDate);
+  while (current >= startDate) {
+    const yearMonth = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`;
+    const label = `${current.getFullYear()}. ${MONTH_NAMES[current.getMonth()]}`;
+    options.push({ value: yearMonth, label });
+    current.setMonth(current.getMonth() - 1);
+  }
+
+  return options;
+}
+
+// Parse yearMonth to get display text
+function formatYearMonth(yearMonth) {
+  const [year, month] = yearMonth.split('-').map(Number);
+  return `${year}. ${MONTH_NAMES[month - 1]}`;
 }
 
 export default function ReportsPage() {
@@ -61,6 +80,11 @@ export default function ReportsPage() {
   const { units } = useUnits();
   const [startDate, setStartDate] = useState(getFirstDayOfMonth());
   const [endDate, setEndDate] = useState(getLastDayOfMonth());
+  const [selectedYearMonth, setSelectedYearMonth] = useState(getPreviousMonthYearMonth());
+
+  // Month options for monthly table dropdown
+  const monthlyTableOptions = getMonthlyTableMonthOptions();
+
   // Set default report type based on user role
   const getDefaultReportType = () => {
     if (isEvents) return 'events';
@@ -148,85 +172,124 @@ export default function ReportsPage() {
       {/* Filters */}
       <Card>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="space-y-1">
-            <label className={`block text-sm font-medium ${reportType === 'monthly_table' ? 'text-gray-400' : 'text-gray-700'}`}>
-              Kezdő dátum
-            </label>
-            <div className="relative">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                disabled={reportType === 'monthly_table'}
-                className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent ${
-                  reportType === 'monthly_table'
-                    ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'border-gray-300'
-                }`}
-              />
-            </div>
-          </div>
+          {reportType === 'monthly_table' ? (
+            // Month selector for monthly table
+            <>
+              <div className="sm:col-span-2 space-y-1">
+                <label className="block text-sm font-medium text-gray-700">
+                  Feldolgozott hónap
+                </label>
+                <select
+                  value={selectedYearMonth}
+                  onChange={(e) => setSelectedYearMonth(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent bg-white"
+                >
+                  {monthlyTableOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">
+                  Gyors választás
+                </label>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      const currentIndex = monthlyTableOptions.findIndex(o => o.value === selectedYearMonth);
+                      if (currentIndex < monthlyTableOptions.length - 1) {
+                        setSelectedYearMonth(monthlyTableOptions[currentIndex + 1].value);
+                      }
+                    }}
+                    disabled={selectedYearMonth === monthlyTableOptions[monthlyTableOptions.length - 1]?.value}
+                    className="flex-1"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      const currentIndex = monthlyTableOptions.findIndex(o => o.value === selectedYearMonth);
+                      if (currentIndex > 0) {
+                        setSelectedYearMonth(monthlyTableOptions[currentIndex - 1].value);
+                      }
+                    }}
+                    disabled={selectedYearMonth === monthlyTableOptions[0]?.value}
+                    className="flex-1"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : (
+            // Date pickers for other reports
+            <>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">
+                  Kezdő dátum
+                </label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
+                  />
+                </div>
+              </div>
 
-          <div className="space-y-1">
-            <label className={`block text-sm font-medium ${reportType === 'monthly_table' ? 'text-gray-400' : 'text-gray-700'}`}>
-              Záró dátum
-            </label>
-            <div className="relative">
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                min={startDate}
-                disabled={reportType === 'monthly_table'}
-                className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent ${
-                  reportType === 'monthly_table'
-                    ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'border-gray-300'
-                }`}
-              />
-            </div>
-          </div>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">
+                  Záró dátum
+                </label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    min={startDate}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
+                  />
+                </div>
+              </div>
 
-          <div className="space-y-1">
-            <label className={`block text-sm font-medium ${reportType === 'monthly_table' ? 'text-gray-400' : 'text-gray-700'}`}>
-              Gyors választás
-            </label>
-            {reportType === 'monthly_table' ? (
-              <Button
-                variant="secondary"
-                disabled
-                className="w-full opacity-50 cursor-not-allowed"
-              >
-                <Calendar className="h-4 w-4" />
-                Előző hónap (fix)
-              </Button>
-            ) : startDate === getFirstDayOfMonth() && endDate === getLastDayOfMonth() ? (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  const prev = getPreviousMonthDates();
-                  setStartDate(prev.start);
-                  setEndDate(prev.end);
-                }}
-                className="w-full"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Előző hónap
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setStartDate(getFirstDayOfMonth());
-                  setEndDate(getLastDayOfMonth());
-                }}
-                className="w-full"
-              >
-                Aktuális hónap
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">
+                  Gyors választás
+                </label>
+                {startDate === getFirstDayOfMonth() && endDate === getLastDayOfMonth() ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      const prev = getPreviousMonthDates();
+                      setStartDate(prev.start);
+                      setEndDate(prev.end);
+                    }}
+                    className="w-full"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Előző hónap
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setStartDate(getFirstDayOfMonth());
+                      setEndDate(getLastDayOfMonth());
+                    }}
+                    className="w-full"
+                  >
+                    Aktuális hónap
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
 
           {canViewAllUnits && (
             <Select
@@ -266,20 +329,10 @@ export default function ReportsPage() {
         </Card>
       )}
 
-      {/* Processed month indicator for monthly table */}
-      {reportType === 'monthly_table' && (
-        <div className="flex items-center justify-center gap-2 py-3 px-4 bg-amber-50 border border-amber-200 rounded-lg">
-          <Calendar className="h-5 w-5 text-amber-600" />
-          <span className="text-amber-800 font-medium">
-            Feldolgozott időszak: {getPreviousMonthYearMonth().year}. {getPreviousMonthYearMonth().monthName}
-          </span>
-        </div>
-      )}
-
       {/* Report content */}
       {reportType === 'monthly_table' ? (
         <MonthlyTableReport
-          yearMonth={getPreviousMonthYearMonth().yearMonth}
+          yearMonth={selectedYearMonth}
         />
       ) : (
         <MonthlyReport
@@ -298,6 +351,7 @@ export default function ReportsPage() {
         endDate={endDate}
         unitId={effectiveUnitId}
         reportType={reportType}
+        selectedYearMonth={selectedYearMonth}
       />
     </div>
   );

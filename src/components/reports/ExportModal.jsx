@@ -28,20 +28,14 @@ const MONTH_NAMES = [
   'Július', 'Augusztus', 'Szeptember', 'Október', 'November', 'December'
 ];
 
-// Get previous month info for monthly table export
-function getPreviousMonthInfo() {
-  const now = new Date();
-  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return {
-    yearMonth: `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`,
-    year: prevMonth.getFullYear(),
-    month: prevMonth.getMonth(), // 0-indexed
-    monthName: MONTH_NAMES[prevMonth.getMonth()],
-    displayText: `${prevMonth.getFullYear()}. ${MONTH_NAMES[prevMonth.getMonth()]}`,
-  };
+// Parse yearMonth to get display text
+function formatYearMonthDisplay(yearMonth) {
+  if (!yearMonth) return '';
+  const [year, month] = yearMonth.split('-').map(Number);
+  return `${year}. ${MONTH_NAMES[month - 1]}`;
 }
 
-export default function ExportModal({ isOpen, onClose, startDate, endDate, unitId, reportType }) {
+export default function ExportModal({ isOpen, onClose, startDate, endDate, unitId, reportType, selectedYearMonth }) {
   const [format, setFormat] = useState('xlsx');
   const [loading, setLoading] = useState(false);
 
@@ -139,11 +133,10 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         headers = result.headers;
         filename = `rendezvenyek_osszes_egyseg_${startDate}_${endDate}`;
       } else if (reportType === 'monthly_table') {
-        const prevMonthInfo = getPreviousMonthInfo();
-        const result = await fetchMonthlyTableExport(prevMonthInfo.yearMonth);
+        const result = await fetchMonthlyTableExport(selectedYearMonth);
         data = result.data;
         headers = result.headers;
-        filename = `havi_tabla_${prevMonthInfo.yearMonth}`;
+        filename = `havi_tabla_${selectedYearMonth}`;
       }
 
       if (data.length === 0) {
@@ -158,7 +151,7 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
       if (format === 'xlsx') {
         exportToExcel(data, headers, totalsRow, filename, reportType);
       } else if (format === 'pdf') {
-        await exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate, unitName);
+        await exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate, unitName, selectedYearMonth);
       } else {
         exportToCsv(data, headers, totalsRow, filename, reportType);
       }
@@ -198,7 +191,7 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
           </p>
           <p className="text-gray-600">
             {reportType === 'monthly_table' ? (
-              <>Feldolgozott hónap: <span className="font-medium">{getPreviousMonthInfo().displayText}</span></>
+              <>Feldolgozott hónap: <span className="font-medium">{formatYearMonthDisplay(selectedYearMonth)}</span></>
             ) : (
               <>Időszak: <span className="font-medium">{formatDate(startDate)}</span> -{' '}
               <span className="font-medium">{formatDate(endDate)}</span></>
@@ -1905,7 +1898,7 @@ function sanitizeForPdf(text) {
     .replace(/Ű/g, 'Ü');
 }
 
-async function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate, unitName = '') {
+async function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate, unitName = '', selectedYearMonth = '') {
   const doc = new jsPDF({
     orientation: headers.length > 7 ? 'landscape' : 'portrait',
     unit: 'mm',
@@ -1958,9 +1951,8 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
   // Date range or processed month
   doc.setFontSize(10);
   doc.setTextColor(100, 100, 100);
-  if (reportType === 'monthly_table') {
-    const prevMonthInfo = getPreviousMonthInfo();
-    doc.text(sanitizeForPdf(`Feldolgozott hónap: ${prevMonthInfo.displayText}`), 14, 42);
+  if (reportType === 'monthly_table' && selectedYearMonth) {
+    doc.text(sanitizeForPdf(`Feldolgozott hónap: ${formatYearMonthDisplay(selectedYearMonth)}`), 14, 42);
   } else {
     doc.text(sanitizeForPdf(`Idöszak: ${formatDate(startDate)} - ${formatDate(endDate)}`), 14, 42);
   }
