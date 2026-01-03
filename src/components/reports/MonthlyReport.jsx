@@ -1083,7 +1083,7 @@ function FullMonthlyReport({ data, totals, unitName }) {
             <tr>
               <th className="px-2 py-2 text-left w-8"></th>
               <th className="px-3 py-2 text-left">Dátum</th>
-              <th className="px-3 py-2 text-right">Szoftver</th>
+              <th className="px-3 py-2 text-right">Novo</th>
               <th className="px-3 py-2 text-right">KP</th>
               <th className="px-3 py-2 text-right">Kártya</th>
               <th className="px-3 py-2 text-right">Tartalék</th>
@@ -1456,7 +1456,7 @@ function FullMonthlyAllUnitsReport({ data, totals, eventsData, eventsTotals, eve
             <thead className="bg-pepper-red bg-opacity-10">
               <tr>
                 <th className="px-3 py-2 text-left">Egység</th>
-                <th className="px-3 py-2 text-right">Szoftver</th>
+                <th className="px-3 py-2 text-right">Novo</th>
                 <th className="px-3 py-2 text-right">KP</th>
                 <th className="px-3 py-2 text-right">Kártya</th>
                 <th className="px-3 py-2 text-right">Tartalék</th>

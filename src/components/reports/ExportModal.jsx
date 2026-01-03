@@ -289,7 +289,7 @@ async function fetchFullMonthlyExport(startDate, endDate, unitId) {
     }
   });
 
-  const headers = ['Dátum', 'Szoftver bevétel', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Költség', 'Eredmény'];
+  const headers = ['Dátum', 'Novo', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Költség', 'Eredmény'];
 
   // Get unit name
   const unitName = revenues[0]?.units?.name || '';
@@ -307,7 +307,7 @@ async function fetchFullMonthlyExport(startDate, endDate, unitId) {
 
     return {
       'Dátum': formatDate(row.date),
-      'Szoftver bevétel': totalSoftware,
+      'Novo': totalSoftware,
       'Pénztárgép KP': cashRegisterCash,
       'Pénztárgép kártya': cashRegisterCard,
       'Tartalék bevétel': reserveRevenue,
@@ -657,7 +657,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     unit.dailyResult = unit.cashRegisterTotal + unit.reserveRevenue - unitExpenses.invoice;
   });
 
-  const headers = ['Egység', 'Szoftver bevétel', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Költség', 'Eredmény'];
+  const headers = ['Egység', 'Novo', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Költség', 'Eredmény'];
 
   const unitsArray = Object.values(unitData).sort((a, b) => a.unitName.localeCompare(b.unitName));
 
@@ -783,7 +783,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
   // Section 1: Units
   data.push({
     'Egység': '=== EGYSÉGEK ===',
-    'Szoftver bevétel': '',
+    'Novo': '',
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
@@ -795,7 +795,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
   unitsArray.forEach((unit) => {
     data.push({
       'Egység': unit.unitName,
-      'Szoftver bevétel': unit.totalSoftware,
+      'Novo': unit.totalSoftware,
       'Pénztárgép KP': unit.cashRegisterCash,
       'Pénztárgép kártya': unit.cashRegisterCard,
       'Tartalék bevétel': unit.reserveRevenue,
@@ -807,7 +807,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
   data.push({
     'Egység': 'Egységek összesen',
-    'Szoftver bevétel': unitsTotals.totalSoftware,
+    'Novo': unitsTotals.totalSoftware,
     'Pénztárgép KP': unitsTotals.cashRegisterCash,
     'Pénztárgép kártya': unitsTotals.cashRegisterCard,
     'Tartalék bevétel': unitsTotals.reserveRevenue,
@@ -821,7 +821,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     // Empty row
     data.push({
       'Egység': '',
-      'Szoftver bevétel': '',
+      'Novo': '',
       'Pénztárgép KP': '',
       'Pénztárgép kártya': '',
       'Tartalék bevétel': '',
@@ -832,7 +832,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
     data.push({
       'Egység': '=== RENDEZVÉNYEK ===',
-      'Szoftver bevétel': '',
+      'Novo': '',
       'Pénztárgép KP': '',
       'Pénztárgép kártya': '',
       'Tartalék bevétel': '',
@@ -844,7 +844,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     // Events headers row
     data.push({
       'Egység': 'Egység',
-      'Szoftver bevétel': 'Db',
+      'Novo': 'Db',
       'Pénztárgép KP': 'Bevétel',
       'Pénztárgép kártya': 'Számlás',
       'Tartalék bevétel': 'EFO',
@@ -856,7 +856,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     eventsData.forEach((event) => {
       data.push({
         'Egység': event.unitName,
-        'Szoftver bevétel': event.eventCount,
+        'Novo': event.eventCount,
         'Pénztárgép KP': event.total_revenue,
         'Pénztárgép kártya': event.official_expenses,
         'Tartalék bevétel': event.efo_expenses,
@@ -868,7 +868,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
     data.push({
       'Egység': 'Rendezvények összesen',
-      'Szoftver bevétel': eventsTotals.eventCount,
+      'Novo': eventsTotals.eventCount,
       'Pénztárgép KP': eventsTotals.total_revenue,
       'Pénztárgép kártya': eventsTotals.official_expenses,
       'Tartalék bevétel': eventsTotals.efo_expenses,
@@ -880,7 +880,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     // Section 3: Events list
     data.push({
       'Egység': '',
-      'Szoftver bevétel': '',
+      'Novo': '',
       'Pénztárgép KP': '',
       'Pénztárgép kártya': '',
       'Tartalék bevétel': '',
@@ -891,7 +891,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
     data.push({
       'Egység': '--- Rendezvények részletesen ---',
-      'Szoftver bevétel': '',
+      'Novo': '',
       'Pénztárgép KP': '',
       'Pénztárgép kártya': '',
       'Tartalék bevétel': '',
@@ -902,7 +902,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
     data.push({
       'Egység': 'Dátum',
-      'Szoftver bevétel': 'Egység',
+      'Novo': 'Egység',
       'Pénztárgép KP': 'Rendezvény',
       'Pénztárgép kártya': 'Bevétel',
       'Tartalék bevétel': 'Költség',
@@ -914,7 +914,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     eventsList.forEach((event) => {
       data.push({
         'Egység': formatDate(event.event_date),
-        'Szoftver bevétel': event.unitName,
+        'Novo': event.unitName,
         'Pénztárgép KP': event.name,
         'Pénztárgép kártya': event.total_revenue,
         'Tartalék bevétel': event.total_expenses,
@@ -928,7 +928,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
   // Section 4: Grand totals
   data.push({
     'Egység': '',
-    'Szoftver bevétel': '',
+    'Novo': '',
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
@@ -939,7 +939,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
   data.push({
     'Egység': '=== MINDÖSSZESEN ===',
-    'Szoftver bevétel': '',
+    'Novo': '',
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
@@ -950,7 +950,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
   data.push({
     'Egység': 'Egységek bevétel',
-    'Szoftver bevétel': '',
+    'Novo': '',
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
@@ -961,7 +961,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
   data.push({
     'Egység': 'Rendezvények bevétel',
-    'Szoftver bevétel': '',
+    'Novo': '',
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
@@ -972,7 +972,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
   data.push({
     'Egység': 'ÖSSZES BEVÉTEL',
-    'Szoftver bevétel': '',
+    'Novo': '',
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
@@ -983,7 +983,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
   data.push({
     'Egység': 'Egységek eredménye',
-    'Szoftver bevétel': '',
+    'Novo': '',
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
@@ -994,7 +994,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
   data.push({
     'Egység': 'Rendezvények eredménye',
-    'Szoftver bevétel': '',
+    'Novo': '',
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
@@ -1005,7 +1005,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
   data.push({
     'Egység': 'ÖSSZES EREDMÉNY',
-    'Szoftver bevétel': '',
+    'Novo': '',
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
