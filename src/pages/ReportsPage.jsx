@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, ChevronLeft, ChevronRight, FileSpreadsheet } from 'lucide-react';
+import { Download, ChevronLeft, ChevronRight, FileSpreadsheet, Calendar } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
@@ -8,6 +8,12 @@ import MonthlyReport from '../components/reports/MonthlyReport';
 import MonthlyTableReport from '../components/reports/MonthlyTableReport';
 import ExportModal from '../components/reports/ExportModal';
 import { getFirstDayOfMonth, getLastDayOfMonth } from '../lib/utils';
+
+// Hungarian month names
+const MONTH_NAMES = [
+  'Január', 'Február', 'Március', 'Április', 'Május', 'Június',
+  'Július', 'Augusztus', 'Szeptember', 'Október', 'November', 'December'
+];
 
 // Base report types for all users
 const baseReportTypes = [
@@ -35,6 +41,18 @@ function getPreviousMonthDates() {
   return {
     start: firstDay.toISOString().split('T')[0],
     end: lastDay.toISOString().split('T')[0],
+  };
+}
+
+// Get previous month's year-month string (for monthly table report)
+function getPreviousMonthYearMonth() {
+  const now = new Date();
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return {
+    yearMonth: `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`,
+    year: prevMonth.getFullYear(),
+    month: prevMonth.getMonth(), // 0-indexed
+    monthName: MONTH_NAMES[prevMonth.getMonth()],
   };
 }
 
@@ -131,7 +149,7 @@ export default function ReportsPage() {
       <Card>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">
+            <label className={`block text-sm font-medium ${reportType === 'monthly_table' ? 'text-gray-400' : 'text-gray-700'}`}>
               Kezdő dátum
             </label>
             <div className="relative">
@@ -139,13 +157,18 @@ export default function ReportsPage() {
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
+                disabled={reportType === 'monthly_table'}
+                className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent ${
+                  reportType === 'monthly_table'
+                    ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'border-gray-300'
+                }`}
               />
             </div>
           </div>
 
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">
+            <label className={`block text-sm font-medium ${reportType === 'monthly_table' ? 'text-gray-400' : 'text-gray-700'}`}>
               Záró dátum
             </label>
             <div className="relative">
@@ -154,16 +177,30 @@ export default function ReportsPage() {
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 min={startDate}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
+                disabled={reportType === 'monthly_table'}
+                className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent ${
+                  reportType === 'monthly_table'
+                    ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'border-gray-300'
+                }`}
               />
             </div>
           </div>
 
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">
+            <label className={`block text-sm font-medium ${reportType === 'monthly_table' ? 'text-gray-400' : 'text-gray-700'}`}>
               Gyors választás
             </label>
-            {startDate === getFirstDayOfMonth() && endDate === getLastDayOfMonth() ? (
+            {reportType === 'monthly_table' ? (
+              <Button
+                variant="secondary"
+                disabled
+                className="w-full opacity-50 cursor-not-allowed"
+              >
+                <Calendar className="h-4 w-4" />
+                Előző hónap (fix)
+              </Button>
+            ) : startDate === getFirstDayOfMonth() && endDate === getLastDayOfMonth() ? (
               <Button
                 variant="secondary"
                 onClick={() => {
@@ -229,10 +266,20 @@ export default function ReportsPage() {
         </Card>
       )}
 
+      {/* Processed month indicator for monthly table */}
+      {reportType === 'monthly_table' && (
+        <div className="flex items-center justify-center gap-2 py-3 px-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <Calendar className="h-5 w-5 text-amber-600" />
+          <span className="text-amber-800 font-medium">
+            Feldolgozott időszak: {getPreviousMonthYearMonth().year}. {getPreviousMonthYearMonth().monthName}
+          </span>
+        </div>
+      )}
+
       {/* Report content */}
       {reportType === 'monthly_table' ? (
         <MonthlyTableReport
-          yearMonth={`${startDate.substring(0, 7)}`}
+          yearMonth={getPreviousMonthYearMonth().yearMonth}
         />
       ) : (
         <MonthlyReport

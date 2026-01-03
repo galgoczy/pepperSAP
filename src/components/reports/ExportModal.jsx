@@ -22,6 +22,25 @@ const reportTypeLabels = {
   monthly_table: 'Havi tábla (költség-bevétel)',
 };
 
+// Hungarian month names for export
+const MONTH_NAMES = [
+  'Január', 'Február', 'Március', 'Április', 'Május', 'Június',
+  'Július', 'Augusztus', 'Szeptember', 'Október', 'November', 'December'
+];
+
+// Get previous month info for monthly table export
+function getPreviousMonthInfo() {
+  const now = new Date();
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return {
+    yearMonth: `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`,
+    year: prevMonth.getFullYear(),
+    month: prevMonth.getMonth(), // 0-indexed
+    monthName: MONTH_NAMES[prevMonth.getMonth()],
+    displayText: `${prevMonth.getFullYear()}. ${MONTH_NAMES[prevMonth.getMonth()]}`,
+  };
+}
+
 export default function ExportModal({ isOpen, onClose, startDate, endDate, unitId, reportType }) {
   const [format, setFormat] = useState('xlsx');
   const [loading, setLoading] = useState(false);
@@ -120,10 +139,11 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         headers = result.headers;
         filename = `rendezvenyek_osszes_egyseg_${startDate}_${endDate}`;
       } else if (reportType === 'monthly_table') {
-        const result = await fetchMonthlyTableExport(startDate);
+        const prevMonthInfo = getPreviousMonthInfo();
+        const result = await fetchMonthlyTableExport(prevMonthInfo.yearMonth);
         data = result.data;
         headers = result.headers;
-        filename = `havi_tabla_${startDate.substring(0, 7)}`;
+        filename = `havi_tabla_${prevMonthInfo.yearMonth}`;
       }
 
       if (data.length === 0) {
@@ -177,8 +197,12 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
             <span className="font-medium">{reportTypeLabels[reportType] || 'Riport'}</span>
           </p>
           <p className="text-gray-600">
-            Időszak: <span className="font-medium">{formatDate(startDate)}</span> -{' '}
-            <span className="font-medium">{formatDate(endDate)}</span>
+            {reportType === 'monthly_table' ? (
+              <>Feldolgozott hónap: <span className="font-medium">{getPreviousMonthInfo().displayText}</span></>
+            ) : (
+              <>Időszak: <span className="font-medium">{formatDate(startDate)}</span> -{' '}
+              <span className="font-medium">{formatDate(endDate)}</span></>
+            )}
           </p>
         </div>
 
@@ -1371,9 +1395,8 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
   return { data, headers };
 }
 
-async function fetchMonthlyTableExport(startDate) {
-  // Extract year-month from startDate (YYYY-MM-DD -> YYYY-MM)
-  const yearMonth = startDate.substring(0, 7);
+async function fetchMonthlyTableExport(yearMonth) {
+  // yearMonth is in format YYYY-MM
   const [year, month] = yearMonth.split('-').map(Number);
   const monthStartDate = `${year}-${String(month).padStart(2, '0')}-01`;
   const monthEndDate = new Date(year, month, 0).toISOString().split('T')[0];
@@ -1932,10 +1955,15 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
   doc.setTextColor(211, 47, 47);
   doc.text(sanitizeForPdf(reportLabel), 14, 35);
 
-  // Date range
+  // Date range or processed month
   doc.setFontSize(10);
   doc.setTextColor(100, 100, 100);
-  doc.text(sanitizeForPdf(`Idöszak: ${formatDate(startDate)} - ${formatDate(endDate)}`), 14, 42);
+  if (reportType === 'monthly_table') {
+    const prevMonthInfo = getPreviousMonthInfo();
+    doc.text(sanitizeForPdf(`Feldolgozott hónap: ${prevMonthInfo.displayText}`), 14, 42);
+  } else {
+    doc.text(sanitizeForPdf(`Idöszak: ${formatDate(startDate)} - ${formatDate(endDate)}`), 14, 42);
+  }
 
   // Format data for PDF table - sanitize all strings
   const tableData = data.map((row) =>
