@@ -621,20 +621,27 @@ function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportCompl
           // Ignore - user info is optional
         }
 
-        // Load files from PepperHouse Documents
+        // Search for Excel files in OneDrive
         try {
-          const folder = await client.getFolderByPath('PepperHouse Documents');
-          console.log('Folder found:', folder.name);
-          const contents = await client.listFolder(folder.id);
-          const excelFiles = contents.value.filter(f =>
+          console.log('Searching for Excel files...');
+          const searchResult = await client.searchFiles('.xlsx');
+          const excelFiles = (searchResult.value || []).filter(f =>
             f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
           );
-          console.log('Excel files found:', excelFiles.length);
+          console.log('Excel files found:', excelFiles.length, excelFiles.map(f => f.name));
           setFiles(excelFiles);
-        } catch (folderError) {
-          console.error('Folder access error:', folderError);
-          // Still connected, just no files
-          setFiles([]);
+        } catch (searchError) {
+          console.error('Search error:', searchError);
+          // Fallback: try to list root folder
+          try {
+            const contents = await client.listFolder('root');
+            const excelFiles = (contents.value || []).filter(f =>
+              f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+            );
+            setFiles(excelFiles);
+          } catch {
+            setFiles([]);
+          }
         }
       } catch (error) {
         console.error('SharePoint connection check failed:', error);
@@ -671,11 +678,10 @@ function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportCompl
       setConnectedUser(userEmail);
       setConnected(true);
 
-      // Load files
+      // Search for Excel files
       try {
-        const folder = await client.getFolderByPath('PepperHouse Documents');
-        const contents = await client.listFolder(folder.id);
-        const excelFiles = contents.value.filter(f =>
+        const searchResult = await client.searchFiles('.xlsx');
+        const excelFiles = (searchResult.value || []).filter(f =>
           f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
         );
         setFiles(excelFiles);
