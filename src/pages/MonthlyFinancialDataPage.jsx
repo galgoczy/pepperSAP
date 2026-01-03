@@ -12,12 +12,14 @@ import {
   TrendingDown,
   RefreshCw,
   Info,
+  LogIn,
 } from 'lucide-react';
 import { useUnits } from '../hooks/useSupabase';
+import { useAuth } from '../hooks/useAuth';
 import { Card, Button, Input, LoadingSpinner, Modal } from '../components/common';
 import { supabase } from '../lib/supabase';
 import { formatCurrency } from '../lib/utils';
-import { MicrosoftGraphClient, refreshAccessToken } from '../lib/microsoft';
+import { MicrosoftGraphClient, refreshAccessToken, startMicrosoftAuth } from '../lib/microsoft';
 import toast from 'react-hot-toast';
 
 // Hungarian month names for display
@@ -520,14 +522,17 @@ export default function MonthlyFinancialDataPage() {
 
 // Excel Import Modal Component
 function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportComplete }) {
+  const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [files, setFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [worksheets, setWorksheets] = useState([]);
   const [selectedWorksheet, setSelectedWorksheet] = useState('');
   const [previewData, setPreviewData] = useState(null);
   const [graphClient, setGraphClient] = useState(null);
+  const [connectedUser, setConnectedUser] = useState(null);
 
   // Check for existing Microsoft connection
   useEffect(() => {
@@ -608,6 +613,14 @@ function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportCompl
         setGraphClient(client);
         setConnected(true);
 
+        // Get connected user info
+        try {
+          const me = await client.getMe();
+          setConnectedUser(me.mail || me.userPrincipalName);
+        } catch {
+          // Ignore - user info is optional
+        }
+
         // Load files from PepperHouse Documents
         try {
           const folder = await client.getFolderByPath('PepperHouse Documents');
@@ -631,6 +644,53 @@ function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportCompl
 
     checkConnection();
   }, [isOpen]);
+
+  // Handle SharePoint reconnection
+  const handleReconnect = async () => {
+    setReconnecting(true);
+    try {
+      const tokens = await startMicrosoftAuth();
+      const client = new MicrosoftGraphClient(tokens.accessToken);
+      const user = await client.getMe();
+      const userEmail = user.mail || user.userPrincipalName;
+
+      // Save tokens to database
+      await supabase.from('microsoft_tokens').upsert({
+        user_email: userEmail,
+        user_name: user.displayName,
+        user_id: profile?.id || null,
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken,
+        expires_at: tokens.expiresAt.toISOString(),
+        is_storage_account: true,
+      }, {
+        onConflict: 'is_storage_account',
+      });
+
+      setGraphClient(client);
+      setConnectedUser(userEmail);
+      setConnected(true);
+
+      // Load files
+      try {
+        const folder = await client.getFolderByPath('PepperHouse Documents');
+        const contents = await client.listFolder(folder.id);
+        const excelFiles = contents.value.filter(f =>
+          f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+        );
+        setFiles(excelFiles);
+      } catch {
+        setFiles([]);
+      }
+
+      toast.success('SharePoint sikeresen csatlakoztatva!');
+    } catch (error) {
+      console.error('Reconnect failed:', error);
+      toast.error(error.message || 'Csatlakozás sikertelen');
+    } finally {
+      setReconnecting(false);
+    }
+  };
 
   const handleFileSelect = async (file) => {
     setSelectedFile(file);
@@ -713,12 +773,39 @@ function ExcelImportModal({ isOpen, onClose, selectedMonth, units, onImportCompl
             <p className="text-gray-600 mb-4">
               SharePoint kapcsolat szükséges az Excel importhoz
             </p>
-            <p className="text-sm text-gray-500">
-              Csatlakozz a Dokumentumok oldalon keresztül
-            </p>
+            <Button
+              onClick={handleReconnect}
+              disabled={reconnecting}
+              className="mx-auto"
+            >
+              {reconnecting ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <LogIn className="h-4 w-4" />
+              )}
+              {reconnecting ? 'Csatlakozás...' : 'Csatlakozás SharePoint-hoz'}
+            </Button>
           </div>
         ) : (
           <>
+            {/* Connected user info */}
+            {connectedUser && (
+              <div className="flex items-center justify-between bg-green-50 rounded-lg px-3 py-2 text-sm">
+                <span className="text-green-700">
+                  Csatlakozva: <strong>{connectedUser}</strong>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleReconnect}
+                  disabled={reconnecting}
+                >
+                  {reconnecting ? <RefreshCw className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                  Másik fiók
+                </Button>
+              </div>
+            )}
+
             {/* File selector */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
