@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Edit, Trash2, Receipt, Filter } from 'lucide-react';
+import { Receipt, Filter } from 'lucide-react';
 import { useExpenses } from '../../hooks/useExpenses';
 import {
   Table,
@@ -11,7 +11,6 @@ import {
   Badge,
   EmptyState,
   LoadingSpinner,
-  ConfirmModal,
   Button,
   Select,
   DatePicker,
@@ -30,7 +29,6 @@ export default function ExpenseList({
   const [localEndDate, setLocalEndDate] = useState(getLastDayOfMonth());
   const [paymentFilter, setPaymentFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [deleteId, setDeleteId] = useState(null);
 
   // Use props if provided, otherwise use local state
   const startDate = propStartDate || localStartDate;
@@ -52,14 +50,7 @@ export default function ExpenseList({
     }
   };
 
-  const { expenses, loading, deleteExpense } = useExpenses(unitId, startDate, endDate);
-
-  const handleDelete = async () => {
-    if (deleteId) {
-      await deleteExpense(deleteId);
-      setDeleteId(null);
-    }
-  };
+  const { expenses, loading } = useExpenses(unitId, startDate, endDate);
 
   // Filter expenses
   const filteredExpenses = expenses.filter((expense) => {
@@ -151,12 +142,15 @@ export default function ExpenseList({
               <TableHeader>Fizetés</TableHeader>
               <TableHeader>Típus</TableHeader>
               <TableHeader align="right">Összeg</TableHeader>
-              <TableHeader align="right">Műveletek</TableHeader>
             </TableRow>
           </TableHead>
           <TableBody>
             {filteredExpenses.map((expense) => (
-              <TableRow key={expense.id}>
+              <TableRow
+                key={expense.id}
+                className="cursor-pointer hover:bg-gray-50"
+                onClick={() => onEdit(expense)}
+              >
                 <TableCell>
                   <div>
                     <p className="font-medium text-gray-900">
@@ -192,38 +186,11 @@ export default function ExpenseList({
                 <TableCell align="right" className="font-semibold text-red-600">
                   -{formatCurrency(expense.amount, expense.currency)}
                 </TableCell>
-                <TableCell align="right">
-                  <div className="flex justify-end gap-1">
-                    <button
-                      onClick={() => onEdit(expense)}
-                      className="p-2 hover:bg-gray-100 rounded-lg"
-                      title="Szerkesztés"
-                    >
-                      <Edit className="h-4 w-4 text-gray-500" />
-                    </button>
-                    <button
-                      onClick={() => setDeleteId(expense.id)}
-                      className="p-2 hover:bg-red-50 rounded-lg"
-                      title="Törlés"
-                    >
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </button>
-                  </div>
-                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       )}
-
-      {/* Delete confirm modal */}
-      <ConfirmModal
-        isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
-        onConfirm={handleDelete}
-        title="Kifizetés törlése"
-        message="Biztosan törölni szeretnéd ezt a kifizetést? Ez a művelet visszavonhatatlan."
-      />
     </div>
   );
 }

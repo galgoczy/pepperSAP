@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Save } from 'lucide-react';
+import { Save, Trash2 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useExpenses } from '../../hooks/useExpenses';
 import { useUnits } from '../../hooks/useSupabase';
-import { Button, Input, Select, DatePicker } from '../common';
+import { Button, Input, Select, DatePicker, ConfirmModal } from '../common';
 import { Textarea } from '../common/Input';
 import { getToday } from '../../lib/utils';
 
-export default function ExpenseForm({ expense, unitId, onSuccess, onCancel }) {
+export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDelete }) {
   const { isAdmin, unitId: userUnitId } = useAuth();
   const { units } = useUnits();
-  const { createExpense, updateExpense } = useExpenses();
+  const { createExpense, updateExpense, deleteExpense } = useExpenses();
   const [loading, setLoading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [formData, setFormData] = useState({
     unit_id: unitId || userUnitId || '',
     supplier_name: '',
@@ -65,6 +66,21 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel }) {
       console.error('Error saving expense:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!expense) return;
+    setLoading(true);
+    try {
+      await deleteExpense(expense.id);
+      onDelete?.();
+      onSuccess?.();
+    } catch (error) {
+      console.error('Error deleting expense:', error);
+    } finally {
+      setLoading(false);
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -185,15 +201,39 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel }) {
         placeholder="Egyéb megjegyzések..."
       />
 
-      <div className="flex justify-end gap-3 pt-4">
-        <Button type="button" variant="secondary" onClick={onCancel}>
-          Mégse
-        </Button>
-        <Button type="submit" loading={loading}>
-          <Save className="h-4 w-4" />
-          {expense ? 'Mentés' : 'Rögzítés'}
-        </Button>
+      <div className="flex justify-between pt-4">
+        {expense ? (
+          <Button
+            type="button"
+            variant="danger"
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            <Trash2 className="h-4 w-4" />
+            Törlés
+          </Button>
+        ) : (
+          <div />
+        )}
+        <div className="flex gap-3">
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Mégse
+          </Button>
+          <Button type="submit" loading={loading}>
+            <Save className="h-4 w-4" />
+            {expense ? 'Mentés' : 'Rögzítés'}
+          </Button>
+        </div>
       </div>
+
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+        title="Kifizetés törlése"
+        message="Biztosan törölni szeretnéd ezt a kifizetést? Ez a művelet visszavonhatatlan."
+        confirmText="Törlés"
+        confirmVariant="danger"
+      />
     </form>
   );
 }

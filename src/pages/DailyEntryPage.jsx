@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
-import { Card, Button, Select, LoadingSpinner } from '../components/common';
+import { Card, Button, Select, LoadingSpinner, Modal } from '../components/common';
 import DailyRevenueForm from '../components/daily/DailyRevenueForm';
 import HouseCashForm from '../components/daily/HouseCashForm';
 import DailyReport from '../components/daily/DailyReport';
@@ -43,6 +43,7 @@ export default function DailyEntryPage() {
   const urlUnitParam = searchParams.get('unit');
   const [selectedUnit, setSelectedUnit] = useState(urlUnitParam || unitId || '');
   const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [editingExpense, setEditingExpense] = useState(null);
   const [expenseRefreshKey, setExpenseRefreshKey] = useState(0);
 
   // Get restaurant units only
@@ -596,7 +597,12 @@ export default function DailyEntryPage() {
                 </Card>
               )}
 
-              <DailyExpensesList key={expenseRefreshKey} unitId={effectiveUnitId} date={selectedDate} />
+              <DailyExpensesList
+                key={expenseRefreshKey}
+                unitId={effectiveUnitId}
+                date={selectedDate}
+                onEditExpense={(expense) => setEditingExpense(expense)}
+              />
             </div>
           </div>
         )}
@@ -639,7 +645,12 @@ export default function DailyEntryPage() {
               </Card>
             )}
 
-            <DailyExpensesList key={expenseRefreshKey} unitId={effectiveUnitId} date={selectedDate} />
+            <DailyExpensesList
+              key={expenseRefreshKey}
+              unitId={effectiveUnitId}
+              date={selectedDate}
+              onEditExpense={(expense) => setEditingExpense(expense)}
+            />
           </div>
         )}
 
@@ -660,6 +671,28 @@ export default function DailyEntryPage() {
           />
         )}
       </div>
+
+      {/* Expense edit modal */}
+      <Modal
+        isOpen={!!editingExpense}
+        onClose={() => setEditingExpense(null)}
+        title="Kifizetés szerkesztése"
+        size="lg"
+      >
+        <ExpenseForm
+          expense={editingExpense}
+          unitId={effectiveUnitId}
+          onSuccess={() => {
+            setEditingExpense(null);
+            setExpenseRefreshKey(k => k + 1);
+          }}
+          onCancel={() => setEditingExpense(null)}
+          onDelete={() => {
+            setEditingExpense(null);
+            setExpenseRefreshKey(k => k + 1);
+          }}
+        />
+      </Modal>
     </div>
   );
 }
@@ -763,7 +796,7 @@ function RecentEntriesList({ unitId, onSelectDate }) {
 }
 
 // Component to show daily expenses
-function DailyExpensesList({ unitId, date }) {
+function DailyExpensesList({ unitId, date, onEditExpense }) {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -821,11 +854,13 @@ function DailyExpensesList({ unitId, date }) {
 
   return (
     <Card>
+      <p className="text-xs text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez</p>
       <div className="space-y-3">
         {expenses.map((expense) => (
           <div
             key={expense.id}
-            className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+            onClick={() => onEditExpense?.(expense)}
+            className="flex items-center justify-between py-3 px-3 -mx-3 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50 rounded-lg transition-colors"
           >
             <div>
               <p className="font-medium text-gray-900">{expense.supplier_name}</p>
