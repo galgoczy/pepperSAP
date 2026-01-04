@@ -1087,8 +1087,7 @@ function FullMonthlyReport({ data, totals, unitName }) {
               <th className="px-3 py-2 text-right">KP</th>
               <th className="px-3 py-2 text-right">Kártya</th>
               <th className="px-3 py-2 text-right">Tartalék</th>
-              <th className="px-3 py-2 text-right">Költség</th>
-              <th className="px-3 py-2 text-right font-semibold bg-pepper-red bg-opacity-20">Eredmény</th>
+              <th className="px-3 py-2 text-right font-semibold bg-pepper-red bg-opacity-20">Összesen</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -1114,16 +1113,13 @@ function FullMonthlyReport({ data, totals, unitName }) {
                   <td className="px-3 py-2 text-right text-green-600">{formatCurrency(row.cashRegisterCash)}</td>
                   <td className="px-3 py-2 text-right text-blue-600">{formatCurrency(row.cashRegisterCard)}</td>
                   <td className="px-3 py-2 text-right text-purple-600">{formatCurrency(row.reserveRevenue)}</td>
-                  <td className="px-3 py-2 text-right text-red-600">
-                    {row.invoiceExpenses > 0 ? `-${formatCurrency(row.invoiceExpenses)}` : formatCurrency(0)}
-                  </td>
-                  <td className={`px-3 py-2 text-right font-semibold ${row.dailyResult >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                    {formatCurrency(row.dailyResult)}
+                  <td className="px-3 py-2 text-right font-semibold text-gray-900">
+                    {formatCurrency(row.totalSoftware)}
                   </td>
                 </tr>
                 {expandedDays[row.date] && row.expenses?.length > 0 && (
                   <tr className="bg-red-50">
-                    <td colSpan={8} className="px-4 py-2">
+                    <td colSpan={7} className="px-4 py-2">
                       <div className="pl-8 space-y-1">
                         <p className="text-xs font-medium text-gray-500 mb-2">Napi költségek:</p>
                         {row.expenses.map((exp) => (
@@ -1145,9 +1141,8 @@ function FullMonthlyReport({ data, totals, unitName }) {
               <td className="px-3 py-2 text-right text-green-700">{formatCurrency(totals.cashRegisterCash)}</td>
               <td className="px-3 py-2 text-right text-blue-700">{formatCurrency(totals.cashRegisterCard)}</td>
               <td className="px-3 py-2 text-right text-purple-700">{formatCurrency(totals.reserveRevenue)}</td>
-              <td className="px-3 py-2 text-right text-red-700">-{formatCurrency(totals.invoiceExpenses)}</td>
-              <td className={`px-3 py-2 text-right ${totals.dailyResult >= 0 ? 'text-green-800' : 'text-red-800'}`}>
-                {formatCurrency(totals.dailyResult)}
+              <td className="px-3 py-2 text-right text-gray-900">
+                {formatCurrency(totals.totalSoftware)}
               </td>
             </tr>
           </tbody>
@@ -1158,22 +1153,20 @@ function FullMonthlyReport({ data, totals, unitName }) {
       <div className="mt-4 pt-4 border-t border-gray-200">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
           <div className="bg-gray-50 rounded-lg p-3">
-            <p className="text-sm text-gray-600">Szoftver bevétel</p>
+            <p className="text-sm text-gray-600">Novo bevétel</p>
             <p className="text-lg font-bold text-gray-700">{formatCurrency(totals.totalSoftware)}</p>
           </div>
           <div className="bg-green-50 rounded-lg p-3">
             <p className="text-sm text-green-600">Pénztárgép KP</p>
             <p className="text-lg font-bold text-green-700">{formatCurrency(totals.cashRegisterCash)}</p>
           </div>
-          <div className="bg-red-50 rounded-lg p-3">
-            <p className="text-sm text-red-600">Költségek</p>
-            <p className="text-lg font-bold text-red-700">-{formatCurrency(totals.invoiceExpenses)}</p>
+          <div className="bg-blue-50 rounded-lg p-3">
+            <p className="text-sm text-blue-600">Pénztárgép Kártya</p>
+            <p className="text-lg font-bold text-blue-700">{formatCurrency(totals.cashRegisterCard)}</p>
           </div>
-          <div className={`rounded-lg p-3 ${totals.dailyResult >= 0 ? 'bg-blue-50' : 'bg-red-100'}`}>
-            <p className={`text-sm ${totals.dailyResult >= 0 ? 'text-blue-600' : 'text-red-600'}`}>Eredmény</p>
-            <p className={`text-lg font-bold ${totals.dailyResult >= 0 ? 'text-blue-700' : 'text-red-700'}`}>
-              {formatCurrency(totals.dailyResult)}
-            </p>
+          <div className="bg-pepper-red bg-opacity-10 rounded-lg p-3">
+            <p className="text-sm text-pepper-red">Összesen</p>
+            <p className="text-lg font-bold text-pepper-red">{formatCurrency(totals.totalSoftware)}</p>
           </div>
         </div>
       </div>
@@ -1460,8 +1453,7 @@ function FullMonthlyAllUnitsReport({ data, totals, eventsData, eventsTotals, eve
                 <th className="px-3 py-2 text-right">KP</th>
                 <th className="px-3 py-2 text-right">Kártya</th>
                 <th className="px-3 py-2 text-right">Tartalék</th>
-                <th className="px-3 py-2 text-right">Költség</th>
-                <th className="px-3 py-2 text-right font-semibold bg-pepper-red bg-opacity-20">Eredmény</th>
+                <th className="px-3 py-2 text-right font-semibold bg-pepper-red bg-opacity-20">Összesen</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -1472,9 +1464,8 @@ function FullMonthlyAllUnitsReport({ data, totals, eventsData, eventsTotals, eve
                   <td className="px-3 py-2 text-right text-green-600">{formatCurrency(row.cashRegisterCash)}</td>
                   <td className="px-3 py-2 text-right text-blue-600">{formatCurrency(row.cashRegisterCard)}</td>
                   <td className="px-3 py-2 text-right text-purple-600">{formatCurrency(row.reserveRevenue)}</td>
-                  <td className="px-3 py-2 text-right text-red-600">-{formatCurrency(row.invoiceExpenses)}</td>
-                  <td className={`px-3 py-2 text-right font-semibold ${row.dailyResult >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                    {formatCurrency(row.dailyResult)}
+                  <td className="px-3 py-2 text-right font-semibold text-gray-900">
+                    {formatCurrency(row.totalSoftware)}
                   </td>
                 </tr>
               ))}
@@ -1484,9 +1475,8 @@ function FullMonthlyAllUnitsReport({ data, totals, eventsData, eventsTotals, eve
                 <td className="px-3 py-2 text-right text-green-700">{formatCurrency(totals.cashRegisterCash)}</td>
                 <td className="px-3 py-2 text-right text-blue-700">{formatCurrency(totals.cashRegisterCard)}</td>
                 <td className="px-3 py-2 text-right text-purple-700">{formatCurrency(totals.reserveRevenue)}</td>
-                <td className="px-3 py-2 text-right text-red-700">-{formatCurrency(totals.invoiceExpenses)}</td>
-                <td className={`px-3 py-2 text-right ${totals.dailyResult >= 0 ? 'text-green-800' : 'text-red-800'}`}>
-                  {formatCurrency(totals.dailyResult)}
+                <td className="px-3 py-2 text-right text-gray-900">
+                  {formatCurrency(totals.totalSoftware)}
                 </td>
               </tr>
             </tbody>

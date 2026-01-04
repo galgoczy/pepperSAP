@@ -18,12 +18,39 @@ import {
 } from '../common';
 import { formatCurrency, formatDate, PAYMENT_METHODS, getFirstDayOfMonth, getLastDayOfMonth } from '../../lib/utils';
 
-export default function ExpenseList({ unitId, onEdit, isAdmin }) {
-  const [startDate, setStartDate] = useState(getFirstDayOfMonth());
-  const [endDate, setEndDate] = useState(getLastDayOfMonth());
+export default function ExpenseList({
+  unitId,
+  onEdit,
+  isAdmin,
+  startDate: propStartDate,
+  endDate: propEndDate,
+  onDateChange
+}) {
+  const [localStartDate, setLocalStartDate] = useState(getFirstDayOfMonth());
+  const [localEndDate, setLocalEndDate] = useState(getLastDayOfMonth());
   const [paymentFilter, setPaymentFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
+
+  // Use props if provided, otherwise use local state
+  const startDate = propStartDate || localStartDate;
+  const endDate = propEndDate || localEndDate;
+
+  const setStartDate = (date) => {
+    if (onDateChange) {
+      onDateChange(date, endDate);
+    } else {
+      setLocalStartDate(date);
+    }
+  };
+
+  const setEndDate = (date) => {
+    if (onDateChange) {
+      onDateChange(startDate, date);
+    } else {
+      setLocalEndDate(date);
+    }
+  };
 
   const { expenses, loading, deleteExpense } = useExpenses(unitId, startDate, endDate);
 

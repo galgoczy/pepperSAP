@@ -289,7 +289,7 @@ async function fetchFullMonthlyExport(startDate, endDate, unitId) {
     }
   });
 
-  const headers = ['Dátum', 'Novo', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Költség', 'Eredmény'];
+  const headers = ['Dátum', 'Novo', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Összesen'];
 
   // Get unit name
   const unitName = revenues[0]?.units?.name || '';
@@ -303,7 +303,6 @@ async function fetchFullMonthlyExport(startDate, endDate, unitId) {
     const dayExpenses = expensesByDate[row.date] || { invoice: 0, nonInvoice: 0 };
     const totalSoftware = parseFloat(row.total_revenue) || 0;
     const reserveRevenue = totalSoftware - cashRegisterTotal - dayExpenses.nonInvoice;
-    const dailyResult = cashRegisterTotal + reserveRevenue - dayExpenses.invoice;
 
     return {
       'Dátum': formatDate(row.date),
@@ -311,8 +310,7 @@ async function fetchFullMonthlyExport(startDate, endDate, unitId) {
       'Pénztárgép KP': cashRegisterCash,
       'Pénztárgép kártya': cashRegisterCard,
       'Tartalék bevétel': reserveRevenue,
-      'Költség': -dayExpenses.invoice,
-      'Eredmény': dailyResult,
+      'Összesen': totalSoftware,
     };
   });
 
@@ -657,7 +655,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     unit.dailyResult = unit.cashRegisterTotal + unit.reserveRevenue - unitExpenses.invoice;
   });
 
-  const headers = ['Egység', 'Novo', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Költség', 'Eredmény'];
+  const headers = ['Egység', 'Novo', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Összesen'];
 
   const unitsArray = Object.values(unitData).sort((a, b) => a.unitName.localeCompare(b.unitName));
 
@@ -787,8 +785,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
-    'Költség': '',
-    'Eredmény': '',
+    'Összesen': '',
     _rowType: 'sectionHeader',
   });
 
@@ -799,8 +796,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
       'Pénztárgép KP': unit.cashRegisterCash,
       'Pénztárgép kártya': unit.cashRegisterCard,
       'Tartalék bevétel': unit.reserveRevenue,
-      'Költség': -unit.invoiceExpenses,
-      'Eredmény': unit.dailyResult,
+      'Összesen': unit.totalSoftware,
       _rowType: 'data',
     });
   });
@@ -811,8 +807,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     'Pénztárgép KP': unitsTotals.cashRegisterCash,
     'Pénztárgép kártya': unitsTotals.cashRegisterCard,
     'Tartalék bevétel': unitsTotals.reserveRevenue,
-    'Költség': -unitsTotals.invoiceExpenses,
-    'Eredmény': unitsTotals.dailyResult,
+    'Összesen': unitsTotals.totalSoftware,
     _rowType: 'subtotal',
   });
 
@@ -825,8 +820,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
       'Pénztárgép KP': '',
       'Pénztárgép kártya': '',
       'Tartalék bevétel': '',
-      'Költség': '',
-      'Eredmény': '',
+      'Összesen': '',
       _rowType: 'empty',
     });
 
@@ -836,8 +830,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
       'Pénztárgép KP': '',
       'Pénztárgép kártya': '',
       'Tartalék bevétel': '',
-      'Költség': '',
-      'Eredmény': '',
+      'Összesen': '',
       _rowType: 'sectionHeader',
     });
 
@@ -847,9 +840,8 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
       'Novo': 'Db',
       'Pénztárgép KP': 'Bevétel',
       'Pénztárgép kártya': 'Számlás',
-      'Tartalék bevétel': 'EFO',
-      'Költség': 'Nem számlás',
-      'Eredmény': 'Eredmény',
+      'Tartalék bevétel': 'EFO + Nem számlás',
+      'Összesen': 'Eredmény',
       _rowType: 'eventsHeader',
     });
 
@@ -859,9 +851,8 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
         'Novo': event.eventCount,
         'Pénztárgép KP': event.total_revenue,
         'Pénztárgép kártya': event.official_expenses,
-        'Tartalék bevétel': event.efo_expenses,
-        'Költség': event.non_official_expenses,
-        'Eredmény': event.profit,
+        'Tartalék bevétel': event.efo_expenses + event.non_official_expenses,
+        'Összesen': event.profit,
         _rowType: 'eventData',
       });
     });
@@ -871,9 +862,8 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
       'Novo': eventsTotals.eventCount,
       'Pénztárgép KP': eventsTotals.total_revenue,
       'Pénztárgép kártya': eventsTotals.official_expenses,
-      'Tartalék bevétel': eventsTotals.efo_expenses,
-      'Költség': eventsTotals.non_official_expenses,
-      'Eredmény': eventsTotals.profit,
+      'Tartalék bevétel': eventsTotals.efo_expenses + eventsTotals.non_official_expenses,
+      'Összesen': eventsTotals.profit,
       _rowType: 'eventsSubtotal',
     });
 
@@ -884,8 +874,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
       'Pénztárgép KP': '',
       'Pénztárgép kártya': '',
       'Tartalék bevétel': '',
-      'Költség': '',
-      'Eredmény': '',
+      'Összesen': '',
       _rowType: 'empty',
     });
 
@@ -895,8 +884,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
       'Pénztárgép KP': '',
       'Pénztárgép kártya': '',
       'Tartalék bevétel': '',
-      'Költség': '',
-      'Eredmény': '',
+      'Összesen': '',
       _rowType: 'eventsListHeader',
     });
 
@@ -906,8 +894,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
       'Pénztárgép KP': 'Rendezvény',
       'Pénztárgép kártya': 'Bevétel',
       'Tartalék bevétel': 'Költség',
-      'Költség': '',
-      'Eredmény': 'Eredmény',
+      'Összesen': 'Eredmény',
       _rowType: 'eventsListColumns',
     });
 
@@ -918,8 +905,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
         'Pénztárgép KP': event.name,
         'Pénztárgép kártya': event.total_revenue,
         'Tartalék bevétel': event.total_expenses,
-        'Költség': '',
-        'Eredmény': event.profit,
+        'Összesen': event.profit,
         _rowType: 'eventListItem',
       });
     });
@@ -932,8 +918,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
-    'Költség': '',
-    'Eredmény': '',
+    'Összesen': '',
     _rowType: 'empty',
   });
 
@@ -943,8 +928,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
-    'Költség': '',
-    'Eredmény': '',
+    'Összesen': '',
     _rowType: 'grandTotalHeader',
   });
 
@@ -954,8 +938,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
-    'Költség': '',
-    'Eredmény': unitsTotals.totalSoftware,
+    'Összesen': unitsTotals.totalSoftware,
     _rowType: 'grandTotalRow',
   });
 
@@ -965,8 +948,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
-    'Költség': '',
-    'Eredmény': eventsTotals.total_revenue,
+    'Összesen': eventsTotals.total_revenue,
     _rowType: 'grandTotalRow',
   });
 
@@ -976,8 +958,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
-    'Költség': '',
-    'Eredmény': grandTotals.totalRevenue,
+    'Összesen': grandTotals.totalRevenue,
     _rowType: 'grandTotal',
   });
 
@@ -987,8 +968,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
-    'Költség': '',
-    'Eredmény': unitsTotals.dailyResult,
+    'Összesen': unitsTotals.totalSoftware,
     _rowType: 'grandTotalRow',
   });
 
@@ -998,8 +978,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
-    'Költség': '',
-    'Eredmény': eventsTotals.profit,
+    'Összesen': eventsTotals.profit,
     _rowType: 'grandTotalRow',
   });
 
@@ -1009,8 +988,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     'Pénztárgép KP': '',
     'Pénztárgép kártya': '',
     'Tartalék bevétel': '',
-    'Költség': '',
-    'Eredmény': grandTotals.totalResult,
+    'Összesen': grandTotals.totalRevenue,
     _rowType: 'grandTotal',
   });
 
