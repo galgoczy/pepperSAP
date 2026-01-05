@@ -139,7 +139,16 @@ export default function UnitDashboard() {
           runningHouseCash,
           weeklyRevenue: weeklyTotal,
           recentExpenses: recentExpensesResult.data || [],
-          recentEntries: recentEntriesResult.data || [],
+          // Filter out entries with 0 revenue and 0 cash register totals
+          recentEntries: (recentEntriesResult.data || []).filter(entry => {
+            const totalRevenue = parseFloat(entry.total_revenue) || 0;
+            const cashRegisterTotal = (entry.cash_register_revenue || []).reduce(
+              (sum, r) => sum + (parseFloat(r.cash_payment) || 0) + (parseFloat(r.card_payment) || 0),
+              0
+            );
+            // Keep entry if it has any revenue or cash register data
+            return totalRevenue > 0 || cashRegisterTotal > 0;
+          }),
         });
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
