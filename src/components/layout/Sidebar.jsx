@@ -13,6 +13,8 @@ import {
   Contact,
   TrendingUp,
   Target,
+  BarChart3,
+  Calculator,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
@@ -80,6 +82,23 @@ export default function Sidebar({ isOpen, onClose }) {
           icon: Settings,
           to: '/settings',
           show: !isAccountant,
+        },
+      ],
+    },
+    {
+      title: 'Kontrolling',
+      items: [
+        {
+          label: 'Terv-tény',
+          icon: BarChart3,
+          to: '/controlling',
+          show: noProfileYet || isAdmin,
+        },
+        {
+          label: 'Budget',
+          icon: Calculator,
+          to: '/budget',
+          show: noProfileYet || isAdmin,
         },
       ],
     },

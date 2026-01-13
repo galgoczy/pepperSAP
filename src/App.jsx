@@ -20,6 +20,8 @@ import SettingsPage from './pages/SettingsPage';
 import UnitsPage from './pages/UnitsPage';
 import UsersPage from './pages/UsersPage';
 import MonthlyFinancialDataPage from './pages/MonthlyFinancialDataPage';
+import BudgetPage from './pages/BudgetPage';
+import ControllingPage from './pages/ControllingPage';
 import MicrosoftCallbackPage from './pages/MicrosoftCallbackPage';
 
 function App() {
@@ -123,6 +125,22 @@ function App() {
               element={
                 <ProtectedRoute requireAdmin>
                   <MonthlyFinancialDataPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/budget"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <BudgetPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/controlling"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <ControllingPage />
                 </ProtectedRoute>
               }
             />
