@@ -18,6 +18,11 @@ import {
   BarChart3,
   Filter,
   User,
+  Phone,
+  Mail,
+  MessageSquare,
+  AlertTriangle,
+  History,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { Card, Button, Modal } from '../components/common';
@@ -43,12 +48,21 @@ const STATUS_COLORS = {
   lost: 'bg-red-100 text-red-700 border-red-300',
 };
 
+// Event types for quick add
+const EVENT_TYPES = [
+  { value: 'call', label: 'Hívás', icon: Phone },
+  { value: 'email', label: 'Email', icon: Mail },
+  { value: 'meeting', label: 'Egyeztetés', icon: Calendar },
+  { value: 'followup', label: 'Utókommunikáció', icon: MessageSquare },
+];
+
 export default function DealsPage() {
   const { isAdmin, profile } = useAuth();
   const [deals, setDeals] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [companyContacts, setCompanyContacts] = useState([]);
   const [users, setUsers] = useState([]);
+  const [salesEvents, setSalesEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -61,9 +75,19 @@ export default function DealsPage() {
   // View mode
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'pipeline'
 
+  // Expanded deals for showing events
+  const [expandedDeals, setExpandedDeals] = useState(new Set());
+
   // Modals
   const [isDealModalOpen, setIsDealModalOpen] = useState(false);
   const [editingDeal, setEditingDeal] = useState(null);
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [selectedDealForEvent, setSelectedDealForEvent] = useState(null);
+  const [eventForm, setEventForm] = useState({
+    event_type: 'call',
+    event_date: new Date().toISOString().split('T')[0],
+    notes: '',
+  });
 
   // Deal form
   const [dealForm, setDealForm] = useState({
@@ -114,10 +138,20 @@ export default function DealsPage() {
         .select('id, full_name')
         .order('full_name');
 
+      // Fetch sales events (for deals that have company_id - we match by company)
+      const { data: eventsData } = await supabase
+        .from('sales_events')
+        .select(`
+          *,
+          our_contact:user_profiles!sales_events_our_contact_id_fkey(id, full_name)
+        `)
+        .order('event_date', { ascending: false });
+
       setDeals(dealsData || []);
       setCompanies(companiesData || []);
       setCompanyContacts(contactsData || []);
       setUsers(usersData || []);
+      setSalesEvents(eventsData || []);
     } catch (error) {
       console.error('Error fetching deals data:', error);
       toast.error('Hiba az adatok betöltésekor');
@@ -338,6 +372,95 @@ export default function DealsPage() {
   // Get available company contacts for selected company
   const availableContacts = companyContacts.filter(c => c.company_id === dealForm.company_id);
 
+  // Get events for a deal (by company_id, or deal_id if set)
+  const getDealEvents = (deal) => {
+    return salesEvents.filter(e =>
+      e.deal_id === deal.id ||
+      (e.company_id === deal.company_id && !e.deal_id)
+    ).slice(0, 5); // Last 5 events
+  };
+
+  // Get last contact date for a deal
+  const getLastContactDate = (deal) => {
+    const events = getDealEvents(deal);
+    if (events.length === 0) return null;
+    return events[0].event_date;
+  };
+
+  // Toggle deal expansion
+  const toggleDealExpansion = (dealId) => {
+    setExpandedDeals(prev => {
+      const next = new Set(prev);
+      if (next.has(dealId)) {
+        next.delete(dealId);
+      } else {
+        next.add(dealId);
+      }
+      return next;
+    });
+  };
+
+  // Open event modal for a deal
+  const openEventModalForDeal = (deal) => {
+    setSelectedDealForEvent(deal);
+    setEventForm({
+      event_type: 'call',
+      event_date: new Date().toISOString().split('T')[0],
+      notes: '',
+    });
+    setIsEventModalOpen(true);
+  };
+
+  // Save event for deal
+  const handleSaveEvent = async (e) => {
+    e.preventDefault();
+    if (!selectedDealForEvent) return;
+
+    try {
+      const data = {
+        company_id: selectedDealForEvent.company_id,
+        deal_id: selectedDealForEvent.id,
+        event_type: eventForm.event_type,
+        event_date: eventForm.event_date,
+        our_contact_id: profile?.id || null,
+        priority: 'normal',
+        notes: eventForm.notes || null,
+      };
+
+      const { error } = await supabase
+        .from('sales_events')
+        .insert(data);
+      if (error) throw error;
+
+      toast.success('Esemény rögzítve!');
+      setIsEventModalOpen(false);
+      fetchData();
+    } catch (error) {
+      console.error('Error saving event:', error);
+      toast.error('Hiba a mentéskor');
+    }
+  };
+
+  // Calculate days until expected close
+  const getDaysUntilClose = (deal) => {
+    if (!deal.expected_close_date) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const closeDate = new Date(deal.expected_close_date);
+    const diffTime = closeDate - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  // Get deals closing soon (within 7 days)
+  const dealsClosingSoon = useMemo(() => {
+    return deals.filter(d => {
+      if (['won', 'lost'].includes(d.status)) return false;
+      const days = getDaysUntilClose(d);
+      return days !== null && days >= 0 && days <= 7;
+    });
+  }, [deals]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -353,6 +476,32 @@ export default function DealsPage() {
           </Button>
         )}
       </div>
+
+      {/* Deals closing soon alert */}
+      {dealsClosingSoon.length > 0 && (
+        <Card className="bg-orange-50 border-orange-200">
+          <div className="p-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-orange-600" />
+              <div className="flex-1">
+                <h3 className="font-medium text-orange-800">
+                  {dealsClosingSoon.length} deal hamarosan lejár (7 napon belül)
+                </h3>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {dealsClosingSoon.slice(0, 3).map(deal => (
+                    <span key={deal.id} className="text-sm bg-orange-100 text-orange-700 px-2 py-1 rounded">
+                      {deal.name} - {getDaysUntilClose(deal)} nap
+                    </span>
+                  ))}
+                  {dealsClosingSoon.length > 3 && (
+                    <span className="text-sm text-orange-600">+{dealsClosingSoon.length - 3} további</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Pipeline Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -544,82 +693,171 @@ export default function DealsPage() {
           <div className="divide-y">
             {filteredDeals.map(deal => {
               const weightedValue = (parseFloat(deal.expected_value) || 0) * ((deal.probability || 0) / 100);
+              const dealEvents = getDealEvents(deal);
+              const lastContactDate = getLastContactDate(deal);
+              const isExpanded = expandedDeals.has(deal.id);
+              const daysUntil = getDaysUntilClose(deal);
 
               return (
-                <div
-                  key={deal.id}
-                  className="p-4 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className={cn(
-                      'p-2 rounded-lg',
-                      deal.status === 'won' ? 'bg-green-100' :
-                      deal.status === 'lost' ? 'bg-red-100' :
-                      'bg-gray-100'
-                    )}>
-                      <Building2 className={cn(
-                        'h-5 w-5',
-                        deal.status === 'won' ? 'text-green-600' :
-                        deal.status === 'lost' ? 'text-red-600' :
-                        'text-gray-600'
-                      )} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-gray-900">{deal.name}</span>
-                        {getStatusBadge(deal.status)}
-                      </div>
-                      <p className="text-sm text-gray-600 mt-0.5">{deal.company?.name}</p>
-                      {deal.description && (
-                        <p className="text-sm text-gray-500 mt-1 line-clamp-1">{deal.description}</p>
-                      )}
-                      <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 flex-wrap">
-                        {deal.expected_value && (
-                          <span className="flex items-center gap-1">
-                            <DollarSign className="h-3.5 w-3.5" />
-                            {formatCurrency(deal.expected_value)}
-                          </span>
-                        )}
-                        <span className="flex items-center gap-1">
-                          <Percent className="h-3.5 w-3.5" />
-                          {deal.probability}%
-                        </span>
-                        {deal.expected_value && (
-                          <span className="font-medium text-pepper-red">
-                            Súlyozott: {formatCurrency(weightedValue)}
-                          </span>
-                        )}
-                        {deal.expected_close_date && (
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3.5 w-3.5" />
-                            {formatDate(deal.expected_close_date)}
-                          </span>
-                        )}
-                        {deal.our_contact && (
-                          <span className="flex items-center gap-1">
-                            <User className="h-3.5 w-3.5" />
-                            {deal.our_contact.full_name}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {isAdmin && (
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => openDealModal(deal)}
-                          className="p-2 text-gray-400 hover:text-pepper-red rounded-lg hover:bg-gray-100"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteDeal(deal)}
-                          className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-gray-100"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
+                <div key={deal.id}>
+                  <div
+                    className={cn(
+                      'p-4 hover:bg-gray-50 transition-colors',
+                      daysUntil !== null && daysUntil <= 7 && daysUntil >= 0 && 'border-l-4 border-l-orange-400'
                     )}
+                  >
+                    <div className="flex items-start gap-4">
+                      {/* Expand toggle */}
+                      <button
+                        onClick={() => toggleDealExpansion(deal.id)}
+                        className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 mt-1"
+                      >
+                        {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </button>
+                      <div className={cn(
+                        'p-2 rounded-lg',
+                        deal.status === 'won' ? 'bg-green-100' :
+                        deal.status === 'lost' ? 'bg-red-100' :
+                        'bg-gray-100'
+                      )}>
+                        <Building2 className={cn(
+                          'h-5 w-5',
+                          deal.status === 'won' ? 'text-green-600' :
+                          deal.status === 'lost' ? 'text-red-600' :
+                          'text-gray-600'
+                        )} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-gray-900">{deal.name}</span>
+                          {getStatusBadge(deal.status)}
+                          {daysUntil !== null && daysUntil <= 7 && daysUntil >= 0 && (
+                            <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-orange-100 text-orange-700">
+                              {daysUntil === 0 ? 'Ma lejár!' : `${daysUntil} nap`}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-0.5">{deal.company?.name}</p>
+                        {deal.description && (
+                          <p className="text-sm text-gray-500 mt-1 line-clamp-1">{deal.description}</p>
+                        )}
+                        <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 flex-wrap">
+                          {deal.expected_value && (
+                            <span className="flex items-center gap-1">
+                              <DollarSign className="h-3.5 w-3.5" />
+                              {formatCurrency(deal.expected_value)}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1">
+                            <Percent className="h-3.5 w-3.5" />
+                            {deal.probability}%
+                          </span>
+                          {deal.expected_value && (
+                            <span className="font-medium text-pepper-red">
+                              Súlyozott: {formatCurrency(weightedValue)}
+                            </span>
+                          )}
+                          {deal.expected_close_date && (
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3.5 w-3.5" />
+                              {formatDate(deal.expected_close_date)}
+                            </span>
+                          )}
+                          {deal.our_contact && (
+                            <span className="flex items-center gap-1">
+                              <User className="h-3.5 w-3.5" />
+                              {deal.our_contact.full_name}
+                            </span>
+                          )}
+                          {/* Last contact indicator */}
+                          <span className={cn(
+                            'flex items-center gap-1',
+                            lastContactDate ? 'text-green-600' : 'text-orange-500'
+                          )}>
+                            <History className="h-3.5 w-3.5" />
+                            {lastContactDate ? `Utolsó: ${formatDate(lastContactDate)}` : 'Nincs esemény'}
+                          </span>
+                          <span className="text-gray-400">
+                            {dealEvents.length} esemény
+                          </span>
+                        </div>
+                      </div>
+                      {isAdmin && (
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => openEventModalForDeal(deal)}
+                            className="p-2 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-gray-100"
+                            title="Esemény rögzítése"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => openDealModal(deal)}
+                            className="p-2 text-gray-400 hover:text-pepper-red rounded-lg hover:bg-gray-100"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteDeal(deal)}
+                            className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-gray-100"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Expanded events section */}
+                  {isExpanded && (
+                    <div className="bg-gray-50 border-t px-4 py-3 ml-14">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                          <History className="h-4 w-4" />
+                          Kapcsolódó események
+                        </h4>
+                        {isAdmin && (
+                          <Button size="sm" variant="secondary" onClick={() => openEventModalForDeal(deal)}>
+                            <Plus className="h-3 w-3 mr-1" />
+                            Esemény
+                          </Button>
+                        )}
+                      </div>
+                      {dealEvents.length === 0 ? (
+                        <p className="text-sm text-gray-500">Nincs még rögzített esemény</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {dealEvents.map(event => {
+                            const eventType = EVENT_TYPES.find(t => t.value === event.event_type);
+                            const EventIcon = eventType?.icon || MessageSquare;
+                            return (
+                              <div key={event.id} className="flex items-start gap-3 text-sm bg-white p-2 rounded-lg">
+                                <div className="p-1.5 bg-gray-100 rounded">
+                                  <EventIcon className="h-3.5 w-3.5 text-gray-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium">{eventType?.label || event.event_type}</span>
+                                    <span className="text-gray-400">•</span>
+                                    <span className="text-gray-500">{formatDate(event.event_date)}</span>
+                                    {event.our_contact && (
+                                      <>
+                                        <span className="text-gray-400">•</span>
+                                        <span className="text-gray-500">{event.our_contact.full_name}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                  {event.notes && (
+                                    <p className="text-gray-600 mt-0.5 line-clamp-2">{event.notes}</p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -824,6 +1062,60 @@ export default function DealsPage() {
             </Button>
             <Button type="submit">
               {editingDeal ? 'Mentés' : 'Létrehozás'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Event Modal for quick add */}
+      <Modal
+        isOpen={isEventModalOpen}
+        onClose={() => setIsEventModalOpen(false)}
+        title={`Esemény rögzítése - ${selectedDealForEvent?.name || ''}`}
+        size="md"
+      >
+        <form onSubmit={handleSaveEvent} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Esemény típusa</label>
+              <select
+                value={eventForm.event_type}
+                onChange={(e) => setEventForm(prev => ({ ...prev, event_type: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red"
+              >
+                {EVENT_TYPES.map(t => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Dátum</label>
+              <input
+                type="date"
+                value={eventForm.event_date}
+                onChange={(e) => setEventForm(prev => ({ ...prev, event_date: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Megjegyzés</label>
+            <textarea
+              value={eventForm.notes}
+              onChange={(e) => setEventForm(prev => ({ ...prev, notes: e.target.value }))}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red"
+              placeholder="Mi történt az eseményen..."
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button type="button" variant="secondary" onClick={() => setIsEventModalOpen(false)}>
+              Mégse
+            </Button>
+            <Button type="submit">
+              Rögzítés
             </Button>
           </div>
         </form>

@@ -9,6 +9,9 @@ import {
   PartyPopper,
   ChevronRight,
   Clock,
+  Target,
+  Trophy,
+  BarChart3,
 } from 'lucide-react';
 import { Card, Badge, LoadingSpinner } from '../common';
 import { supabase } from '../../lib/supabase';
@@ -45,6 +48,12 @@ export default function AdminDashboard() {
     recentExpenses: [],
     recentEntries: [],
     last5DaysRevenue: [],
+    // Sales pipeline stats
+    openDeals: 0,
+    weightedForecast: 0,
+    wonDeals: 0,
+    dealsClosingSoon: [],
+    topDeals: [],
   });
 
   useEffect(() => {
@@ -187,6 +196,48 @@ export default function AdminDashboard() {
           };
         });
 
+        // Fetch deals for sales pipeline widget
+        let dealsData = [];
+        try {
+          const { data, error } = await supabase
+            .from('deals')
+            .select(`
+              *,
+              company:companies!deals_company_id_fkey(id, name)
+            `)
+            .order('expected_value', { ascending: false });
+          if (!error) {
+            dealsData = data || [];
+          }
+        } catch {
+          // deals table might not exist yet
+        }
+
+        // Calculate deals stats
+        const openDealsData = dealsData.filter(d => !['won', 'lost'].includes(d.status));
+        const wonDealsData = dealsData.filter(d => d.status === 'won');
+        const openDealsCount = openDealsData.length;
+        const weightedForecast = openDealsData.reduce((sum, d) => {
+          const value = parseFloat(d.expected_value) || 0;
+          const prob = (d.probability || 0) / 100;
+          return sum + (value * prob);
+        }, 0);
+        const wonDealsValue = wonDealsData.reduce((sum, d) => sum + (parseFloat(d.expected_value) || 0), 0);
+
+        // Deals closing within 7 days
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const closingSoon = openDealsData.filter(d => {
+          if (!d.expected_close_date) return false;
+          const closeDate = new Date(d.expected_close_date);
+          const diffTime = closeDate - today;
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          return diffDays >= 0 && diffDays <= 7;
+        });
+
+        // Top 3 deals by value
+        const topDeals = openDealsData.slice(0, 3);
+
         setStats({
           previousDayRevenue: previousDayTotal,
           previousDayDate: yesterdayStr,
@@ -200,6 +251,12 @@ export default function AdminDashboard() {
           units: units || [],
           previousDayRevenues: previousDayRevenues || [],
           last5DaysRevenue,
+          // Sales pipeline
+          openDeals: openDealsCount,
+          weightedForecast,
+          wonDeals: wonDealsValue,
+          dealsClosingSoon: closingSoon,
+          topDeals,
         });
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -462,6 +519,89 @@ export default function AdminDashboard() {
           </div>
         )}
       </Card>
+
+      {/* Sales Pipeline Widget */}
+      {(stats.openDeals > 0 || stats.topDeals?.length > 0) && (
+        <Card title="Sales Pipeline">
+          <div className="space-y-4">
+            {/* Pipeline KPIs */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center p-3 bg-blue-50 rounded-lg">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <Target className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm text-blue-600 font-medium">Nyitott</span>
+                </div>
+                <p className="text-xl font-bold text-blue-800">{stats.openDeals}</p>
+              </div>
+              <div className="text-center p-3 bg-pepper-red/5 rounded-lg">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <BarChart3 className="h-4 w-4 text-pepper-red" />
+                  <span className="text-sm text-pepper-red font-medium">Forecast</span>
+                </div>
+                <p className="text-xl font-bold text-pepper-red">
+                  {formatCurrency(stats.weightedForecast)}
+                </p>
+              </div>
+              <div className="text-center p-3 bg-green-50 rounded-lg">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <Trophy className="h-4 w-4 text-green-600" />
+                  <span className="text-sm text-green-600 font-medium">Nyert</span>
+                </div>
+                <p className="text-xl font-bold text-green-800">
+                  {formatCurrency(stats.wonDeals)}
+                </p>
+              </div>
+            </div>
+
+            {/* Deals closing soon alert */}
+            {stats.dealsClosingSoon?.length > 0 && (
+              <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                <div className="flex items-center gap-2 text-orange-800">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span className="font-medium text-sm">
+                    {stats.dealsClosingSoon.length} deal lejár 7 napon belül
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Top deals */}
+            {stats.topDeals?.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-gray-600">Top dealek</h4>
+                {stats.topDeals.map((deal) => (
+                  <div
+                    key={deal.id}
+                    className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-900 text-sm truncate">
+                        {deal.name}
+                      </p>
+                      <p className="text-xs text-gray-500">{deal.company?.name}</p>
+                    </div>
+                    <div className="text-right shrink-0 ml-2">
+                      <p className="font-semibold text-pepper-red text-sm">
+                        {formatCurrency(deal.expected_value)}
+                      </p>
+                      <p className="text-xs text-gray-500">{deal.probability}%</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Link to deals page */}
+            <Link
+              to="/deals"
+              className="flex items-center justify-center gap-2 text-sm text-pepper-red hover:text-pepper-red/80 font-medium pt-2 border-t"
+            >
+              Összes deal megtekintése
+              <ChevronRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </Card>
+      )}
 
       {/* Quick links */}
       <div className="grid gap-4 md:grid-cols-3">
