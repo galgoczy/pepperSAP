@@ -12,6 +12,7 @@ import {
   Package,
   Contact,
   TrendingUp,
+  Target,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
@@ -92,7 +93,13 @@ export default function Sidebar({ isOpen, onClose }) {
           show: true, // Everyone can see contacts
         },
         {
-          label: 'Sales',
+          label: 'Dealek',
+          icon: Target,
+          to: '/deals',
+          show: noProfileYet || isAdmin,
+        },
+        {
+          label: 'Sales események',
           icon: TrendingUp,
           to: '/sales',
           show: noProfileYet || isAdmin,

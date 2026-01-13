@@ -14,6 +14,7 @@ import ReportsPage from './pages/ReportsPage';
 import DocumentsPage from './pages/DocumentsPage';
 import ContactsPage from './pages/ContactsPage';
 import SalesPage from './pages/SalesPage';
+import DealsPage from './pages/DealsPage';
 import InventoryPage from './pages/InventoryPage';
 import SettingsPage from './pages/SettingsPage';
 import UnitsPage from './pages/UnitsPage';
@@ -86,6 +87,14 @@ function App() {
               element={
                 <ProtectedRoute requireAdmin>
                   <SalesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/deals"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <DealsPage />
                 </ProtectedRoute>
               }
             />
