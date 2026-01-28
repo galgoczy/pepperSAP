@@ -79,6 +79,35 @@ export default function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [loadingAccount, setLoadingAccount] = useState(null);
   const [error, setError] = useState('');
+  const [showEmailLogin, setShowEmailLogin] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  const handleEmailLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) {
+        console.error('Email login error:', signInError);
+        setError('Hibás email vagy jelszó');
+        setLoading(false);
+        return;
+      }
+
+      // Success - the auth state change will handle redirect
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('Váratlan hiba történt');
+      setLoading(false);
+    }
+  };
 
   const handleMicrosoftLogin = async (loginHint = null) => {
     setError('');
@@ -171,6 +200,59 @@ export default function LoginForm() {
             <p className="text-sm text-gray-500">
               Használd a @pepperhouse.hu céges fiókodat
             </p>
+          </div>
+
+          {/* Email/Password Login Toggle */}
+          <div className="mt-6 pt-6 border-t">
+            <button
+              type="button"
+              onClick={() => setShowEmailLogin(!showEmailLogin)}
+              className="text-sm text-gray-500 hover:text-gray-700 w-full text-center"
+            >
+              {showEmailLogin ? '← Vissza' : 'Bejelentkezés email/jelszóval →'}
+            </button>
+
+            {showEmailLogin && (
+              <form onSubmit={handleEmailLogin} className="mt-4 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
+                    placeholder="admin@test.local"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Jelszó
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full"
+                >
+                  {loading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    'Bejelentkezés'
+                  )}
+                </Button>
+              </form>
+            )}
           </div>
         </Card>
 
