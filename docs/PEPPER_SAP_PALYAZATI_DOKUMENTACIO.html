@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pepper House SAP - Pályázati Dokumentáció</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: white;
+        }
+
+        .page {
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20mm;
+            background: white;
+        }
+
+        @media print {
+            .page {
+                padding: 15mm;
+            }
+            .page-break {
+                page-break-before: always;
+            }
+        }
+
+        h1 {
+            color: #D32F2F;
+            font-size: 28px;
+            margin-bottom: 10px;
+            border-bottom: 3px solid #D32F2F;
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            color: #1976D2;
+            font-size: 20px;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            border-left: 4px solid #1976D2;
+            padding-left: 10px;
+        }
+
+        h3 {
+            color: #333;
+            font-size: 16px;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 12px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f5f5f5;
+            font-weight: 600;
+        }
+
+        tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
+        .status-good { color: #2E7D32; font-weight: bold; }
+        .status-partial { color: #F57C00; font-weight: bold; }
+        .status-none { color: #C62828; font-weight: bold; }
+
+        .summary-box {
+            background: #E3F2FD;
+            border: 1px solid #1976D2;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        .summary-box h3 {
+            color: #1976D2;
+            margin-top: 0;
+        }
+
+        .alert-box {
+            background: #FFF3E0;
+            border: 1px solid #F57C00;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        .success-box {
+            background: #E8F5E9;
+            border: 1px solid #2E7D32;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        ul {
+            margin: 10px 0 10px 20px;
+        }
+
+        li {
+            margin: 5px 0;
+        }
+
+        .footer {
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid #ddd;
+            font-size: 11px;
+            color: #666;
+            text-align: center;
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .logo-text {
+            font-size: 32px;
+            font-weight: bold;
+            color: #D32F2F;
+        }
+
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .kpi-card {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .kpi-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1976D2;
+        }
+
+        .kpi-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .priority-high { background: #FFEBEE; border-left: 4px solid #C62828; }
+        .priority-medium { background: #FFF3E0; border-left: 4px solid #F57C00; }
+        .priority-low { background: #E8F5E9; border-left: 4px solid #2E7D32; }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <!-- Cover Page -->
+        <div class="logo">
+            <div class="logo-text">PEPPER HOUSE</div>
+            <p style="font-size: 14px; color: #666;">Pénzügyi Nyilvántartó Rendszer</p>
+        </div>
+
+        <h1>Rendszer Dokumentáció</h1>
+        <p class="subtitle">Pályázati Megfelelőség Értékelés és Fejlesztési Igények</p>
+
+        <div class="summary-box">
+            <h3>Dokumentum tartalma</h3>
+            <ul>
+                <li>Pályázati kritériumok szerinti értékelés (10 kategória)</li>
+                <li>Meglévő modulok összefoglalója</li>
+                <li>Fejlesztési igények MVP szinten</li>
+                <li>Prioritások és becsült munkaidő</li>
+            </ul>
+        </div>
+
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-value">80%</div>
+                <div class="kpi-label">Jelenlegi megfelelőség</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">90%</div>
+                <div class="kpi-label">MVP utáni cél</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">12</div>
+                <div class="kpi-label">Aktív modul</div>
+            </div>
+        </div>
+
+        <p style="margin-top: 30px;"><strong>Verzió:</strong> 1.0.0<br>
+        <strong>Készült:</strong> 2026. január 28.</p>
+    </div>
+
+    <!-- Page 2: Criteria Evaluation -->
+    <div class="page page-break">
+        <h1>Pályázati Kritériumok Értékelése</h1>
+
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 5%;">#</th>
+                    <th style="width: 35%;">Kritérium</th>
+                    <th style="width: 15%;">Megfelelés</th>
+                    <th style="width: 45%;">Megjegyzés</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td>Beszerzés és készletgazdálkodás</td>
+                    <td class="status-partial">40%</td>
+                    <td>Beszállítók megvannak, készlet modul fejlesztés szükséges</td>
+                </tr>
+                <tr>
+                    <td>2</td>
+                    <td>Elektronikus iratkezelés</td>
+                    <td class="status-good">85%</td>
+                    <td>Teljes funkcionalitás, SharePoint aktiválás szükséges</td>
+                </tr>
+                <tr>
+                    <td>3</td>
+                    <td>Értékesítés és ügyfélkapcsolat</td>
+                    <td class="status-good">95%</td>
+                    <td>Teljes körű CRM, deals, forecast</td>
+                </tr>
+                <tr>
+                    <td>4</td>
+                    <td>Internetes értékesítés</td>
+                    <td style="color: #999;">N/A</td>
+                    <td>Nem releváns (nincs webáruház tevékenység)</td>
+                </tr>
+                <tr>
+                    <td>5</td>
+                    <td>Kontrolling és döntéstámogatás</td>
+                    <td class="status-good">90%</td>
+                    <td>Budget, terv-tény, eltéréselemzés működik</td>
+                </tr>
+                <tr>
+                    <td>6</td>
+                    <td>Munkafolyamat-irányítás</td>
+                    <td class="status-partial">70%</td>
+                    <td>Alapvető workflow-k, értesítések fejlesztendők</td>
+                </tr>
+                <tr>
+                    <td>7</td>
+                    <td>Online marketing támogatás</td>
+                    <td style="color: #999;">N/A</td>
+                    <td>Nem core funkcionalitás</td>
+                </tr>
+                <tr>
+                    <td>8</td>
+                    <td>Pénzügyi és számviteli</td>
+                    <td class="status-good">95%</td>
+                    <td>Átfogó pénzügyi nyilvántartás, riportok, export</td>
+                </tr>
+                <tr>
+                    <td>9</td>
+                    <td>Táv- és csoportmunka</td>
+                    <td class="status-partial">75%</td>
+                    <td>Webes hozzáférés, M365 előkészítve</td>
+                </tr>
+                <tr>
+                    <td>10</td>
+                    <td>Ügyfélkapcsolat-kezelés (CRM)</td>
+                    <td class="status-good">95%</td>
+                    <td>Cégek, kontaktok, deals, pipeline, forecast</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="success-box">
+            <h3>Erősségek</h3>
+            <ul>
+                <li><strong>CRM modul:</strong> Teljes körű ügyfélkezelés, deals, pipeline, forecast</li>
+                <li><strong>Pénzügyi modul:</strong> Napi adatok, kifizetések, riportok, export</li>
+                <li><strong>Kontrolling:</strong> Budget tervezés, terv-tény elemzés</li>
+            </ul>
+        </div>
+
+        <div class="alert-box">
+            <h3>Fejlesztendő területek</h3>
+            <ul>
+                <li><strong>Készletgazdálkodás:</strong> Modul implementálás szükséges</li>
+                <li><strong>SharePoint:</strong> Azure konfiguráció aktiválás</li>
+                <li><strong>Workflow:</strong> Automatikus értesítések</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Page 3: Module Overview -->
+    <div class="page page-break">
+        <h1>Modul Összefoglaló</h1>
+
+        <h2>Pénzügyi modulok</h2>
+        <table>
+            <tr>
+                <th>Modul</th>
+                <th>Főbb funkciók</th>
+            </tr>
+            <tr>
+                <td><strong>Napi adatok</strong></td>
+                <td>Bevétel rögzítés, ÁFA bontás, pénztárgép, házipénztár</td>
+            </tr>
+            <tr>
+                <td><strong>Kifizetések</strong></td>
+                <td>Számlák, kiadások, hivatalos/nem hivatalos, többdeviza</td>
+            </tr>
+            <tr>
+                <td><strong>Riportok</strong></td>
+                <td>Havi összesítők, pénztárgép jelentés, Excel/PDF export</td>
+            </tr>
+            <tr>
+                <td><strong>Budget</strong></td>
+                <td>Tervadatok, egységenkénti tervezés, státusz workflow</td>
+            </tr>
+            <tr>
+                <td><strong>Kontrolling</strong></td>
+                <td>Terv-tény elemzés, eltérés %, színkódolt figyelmeztetések</td>
+            </tr>
+        </table>
+
+        <h2>CRM modulok</h2>
+        <table>
+            <tr>
+                <th>Modul</th>
+                <th>Főbb funkciók</th>
+            </tr>
+            <tr>
+                <td><strong>Ügyfelek</strong></td>
+                <td>Cégek, kontakt személyek, ügyfél/beszállító típus</td>
+            </tr>
+            <tr>
+                <td><strong>Sales események</strong></td>
+                <td>Hívás, email, meeting napló, prioritások</td>
+            </tr>
+            <tr>
+                <td><strong>Dealek</strong></td>
+                <td>Opportunity pipeline, státuszok, súlyozott forecast</td>
+            </tr>
+        </table>
+
+        <h2>Működési modulok</h2>
+        <table>
+            <tr>
+                <th>Modul</th>
+                <th>Főbb funkciók</th>
+            </tr>
+            <tr>
+                <td><strong>Rendezvények</strong></td>
+                <td>Projektek, bevétel/költség összesítés</td>
+            </tr>
+            <tr>
+                <td><strong>Dokumentumok</strong></td>
+                <td>Fájl kezelés, témakörök, SharePoint integráció</td>
+            </tr>
+            <tr>
+                <td><strong>Készletek</strong></td>
+                <td><em>Tervezett</em> - API integráció szükséges</td>
+            </tr>
+        </table>
+
+        <h2>Adminisztráció</h2>
+        <table>
+            <tr>
+                <th>Modul</th>
+                <th>Főbb funkciók</th>
+            </tr>
+            <tr>
+                <td><strong>Egységek</strong></td>
+                <td>Üzletek, költséghelyek kezelése</td>
+            </tr>
+            <tr>
+                <td><strong>Felhasználók</strong></td>
+                <td>Jogosultságok, szerepkörök (admin, unit, events, accountant)</td>
+            </tr>
+            <tr>
+                <td><strong>Beállítások</strong></td>
+                <td>Rendszer konfiguráció</td>
+            </tr>
+        </table>
+
+        <div class="summary-box">
+            <h3>Technológiai háttér</h3>
+            <ul>
+                <li><strong>Frontend:</strong> React 19 + Vite, Tailwind CSS</li>
+                <li><strong>Backend:</strong> Supabase (PostgreSQL), Row Level Security</li>
+                <li><strong>Integráció:</strong> Microsoft 365 (előkészítve), jsPDF, Excel export</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Page 4: Development Needs -->
+    <div class="page page-break">
+        <h1>Fejlesztési Igények</h1>
+        <p class="subtitle">MVP szintű fejlesztések a pályázati megfelelőség növeléséhez</p>
+
+        <h2>Prioritások</h2>
+
+        <div style="padding: 10px; margin: 10px 0;" class="priority-high">
+            <h3 style="margin: 0; color: #C62828;">Magas prioritás</h3>
+            <table style="margin-top: 10px;">
+                <tr>
+                    <th>Fejlesztés</th>
+                    <th>Becsült méret</th>
+                    <th>Leírás</th>
+                </tr>
+                <tr>
+                    <td><strong>Készletgazdálkodás</strong></td>
+                    <td>20-30 óra</td>
+                    <td>Készlet entitás, mozgások, minimum figyelmeztetés</td>
+                </tr>
+            </table>
+        </div>
+
+        <div style="padding: 10px; margin: 10px 0;" class="priority-medium">
+            <h3 style="margin: 0; color: #F57C00;">Közepes prioritás</h3>
+            <table style="margin-top: 10px;">
+                <tr>
+                    <th>Fejlesztés</th>
+                    <th>Becsült méret</th>
+                    <th>Leírás</th>
+                </tr>
+                <tr>
+                    <td><strong>SharePoint aktiválás</strong></td>
+                    <td>5-8 óra</td>
+                    <td>Azure konfiguráció, mappa struktúra</td>
+                </tr>
+                <tr>
+                    <td><strong>Workflow értesítések</strong></td>
+                    <td>10-15 óra</td>
+                    <td>Email értesítések, emlékeztetők</td>
+                </tr>
+            </table>
+        </div>
+
+        <div style="padding: 10px; margin: 10px 0;" class="priority-low">
+            <h3 style="margin: 0; color: #2E7D32;">Alacsony prioritás</h3>
+            <table style="margin-top: 10px;">
+                <tr>
+                    <th>Fejlesztés</th>
+                    <th>Becsült méret</th>
+                    <th>Leírás</th>
+                </tr>
+                <tr>
+                    <td>PWA/Offline mód</td>
+                    <td>10-15 óra</td>
+                    <td>Service worker, offline cache</td>
+                </tr>
+                <tr>
+                    <td>Email integráció</td>
+                    <td>10-15 óra</td>
+                    <td>CRM email szinkron</td>
+                </tr>
+                <tr>
+                    <td>Negyedéves riportok</td>
+                    <td>5-8 óra</td>
+                    <td>Kontrolling bővítés</td>
+                </tr>
+            </table>
+        </div>
+
+        <h2>Összesítés</h2>
+        <table>
+            <tr>
+                <th>Mutató</th>
+                <th>Érték</th>
+            </tr>
+            <tr>
+                <td>Jelenlegi megfelelőség (releváns kritériumok)</td>
+                <td><strong>80%</strong></td>
+            </tr>
+            <tr>
+                <td>MVP utáni cél megfelelőség</td>
+                <td><strong>90%+</strong></td>
+            </tr>
+            <tr>
+                <td>Összes becsült fejlesztési idő</td>
+                <td><strong>55-80 óra</strong></td>
+            </tr>
+            <tr>
+                <td>Magas prioritású fejlesztések</td>
+                <td>20-30 óra</td>
+            </tr>
+        </table>
+
+        <div class="success-box">
+            <h3>Következtetés</h3>
+            <p>A Pepper House SAP rendszer <strong>erős alapokkal</strong> rendelkezik. A CRM, pénzügyi és kontrolling modulok közel teljes funkcionalitást nyújtanak.</p>
+            <p style="margin-top: 10px;">A <strong>készletgazdálkodás</strong> modul implementálásával és a <strong>SharePoint integráció</strong> aktiválásával a rendszer eléri a 90%+ megfelelőségi szintet.</p>
+        </div>
+
+        <div class="footer">
+            <p>Pepper House Pénzügyi Nyilvántartó Rendszer | Verzió 1.0.0</p>
+            <p>Dokumentum készült: 2026. január 28.</p>
+        </div>
+    </div>
+</body>
+</html>
