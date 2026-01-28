@@ -12,26 +12,22 @@
 -- 2. Majd futtasd ezt a scriptet a user_profiles táblához
 --    (cseréld ki a 'PASTE_USER_UUID_HERE' részt a valódi UUID-ra)
 
--- Ha már tudod az UUID-t:
-/*
+-- Ha már tudod az UUID-t (HELYES STRUKTÚRA):
 INSERT INTO user_profiles (
     id,
-    email,
     full_name,
     role,
-    is_active,
+    unit_id,
     created_at,
     updated_at
 ) VALUES (
-    'PASTE_USER_UUID_HERE'::uuid,  -- <- IDE írd be a Supabase-ből kapott UUID-t
-    'admin@test.local',
+    'd6be58a1-a0cb-49c6-b7ce-05d85fe3e2dd'::uuid,
     'Teszt Admin',
     'admin',
-    true,
+    NULL,
     NOW(),
     NOW()
 );
-*/
 
 -- ALTERNATÍV MEGOLDÁS: Ha van már admin user, egyszerűen adj hozzá egy újat
 -- a meglévő auth rendszeren keresztül
