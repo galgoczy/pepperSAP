@@ -10,7 +10,7 @@ import DailyReport from '../components/daily/DailyReport';
 import ExpenseForm from '../components/expenses/ExpenseForm';
 import { getToday, formatCurrency, formatDate, PAYMENT_METHODS } from '../lib/utils';
 import { supabase } from '../lib/supabase';
-import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronRight } from 'lucide-react';
+import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronRight, AlertTriangle, CheckCircle, FileText } from 'lucide-react';
 
 // Helper to sanitize Hungarian characters for PDF
 function sanitizeForPdf(text) {
@@ -30,6 +30,7 @@ const tabs = [
   { id: 'cash', label: 'Házipénztár' },
   { id: 'expenses', label: 'Kifizetések' },
   { id: 'history', label: 'Előzmények' },
+  { id: 'incomplete', label: 'Hiányos', isWarning: true },
   { id: 'report', label: 'Napi riport' },
 ];
 
@@ -524,14 +525,15 @@ export default function DailyEntryPage() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`
-                py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap
+                py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap flex items-center gap-1
                 ${
                   activeTab === tab.id
-                    ? 'border-pepper-red text-pepper-red'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? tab.isWarning ? 'border-red-500 text-red-600' : 'border-pepper-red text-pepper-red'
+                    : tab.isWarning ? 'border-transparent text-red-500 hover:text-red-600 hover:border-red-300' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }
               `}
             >
+              {tab.isWarning && <AlertTriangle className="h-4 w-4" />}
               {tab.label}
             </button>
           ))}
@@ -664,6 +666,16 @@ export default function DailyEntryPage() {
           />
         )}
 
+        {activeTab === 'incomplete' && (
+          <IncompleteEntriesList
+            unitId={effectiveUnitId}
+            onSelectDate={(date) => {
+              setSelectedDate(date);
+              setActiveTab('all');
+            }}
+          />
+        )}
+
         {activeTab === 'report' && (
           <DailyReport
             date={selectedDate}
@@ -697,10 +709,11 @@ export default function DailyEntryPage() {
   );
 }
 
-// Component to show last 10 entries
+// Component to show last 10 entries with discrepancy indicators
 function RecentEntriesList({ unitId, onSelectDate }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [discrepancyStatus, setDiscrepancyStatus] = useState({});
 
   useEffect(() => {
     async function fetchRecentEntries() {
@@ -720,6 +733,46 @@ function RecentEntriesList({ unitId, onSelectDate }) {
 
         if (error) throw error;
         setEntries(data || []);
+
+        // Fetch discrepancy status for each entry
+        if (data && data.length > 0) {
+          const statusMap = {};
+          for (const entry of data) {
+            const { data: crData } = await supabase
+              .from('cash_register_revenue')
+              .select('discrepancy_amount, discrepancy_note, discrepancies, terminal_discrepancy_note')
+              .eq('daily_revenue_id', entry.id);
+
+            if (crData) {
+              let hasDiscrepancy = false;
+              let hasProtocol = true;
+
+              crData.forEach(cr => {
+                // Check for discrepancy
+                const discAmount = parseFloat(cr.discrepancy_amount) || 0;
+                if (discAmount !== 0) {
+                  hasDiscrepancy = true;
+                  // Check if there's a protocol/note
+                  if (!cr.discrepancy_note && !cr.terminal_discrepancy_note) {
+                    hasProtocol = false;
+                  }
+                }
+                // Also check discrepancies array
+                if (cr.discrepancies && Array.isArray(cr.discrepancies)) {
+                  cr.discrepancies.forEach(d => {
+                    if (parseFloat(d.amount) !== 0) {
+                      hasDiscrepancy = true;
+                      if (!d.note) hasProtocol = false;
+                    }
+                  });
+                }
+              });
+
+              statusMap[entry.id] = { hasDiscrepancy, hasProtocol };
+            }
+          }
+          setDiscrepancyStatus(statusMap);
+        }
       } catch (error) {
         console.error('Error fetching recent entries:', error);
       } finally {
@@ -757,36 +810,225 @@ function RecentEntriesList({ unitId, onSelectDate }) {
         Kattints egy sorra a nap szerkesztéséhez
       </p>
       <div className="space-y-2">
+        {entries.map((entry) => {
+          const status = discrepancyStatus[entry.id];
+          const showWarning = status?.hasDiscrepancy && !status?.hasProtocol;
+          const showOk = status?.hasDiscrepancy && status?.hasProtocol;
+
+          return (
+            <button
+              key={entry.id}
+              onClick={() => onSelectDate(entry.date)}
+              className={`w-full flex items-center justify-between p-4 rounded-lg transition-colors text-left group ${
+                showWarning ? 'bg-red-50 hover:bg-red-100 border border-red-200' : 'bg-gray-50 hover:bg-gray-100'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-lg flex items-center justify-center shadow-sm ${
+                  showWarning ? 'bg-red-100' : 'bg-white'
+                }`}>
+                  {showWarning ? (
+                    <AlertTriangle className="h-6 w-6 text-red-500" />
+                  ) : showOk ? (
+                    <CheckCircle className="h-6 w-6 text-green-500" />
+                  ) : (
+                    <CalendarDays className="h-6 w-6 text-pepper-red" />
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-900">{formatDate(entry.date)}</p>
+                    {showWarning && (
+                      <span className="text-xs bg-red-500 text-white px-2 py-0.5 rounded-full">
+                        Jegyzőkönyv hiányzik!
+                      </span>
+                    )}
+                    {showOk && (
+                      <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <FileText className="h-3 w-3" /> OK
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-4 text-sm text-gray-500">
+                    <span>Szoftver: {formatCurrency(entry.total_revenue)}</span>
+                    <span className="hidden sm:inline">KP: {formatCurrency(entry.cash_payment)}</span>
+                    <span className="hidden sm:inline">Kártya: {formatCurrency(entry.card_payment)}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-right hidden md:block">
+                  <p className="text-xs text-gray-400">ÁFA bontás</p>
+                  <p className="text-sm text-gray-600">
+                    0%: {formatCurrency(entry.vat_0_percent)} |
+                    5%: {formatCurrency(entry.vat_5_percent)} |
+                    18%: {formatCurrency(entry.vat_18_percent)} |
+                    27%: {formatCurrency(entry.vat_27_percent)}
+                  </p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-pepper-red transition-colors" />
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// Component to show entries with missing protocols
+function IncompleteEntriesList({ unitId, onSelectDate }) {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchIncompleteEntries() {
+      if (!unitId) {
+        setEntries([]);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // Get all daily revenue entries for this unit
+        const { data: revenueData, error } = await supabase
+          .from('daily_revenue')
+          .select('*')
+          .eq('unit_id', unitId)
+          .order('date', { ascending: false });
+
+        if (error) throw error;
+
+        // Check each entry for discrepancies without protocols
+        const incompleteList = [];
+
+        for (const entry of revenueData || []) {
+          const { data: crData } = await supabase
+            .from('cash_register_revenue')
+            .select(`
+              *,
+              cash_registers (ap_number, name)
+            `)
+            .eq('daily_revenue_id', entry.id);
+
+          if (crData) {
+            const missingProtocols = [];
+
+            crData.forEach(cr => {
+              const discAmount = parseFloat(cr.discrepancy_amount) || 0;
+              const cardTerminalDiff = (parseFloat(cr.card_payment) || 0) - (parseFloat(cr.terminal_card) || 0);
+
+              // Check discrepancy_amount
+              if (discAmount !== 0 && !cr.discrepancy_note) {
+                missingProtocols.push({
+                  register: cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Ismeretlen',
+                  type: 'Elütés',
+                  amount: discAmount,
+                });
+              }
+
+              // Check card vs terminal difference
+              if (cardTerminalDiff !== 0 && !cr.terminal_discrepancy_note) {
+                missingProtocols.push({
+                  register: cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Ismeretlen',
+                  type: 'Kártya-terminál eltérés',
+                  amount: cardTerminalDiff,
+                });
+              }
+
+              // Check discrepancies array
+              if (cr.discrepancies && Array.isArray(cr.discrepancies)) {
+                cr.discrepancies.forEach(d => {
+                  if (parseFloat(d.amount) !== 0 && !d.note) {
+                    missingProtocols.push({
+                      register: cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Ismeretlen',
+                      type: 'Elütés',
+                      amount: d.amount,
+                      currency: d.currency,
+                    });
+                  }
+                });
+              }
+            });
+
+            if (missingProtocols.length > 0) {
+              incompleteList.push({
+                ...entry,
+                missingProtocols,
+              });
+            }
+          }
+        }
+
+        setEntries(incompleteList);
+      } catch (error) {
+        console.error('Error fetching incomplete entries:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchIncompleteEntries();
+  }, [unitId]);
+
+  if (loading) {
+    return (
+      <Card>
+        <div className="flex justify-center py-8">
+          <LoadingSpinner />
+        </div>
+      </Card>
+    );
+  }
+
+  if (entries.length === 0) {
+    return (
+      <Card>
+        <div className="text-center py-8">
+          <CheckCircle className="h-16 w-16 mx-auto mb-4 text-green-500" />
+          <p className="text-lg font-semibold text-gray-900">Minden rendben!</p>
+          <p className="text-gray-500 mt-2">Nincs hiányzó jegyzőkönyv</p>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center gap-3 mb-4 p-4 bg-red-50 rounded-lg border border-red-200">
+        <AlertTriangle className="h-6 w-6 text-red-500 flex-shrink-0" />
+        <div>
+          <p className="font-semibold text-red-800">{entries.length} nap jegyzőkönyv nélküli eltéréssel</p>
+          <p className="text-sm text-red-600">Kérlek írj jegyzőkönyvet minden eltéréshez!</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
         {entries.map((entry) => (
           <button
             key={entry.id}
             onClick={() => onSelectDate(entry.date)}
-            className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors text-left group"
+            className="w-full p-4 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors text-left"
           >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center shadow-sm">
-                <CalendarDays className="h-6 w-6 text-pepper-red" />
-              </div>
+            <div className="flex items-start justify-between">
               <div>
-                <p className="font-semibold text-gray-900">{formatDate(entry.date)}</p>
-                <div className="flex gap-4 text-sm text-gray-500">
-                  <span>Szoftver: {formatCurrency(entry.total_revenue)}</span>
-                  <span className="hidden sm:inline">KP: {formatCurrency(entry.cash_payment)}</span>
-                  <span className="hidden sm:inline">Kártya: {formatCurrency(entry.card_payment)}</span>
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="h-5 w-5 text-red-500" />
+                  <p className="font-semibold text-gray-900">{formatDate(entry.date)}</p>
+                </div>
+                <div className="space-y-1">
+                  {entry.missingProtocols.map((mp, idx) => (
+                    <div key={idx} className="flex items-center gap-2 text-sm">
+                      <span className="text-red-600 font-medium">{mp.register}:</span>
+                      <span className="text-gray-600">{mp.type}</span>
+                      <span className="text-red-600 font-mono">
+                        {formatCurrency(mp.amount)} {mp.currency && mp.currency !== 'HUF' ? mp.currency : ''}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="text-right hidden md:block">
-                <p className="text-xs text-gray-400">ÁFA bontás</p>
-                <p className="text-sm text-gray-600">
-                  0%: {formatCurrency(entry.vat_0_percent)} |
-                  5%: {formatCurrency(entry.vat_5_percent)} |
-                  18%: {formatCurrency(entry.vat_18_percent)} |
-                  27%: {formatCurrency(entry.vat_27_percent)}
-                </p>
-              </div>
-              <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-pepper-red transition-colors" />
+              <ChevronRight className="h-5 w-5 text-red-400 mt-1" />
             </div>
           </button>
         ))}
