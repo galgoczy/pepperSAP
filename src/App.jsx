@@ -22,6 +22,7 @@ import UsersPage from './pages/UsersPage';
 import MonthlyFinancialDataPage from './pages/MonthlyFinancialDataPage';
 import BudgetPage from './pages/BudgetPage';
 import ControllingPage from './pages/ControllingPage';
+import CashierImportPage from './pages/CashierImportPage';
 import MicrosoftCallbackPage from './pages/MicrosoftCallbackPage';
 
 function App() {
@@ -141,6 +142,14 @@ function App() {
               element={
                 <ProtectedRoute requireAdmin>
                   <ControllingPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/cashier-import"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <CashierImportPage />
                 </ProtectedRoute>
               }
             />

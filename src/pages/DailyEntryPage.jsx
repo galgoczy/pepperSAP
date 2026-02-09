@@ -10,7 +10,7 @@ import DailyReport from '../components/daily/DailyReport';
 import ExpenseForm from '../components/expenses/ExpenseForm';
 import { getToday, formatCurrency, formatDate, PAYMENT_METHODS } from '../lib/utils';
 import { supabase } from '../lib/supabase';
-import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronRight } from 'lucide-react';
+import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronRight, AlertTriangle, CheckCircle, FileText } from 'lucide-react';
 
 // Helper to sanitize Hungarian characters for PDF
 function sanitizeForPdf(text) {
@@ -30,6 +30,7 @@ const tabs = [
   { id: 'cash', label: 'Házipénztár' },
   { id: 'expenses', label: 'Kifizetések' },
   { id: 'history', label: 'Előzmények' },
+  { id: 'incomplete', label: 'Hiányos', isWarning: true },
   { id: 'report', label: 'Napi riport' },
 ];
 
@@ -524,14 +525,15 @@ export default function DailyEntryPage() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`
-                py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap
+                py-4 px-1 border-b-2 font-medium text-sm transition-colors whitespace-nowrap flex items-center gap-1
                 ${
                   activeTab === tab.id
-                    ? 'border-pepper-red text-pepper-red'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? tab.isWarning ? 'border-red-500 text-red-600' : 'border-pepper-red text-pepper-red'
+                    : tab.isWarning ? 'border-transparent text-red-500 hover:text-red-600 hover:border-red-300' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }
               `}
             >
+              {tab.isWarning && <AlertTriangle className="h-4 w-4" />}
               {tab.label}
             </button>
           ))}
@@ -664,6 +666,16 @@ export default function DailyEntryPage() {
           />
         )}
 
+        {activeTab === 'incomplete' && (
+          <IncompleteEntriesList
+            unitId={effectiveUnitId}
+            onSelectDate={(date) => {
+              setSelectedDate(date);
+              setActiveTab('all');
+            }}
+          />
+        )}
+
         {activeTab === 'report' && (
           <DailyReport
             date={selectedDate}
@@ -697,10 +709,11 @@ export default function DailyEntryPage() {
   );
 }
 
-// Component to show last 10 entries
+// Component to show last 10 entries with discrepancy indicators
 function RecentEntriesList({ unitId, onSelectDate }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [discrepancyStatus, setDiscrepancyStatus] = useState({});
 
   useEffect(() => {
     async function fetchRecentEntries() {
@@ -720,6 +733,46 @@ function RecentEntriesList({ unitId, onSelectDate }) {
 
         if (error) throw error;
         setEntries(data || []);
+
+        // Fetch discrepancy status for each entry
+        if (data && data.length > 0) {
+          const statusMap = {};
+          for (const entry of data) {
+            const { data: crData } = await supabase
+              .from('cash_register_revenue')
+              .select('discrepancy_amount, discrepancy_note, discrepancies, terminal_discrepancy_note')
+              .eq('daily_revenue_id', entry.id);
+
+            if (crData) {
+              let hasDiscrepancy = false;
+              let hasProtocol = true;
+
+              crData.forEach(cr => {
+                // Check for discrepancy
+                const discAmount = parseFloat(cr.discrepancy_amount) || 0;
+                if (discAmount !== 0) {
+                  hasDiscrepancy = true;
+                  // Check if there's a protocol/note
+                  if (!cr.discrepancy_note && !cr.terminal_discrepancy_note) {
+                    hasProtocol = false;
+                  }
+                }
+                // Also check discrepancies array
+                if (cr.discrepancies && Array.isArray(cr.discrepancies)) {
+                  cr.discrepancies.forEach(d => {
+                    if (parseFloat(d.amount) !== 0) {
+                      hasDiscrepancy = true;
+                      if (!d.note) hasProtocol = false;
+                    }
+                  });
+                }
+              });
+
+              statusMap[entry.id] = { hasDiscrepancy, hasProtocol };
+            }
+          }
+          setDiscrepancyStatus(statusMap);
+        }
       } catch (error) {
         console.error('Error fetching recent entries:', error);
       } finally {
@@ -757,41 +810,424 @@ function RecentEntriesList({ unitId, onSelectDate }) {
         Kattints egy sorra a nap szerkesztéséhez
       </p>
       <div className="space-y-2">
-        {entries.map((entry) => (
-          <button
-            key={entry.id}
-            onClick={() => onSelectDate(entry.date)}
-            className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors text-left group"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center shadow-sm">
-                <CalendarDays className="h-6 w-6 text-pepper-red" />
-              </div>
-              <div>
-                <p className="font-semibold text-gray-900">{formatDate(entry.date)}</p>
-                <div className="flex gap-4 text-sm text-gray-500">
-                  <span>Szoftver: {formatCurrency(entry.total_revenue)}</span>
-                  <span className="hidden sm:inline">KP: {formatCurrency(entry.cash_payment)}</span>
-                  <span className="hidden sm:inline">Kártya: {formatCurrency(entry.card_payment)}</span>
+        {entries.map((entry) => {
+          const status = discrepancyStatus[entry.id];
+          const showWarning = status?.hasDiscrepancy && !status?.hasProtocol;
+          const showOk = status?.hasDiscrepancy && status?.hasProtocol;
+
+          return (
+            <button
+              key={entry.id}
+              onClick={() => onSelectDate(entry.date)}
+              className={`w-full flex items-center justify-between p-4 rounded-lg transition-colors text-left group ${
+                showWarning ? 'bg-red-50 hover:bg-red-100 border border-red-200' : 'bg-gray-50 hover:bg-gray-100'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-lg flex items-center justify-center shadow-sm ${
+                  showWarning ? 'bg-red-100' : 'bg-white'
+                }`}>
+                  {showWarning ? (
+                    <AlertTriangle className="h-6 w-6 text-red-500" />
+                  ) : showOk ? (
+                    <CheckCircle className="h-6 w-6 text-green-500" />
+                  ) : (
+                    <CalendarDays className="h-6 w-6 text-pepper-red" />
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-900">{formatDate(entry.date)}</p>
+                    {showWarning && (
+                      <span className="text-xs bg-red-500 text-white px-2 py-0.5 rounded-full">
+                        Jegyzőkönyv hiányzik!
+                      </span>
+                    )}
+                    {showOk && (
+                      <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <FileText className="h-3 w-3" /> OK
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-4 text-sm text-gray-500">
+                    <span>Szoftver: {formatCurrency(entry.total_revenue)}</span>
+                    <span className="hidden sm:inline">KP: {formatCurrency(entry.cash_payment)}</span>
+                    <span className="hidden sm:inline">Kártya: {formatCurrency(entry.card_payment)}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="text-right hidden md:block">
-                <p className="text-xs text-gray-400">ÁFA bontás</p>
-                <p className="text-sm text-gray-600">
-                  0%: {formatCurrency(entry.vat_0_percent)} |
-                  5%: {formatCurrency(entry.vat_5_percent)} |
-                  18%: {formatCurrency(entry.vat_18_percent)} |
-                  27%: {formatCurrency(entry.vat_27_percent)}
-                </p>
+              <div className="flex items-center gap-3">
+                <div className="text-right hidden md:block">
+                  <p className="text-xs text-gray-400">ÁFA bontás</p>
+                  <p className="text-sm text-gray-600">
+                    0%: {formatCurrency(entry.vat_0_percent)} |
+                    5%: {formatCurrency(entry.vat_5_percent)} |
+                    18%: {formatCurrency(entry.vat_18_percent)} |
+                    27%: {formatCurrency(entry.vat_27_percent)}
+                  </p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-pepper-red transition-colors" />
               </div>
-              <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-pepper-red transition-colors" />
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
     </Card>
+  );
+}
+
+// Component to show entries with discrepancies (both complete and incomplete)
+function IncompleteEntriesList({ unitId, onSelectDate }) {
+  const [incompleteEntries, setIncompleteEntries] = useState([]);
+  const [completeEntries, setCompleteEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Generate protocol PDF
+  const generateProtocolPdf = (entry, protocol) => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let y = 20;
+
+    // Header
+    doc.setFillColor(211, 47, 47);
+    doc.rect(0, 0, pageWidth, 25, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('ELTÉRÉS JEGYZŐKÖNYV'), pageWidth / 2, 15, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+
+    y = 40;
+
+    // Date and register info
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Dátum:'), 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(formatDate(entry.date), 60, y);
+    y += 10;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Pénztárgép:'), 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(sanitizeForPdf(protocol.register), 60, y);
+    y += 10;
+
+    if (protocol.apNumber) {
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('AP szám:'), 20, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(protocol.apNumber, 60, y);
+      y += 10;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Eltérés típusa:'), 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(sanitizeForPdf(protocol.type), 60, y);
+    y += 10;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Összeg:'), 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(180, 0, 0);
+    doc.text(formatPdfCurrency(protocol.amount) + (protocol.currency && protocol.currency !== 'HUF' ? ' ' + protocol.currency : ''), 60, y);
+    doc.setTextColor(0, 0, 0);
+    y += 15;
+
+    // Reason box
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Indoklás:'), 20, y);
+    y += 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setFillColor(245, 245, 245);
+    doc.rect(20, y - 4, pageWidth - 40, 40, 'F');
+    doc.setFontSize(11);
+
+    // Word wrap the note
+    const note = protocol.note || 'Nincs megadva';
+    const splitNote = doc.splitTextToSize(sanitizeForPdf(note), pageWidth - 50);
+    doc.text(splitNote, 25, y + 4);
+    y += 50;
+
+    // Signature section
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Keltezés:'), 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(new Date().toLocaleDateString('hu-HU'), 60, y);
+    y += 20;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Vezető neve:'), 20, y);
+    doc.line(60, y + 1, 150, y + 1);
+    y += 20;
+
+    doc.text(sanitizeForPdf('Aláírás:'), 20, y);
+    doc.line(60, y + 1, 150, y + 1);
+    y += 30;
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setTextColor(128, 128, 128);
+    doc.text(sanitizeForPdf('Pepper House Pénzügyi Nyilvántartó Rendszer'), pageWidth / 2, 280, { align: 'center' });
+    doc.text(sanitizeForPdf('Nyomtatva: ' + new Date().toLocaleString('hu-HU')), pageWidth / 2, 285, { align: 'center' });
+
+    // Save
+    const fileName = `elutesi_jegyzokonyv_${entry.date}_${protocol.register.replace(/\s+/g, '_')}.pdf`;
+    doc.save(sanitizeForPdf(fileName));
+  };
+
+  useEffect(() => {
+    async function fetchEntries() {
+      if (!unitId) {
+        setIncompleteEntries([]);
+        setCompleteEntries([]);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { data: revenueData, error } = await supabase
+          .from('daily_revenue')
+          .select('*')
+          .eq('unit_id', unitId)
+          .order('date', { ascending: false });
+
+        if (error) throw error;
+
+        const incomplete = [];
+        const complete = [];
+
+        for (const entry of revenueData || []) {
+          const { data: crData } = await supabase
+            .from('cash_register_revenue')
+            .select(`
+              *,
+              cash_registers (ap_number, name)
+            `)
+            .eq('daily_revenue_id', entry.id);
+
+          if (crData) {
+            const missingProtocols = [];
+            const completedProtocols = [];
+
+            crData.forEach(cr => {
+              const discAmount = parseFloat(cr.discrepancy_amount) || 0;
+              const cardTerminalDiff = (parseFloat(cr.card_payment) || 0) - (parseFloat(cr.terminal_card) || 0);
+              const registerName = cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Ismeretlen';
+              const apNumber = cr.cash_registers?.ap_number || '';
+
+              // Check discrepancy_amount
+              if (discAmount !== 0) {
+                const protocolData = {
+                  register: registerName,
+                  apNumber,
+                  type: 'Elütés',
+                  amount: discAmount,
+                  note: cr.discrepancy_note,
+                };
+                if (cr.discrepancy_note) {
+                  completedProtocols.push(protocolData);
+                } else {
+                  missingProtocols.push(protocolData);
+                }
+              }
+
+              // Check card vs terminal difference
+              if (cardTerminalDiff !== 0) {
+                const protocolData = {
+                  register: registerName,
+                  apNumber,
+                  type: 'Kártya-terminál eltérés',
+                  amount: cardTerminalDiff,
+                  note: cr.terminal_discrepancy_note,
+                };
+                if (cr.terminal_discrepancy_note) {
+                  completedProtocols.push(protocolData);
+                } else {
+                  missingProtocols.push(protocolData);
+                }
+              }
+
+              // Check discrepancies array
+              if (cr.discrepancies && Array.isArray(cr.discrepancies)) {
+                cr.discrepancies.forEach(d => {
+                  if (parseFloat(d.amount) !== 0) {
+                    const protocolData = {
+                      register: registerName,
+                      apNumber,
+                      type: 'Elütés',
+                      amount: d.amount,
+                      currency: d.currency,
+                      note: d.note,
+                    };
+                    if (d.note) {
+                      completedProtocols.push(protocolData);
+                    } else {
+                      missingProtocols.push(protocolData);
+                    }
+                  }
+                });
+              }
+            });
+
+            if (missingProtocols.length > 0) {
+              incomplete.push({ ...entry, protocols: missingProtocols });
+            }
+            if (completedProtocols.length > 0) {
+              complete.push({ ...entry, protocols: completedProtocols });
+            }
+          }
+        }
+
+        setIncompleteEntries(incomplete);
+        setCompleteEntries(complete);
+      } catch (error) {
+        console.error('Error fetching entries:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchEntries();
+  }, [unitId]);
+
+  if (loading) {
+    return (
+      <Card>
+        <div className="flex justify-center py-8">
+          <LoadingSpinner />
+        </div>
+      </Card>
+    );
+  }
+
+  const hasAny = incompleteEntries.length > 0 || completeEntries.length > 0;
+
+  if (!hasAny) {
+    return (
+      <Card>
+        <div className="text-center py-8">
+          <CheckCircle className="h-16 w-16 mx-auto mb-4 text-green-500" />
+          <p className="text-lg font-semibold text-gray-900">Minden rendben!</p>
+          <p className="text-gray-500 mt-2">Nincs eltérés a rendszerben</p>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Incomplete entries - red */}
+      {incompleteEntries.length > 0 && (
+        <Card>
+          <div className="flex items-center gap-3 mb-4 p-4 bg-red-50 rounded-lg border border-red-200">
+            <AlertTriangle className="h-6 w-6 text-red-500 flex-shrink-0" />
+            <div>
+              <p className="font-semibold text-red-800">{incompleteEntries.length} nap jegyzőkönyv nélküli eltéréssel</p>
+              <p className="text-sm text-red-600">Kérlek írj jegyzőkönyvet minden eltéréshez!</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {incompleteEntries.map((entry) => (
+              <button
+                key={entry.id}
+                onClick={() => onSelectDate(entry.date)}
+                className="w-full p-4 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors text-left"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle className="h-5 w-5 text-red-500" />
+                      <p className="font-semibold text-gray-900">{formatDate(entry.date)}</p>
+                    </div>
+                    <div className="space-y-1">
+                      {entry.protocols.map((p, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-sm">
+                          <span className="text-red-600 font-medium">{p.register}:</span>
+                          <span className="text-gray-600">{p.type}</span>
+                          <span className="text-red-600 font-mono">
+                            {formatCurrency(p.amount)} {p.currency && p.currency !== 'HUF' ? p.currency : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-red-400 mt-1" />
+                </div>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Complete entries - green */}
+      {completeEntries.length > 0 && (
+        <Card>
+          <div className="flex items-center gap-3 mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
+            <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />
+            <div>
+              <p className="font-semibold text-green-800">{completeEntries.length} nap rendezett eltéréssel</p>
+              <p className="text-sm text-green-600">Jegyzőkönyv rögzítve - nyomtatható</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {completeEntries.map((entry) => (
+              <div
+                key={entry.id}
+                className="p-4 bg-green-50 border border-green-200 rounded-lg"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                    <p className="font-semibold text-gray-900">{formatDate(entry.date)}</p>
+                  </div>
+                  <button
+                    onClick={() => onSelectDate(entry.date)}
+                    className="text-sm text-green-600 hover:text-green-800"
+                  >
+                    Részletek →
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {entry.protocols.map((p, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-white p-3 rounded-lg border border-green-100">
+                      <div>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-green-700 font-medium">{p.register}:</span>
+                          <span className="text-gray-600">{p.type}</span>
+                          <span className="text-green-700 font-mono">
+                            {formatCurrency(p.amount)} {p.currency && p.currency !== 'HUF' ? p.currency : ''}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1 truncate max-w-md">
+                          {p.note}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          generateProtocolPdf(entry, p);
+                        }}
+                        className="flex-shrink-0"
+                      >
+                        <Printer className="h-4 w-4 mr-1" />
+                        Jegyzőkönyv
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
   );
 }
 
