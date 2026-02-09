@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, Shield, Store, PartyPopper, Trash2 } from 'lucide-react';
+import { Loader2, Shield, Store, PartyPopper, Trash2, UserCog } from 'lucide-react';
 import { Button, Card } from '../common';
 import { supabase } from '../../lib/supabase';
 
@@ -109,6 +109,34 @@ export default function LoginForm() {
     }
   };
 
+  const handleTestAdminLogin = async () => {
+    setError('');
+    setLoading(true);
+    setLoadingAccount('test-admin');
+
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: 'admin@test.local',
+        password: 'TestAdmin123!',
+      });
+
+      if (signInError) {
+        console.error('Test admin login error:', signInError);
+        setError('Teszt admin bejelentkezés sikertelen');
+        setLoading(false);
+        setLoadingAccount(null);
+        return;
+      }
+
+      // Success - the auth state change will handle redirect
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('Váratlan hiba történt');
+      setLoading(false);
+      setLoadingAccount(null);
+    }
+  };
+
   const handleMicrosoftLogin = async (loginHint = null) => {
     setError('');
     setLoading(true);
@@ -202,14 +230,36 @@ export default function LoginForm() {
             </p>
           </div>
 
-          {/* Email/Password Login Toggle */}
+          {/* Test Admin Quick Login */}
           <div className="mt-6 pt-6 border-t">
+            <button
+              type="button"
+              onClick={handleTestAdminLogin}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loadingAccount === 'test-admin' ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <>
+                  <UserCog className="h-5 w-5" />
+                  TESZT ADMIN belépés
+                </>
+              )}
+            </button>
+            <p className="text-xs text-gray-400 text-center mt-2">
+              admin@test.local / TestAdmin123!
+            </p>
+          </div>
+
+          {/* Email/Password Login Toggle */}
+          <div className="mt-4 pt-4 border-t">
             <button
               type="button"
               onClick={() => setShowEmailLogin(!showEmailLogin)}
               className="text-sm text-gray-500 hover:text-gray-700 w-full text-center"
             >
-              {showEmailLogin ? '← Vissza' : 'Bejelentkezés email/jelszóval →'}
+              {showEmailLogin ? '← Vissza' : 'Egyéb email/jelszó →'}
             </button>
 
             {showEmailLogin && (
