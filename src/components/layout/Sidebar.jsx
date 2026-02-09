@@ -22,6 +22,7 @@ import {
   MessageSquareWarning,
   Percent,
   ShoppingCart,
+  Wallet,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
@@ -32,10 +33,11 @@ export default function Sidebar({ isOpen, onClose }) {
   // If no profile exists (database not set up), show all menu items for development
   const noProfileYet = !profile;
 
-  // Menu sections
+  // Menu sections - reorganized per user request
   const menuSections = [
+    // Dashboard - always visible
     {
-      title: null, // No title for main section
+      title: null,
       items: [
         {
           label: 'Főoldal',
@@ -43,14 +45,20 @@ export default function Sidebar({ isOpen, onClose }) {
           to: '/',
           show: !isAccountant,
         },
+      ],
+    },
+    // Pénzügy section
+    {
+      title: 'Pénzügy',
+      items: [
         {
-          label: 'Napi adatok',
+          label: 'Napi bevétel',
           icon: CalendarDays,
           to: '/daily',
           show: noProfileYet || (!isEvents && !isAccountant),
         },
         {
-          label: 'Adat import',
+          label: 'Pénztárgép import',
           icon: Upload,
           to: '/cashier-import',
           show: noProfileYet || isAdmin,
@@ -73,49 +81,9 @@ export default function Sidebar({ isOpen, onClose }) {
           to: '/events',
           show: noProfileYet || isAdmin || isEvents,
         },
-        {
-          label: 'Riportok',
-          icon: FileText,
-          to: '/reports',
-          show: true,
-        },
       ],
     },
-    {
-      title: 'Adminisztráció',
-      items: [
-        {
-          label: 'Egységek',
-          icon: Building2,
-          to: '/units',
-          show: noProfileYet || isAdmin,
-        },
-        {
-          label: 'Felhasználók',
-          icon: Users,
-          to: '/users',
-          show: noProfileYet || isAdmin,
-        },
-        {
-          label: 'Beállítások',
-          icon: Settings,
-          to: '/settings',
-          show: !isAccountant,
-        },
-        {
-          label: 'Támogatás',
-          icon: LifeBuoy,
-          to: '/support',
-          show: true, // Everyone can access support
-        },
-        {
-          label: 'Audit Log',
-          icon: History,
-          to: '/audit-log',
-          show: noProfileYet || isAdmin,
-        },
-      ],
-    },
+    // Kontrolling section
     {
       title: 'Kontrolling',
       items: [
@@ -131,27 +99,40 @@ export default function Sidebar({ isOpen, onClose }) {
           to: '/budget',
           show: noProfileYet || isAdmin,
         },
+        {
+          label: 'Riportok',
+          icon: FileText,
+          to: '/reports',
+          show: true,
+        },
       ],
     },
+    // Dokumentumok section
     {
-      title: 'Ügyvitel',
+      title: 'Dokumentumok',
+      items: [
+        {
+          label: 'Dokumentumtár',
+          icon: FolderOpen,
+          to: '/documents',
+          show: noProfileYet || isAdmin,
+        },
+      ],
+    },
+    // CRM / Sales section
+    {
+      title: 'CRM / Sales',
       items: [
         {
           label: 'Ügyfelek',
           icon: Contact,
           to: '/contacts',
-          show: true, // Everyone can see contacts
+          show: true,
         },
         {
           label: 'Dealek',
           icon: Target,
           to: '/deals',
-          show: noProfileYet || isAdmin,
-        },
-        {
-          label: 'Sales események',
-          icon: TrendingUp,
-          to: '/sales',
           show: noProfileYet || isAdmin,
         },
         {
@@ -173,16 +154,52 @@ export default function Sidebar({ isOpen, onClose }) {
           show: noProfileYet || isAdmin,
         },
         {
+          label: 'Sales események',
+          icon: TrendingUp,
+          to: '/sales',
+          show: noProfileYet || isAdmin,
+        },
+        {
           label: 'Készletek',
           icon: Package,
           to: '/inventory',
-          show: true, // Everyone can see inventory (will show their unit's data later)
+          show: true,
+        },
+      ],
+    },
+    // Admin section
+    {
+      title: 'Adminisztráció',
+      items: [
+        {
+          label: 'Egységek',
+          icon: Building2,
+          to: '/units',
+          show: noProfileYet || isAdmin,
         },
         {
-          label: 'Dokumentumok',
-          icon: FolderOpen,
-          to: '/documents',
+          label: 'Felhasználók',
+          icon: Users,
+          to: '/users',
           show: noProfileYet || isAdmin,
+        },
+        {
+          label: 'Audit Log',
+          icon: History,
+          to: '/audit-log',
+          show: noProfileYet || isAdmin,
+        },
+        {
+          label: 'Támogatás',
+          icon: LifeBuoy,
+          to: '/support',
+          show: true,
+        },
+        {
+          label: 'Beállítások',
+          icon: Settings,
+          to: '/settings',
+          show: !isAccountant,
         },
       ],
     },

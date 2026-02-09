@@ -226,46 +226,51 @@ Ez a dokumentum összefoglalja az új fejlesztéseket áttekintéshez és teszte
 
 ## 7. UI átrendezés
 
-**Státusz:** ⏳ Tervezett
+**Státusz:** ✅ Kész
 
-### Tervezett struktúra
+### Új menüstruktúra
 ```
 📊 DASHBOARD
-├── Napi áttekintés
-├── Webáruház összesítő
-└── Gyors műveletek
+└── Főoldal
 
 💰 PÉNZÜGY
 ├── Napi bevétel
 ├── Pénztárgép import
-├── Házipénztár
 ├── Kifizetések
-└── Webáruház
+├── Webáruház
+└── Rendezvények
 
 📈 KONTROLLING
 ├── Terv-tény
 ├── Budget
-├── Riportok
-└── Export
+└── Riportok
 
 📁 DOKUMENTUMOK
-├── Dokumentumtár
-└── SharePoint
+└── Dokumentumtár
 
 👥 CRM / SALES
 ├── Ügyfelek
 ├── Dealek
 ├── Kampányok
 ├── Reklamációk
-└── Sales események
+├── Kedvezmények
+├── Sales események
+└── Készletek
 
-⚙️ ADMIN
+⚙️ ADMINISZTRÁCIÓ
 ├── Egységek
 ├── Felhasználók
-├── Audit log
+├── Audit Log
 ├── Támogatás
 └── Beállítások
 ```
+
+### Változások
+- [x] Menüpontok logikai csoportosítása
+- [x] Pénzügy szekció létrehozása
+- [x] Kontrolling szekció bővítése Riportokkal
+- [x] CRM/Sales szekció összevonása
+- [x] Dokumentumok külön szekcióba
 
 ---
 
