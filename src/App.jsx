@@ -23,6 +23,7 @@ import MonthlyFinancialDataPage from './pages/MonthlyFinancialDataPage';
 import BudgetPage from './pages/BudgetPage';
 import ControllingPage from './pages/ControllingPage';
 import CashierImportPage from './pages/CashierImportPage';
+import SupportPage from './pages/SupportPage';
 import MicrosoftCallbackPage from './pages/MicrosoftCallbackPage';
 
 function App() {
@@ -103,6 +104,7 @@ function App() {
             />
             <Route path="/inventory" element={<InventoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/support" element={<SupportPage />} />
 
             {/* Admin only routes */}
             <Route

@@ -16,6 +16,7 @@ import {
   BarChart3,
   Calculator,
   Upload,
+  LifeBuoy,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
@@ -89,6 +90,12 @@ export default function Sidebar({ isOpen, onClose }) {
           icon: Settings,
           to: '/settings',
           show: !isAccountant,
+        },
+        {
+          label: 'Támogatás',
+          icon: LifeBuoy,
+          to: '/support',
+          show: true, // Everyone can access support
         },
       ],
     },
