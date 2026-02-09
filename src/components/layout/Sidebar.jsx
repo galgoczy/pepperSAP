@@ -18,6 +18,7 @@ import {
   Upload,
   LifeBuoy,
   History,
+  Megaphone,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
@@ -142,6 +143,12 @@ export default function Sidebar({ isOpen, onClose }) {
           label: 'Sales események',
           icon: TrendingUp,
           to: '/sales',
+          show: noProfileYet || isAdmin,
+        },
+        {
+          label: 'Kampányok',
+          icon: Megaphone,
+          to: '/campaigns',
           show: noProfileYet || isAdmin,
         },
         {

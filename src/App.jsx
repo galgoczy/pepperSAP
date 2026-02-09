@@ -25,6 +25,7 @@ import ControllingPage from './pages/ControllingPage';
 import CashierImportPage from './pages/CashierImportPage';
 import SupportPage from './pages/SupportPage';
 import AuditLogPage from './pages/AuditLogPage';
+import CampaignsPage from './pages/CampaignsPage';
 import MicrosoftCallbackPage from './pages/MicrosoftCallbackPage';
 
 function App() {
@@ -161,6 +162,14 @@ function App() {
               element={
                 <ProtectedRoute requireAdmin>
                   <AuditLogPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/campaigns"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <CampaignsPage />
                 </ProtectedRoute>
               }
             />
