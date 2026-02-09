@@ -17,6 +17,7 @@ import {
   Calculator,
   Upload,
   LifeBuoy,
+  History,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
@@ -96,6 +97,12 @@ export default function Sidebar({ isOpen, onClose }) {
           icon: LifeBuoy,
           to: '/support',
           show: true, // Everyone can access support
+        },
+        {
+          label: 'Audit Log',
+          icon: History,
+          to: '/audit-log',
+          show: noProfileYet || isAdmin,
         },
       ],
     },
