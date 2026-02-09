@@ -12,6 +12,9 @@ import {
   Target,
   Trophy,
   BarChart3,
+  Calendar,
+  ArrowUpRight,
+  ArrowDownRight,
 } from 'lucide-react';
 import { Card, Badge, LoadingSpinner } from '../common';
 import { supabase } from '../../lib/supabase';
@@ -37,6 +40,7 @@ const MARK_COLORS = {
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState('daily'); // daily, weekly, monthly
   const [stats, setStats] = useState({
     previousDayRevenue: 0,
     previousDayDate: null,
@@ -54,6 +58,10 @@ export default function AdminDashboard() {
     wonDeals: 0,
     dealsClosingSoon: [],
     topDeals: [],
+    // Budget comparison
+    monthlyBudget: 0,
+    budgetVariance: 0,
+    budgetPercentage: 0,
   });
 
   useEffect(() => {
@@ -238,6 +246,29 @@ export default function AdminDashboard() {
         // Top 3 deals by value
         const topDeals = openDealsData.slice(0, 3);
 
+        // Fetch budget for current month
+        let monthlyBudget = 0;
+        try {
+          const currentMonth = now.getMonth() + 1;
+          const currentYear = now.getFullYear();
+          const { data: budgetData } = await supabase
+            .from('budget_entries')
+            .select('planned_revenue')
+            .eq('month', currentMonth)
+            .eq('year', currentYear);
+
+          monthlyBudget = (budgetData || []).reduce(
+            (sum, b) => sum + (parseFloat(b.planned_revenue) || 0),
+            0
+          );
+        } catch {
+          // budget_entries table might not exist
+        }
+
+        // Calculate variance
+        const budgetVariance = monthlyTotal - monthlyBudget;
+        const budgetPercentage = monthlyBudget > 0 ? (monthlyTotal / monthlyBudget) * 100 : 0;
+
         setStats({
           previousDayRevenue: previousDayTotal,
           previousDayDate: yesterdayStr,
@@ -257,6 +288,10 @@ export default function AdminDashboard() {
           wonDeals: wonDealsValue,
           dealsClosingSoon: closingSoon,
           topDeals,
+          // Budget
+          monthlyBudget,
+          budgetVariance,
+          budgetPercentage,
         });
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -276,18 +311,192 @@ export default function AdminDashboard() {
     );
   }
 
+  // Get display value based on view mode
+  const getDisplayRevenue = () => {
+    switch (viewMode) {
+      case 'weekly':
+        return stats.weeklyRevenue;
+      case 'monthly':
+        return stats.monthlyRevenue;
+      default:
+        return stats.previousDayRevenue;
+    }
+  };
+
+  const getDisplayLabel = () => {
+    switch (viewMode) {
+      case 'weekly':
+        return 'Heti forgalom';
+      case 'monthly':
+        return 'Havi forgalom';
+      default:
+        return 'Tegnapi forgalom';
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Admin vezérlőpult</h1>
-        <p className="text-gray-500 mt-1">
-          Üdvözöljük! Itt láthatja az összes egység összesített adatait.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Admin vezérlőpult</h1>
+          <p className="text-gray-500 mt-1 hidden sm:block">
+            Üdvözöljük! Itt láthatja az összes egység összesített adatait.
+          </p>
+        </div>
+
+        {/* View mode toggle - visible on mobile */}
+        <div className="flex bg-gray-100 rounded-lg p-1 self-start sm:self-auto">
+          <button
+            onClick={() => setViewMode('daily')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'daily'
+                ? 'bg-white text-pepper-red shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Napi
+          </button>
+          <button
+            onClick={() => setViewMode('weekly')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'weekly'
+                ? 'bg-white text-pepper-red shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Heti
+          </button>
+          <button
+            onClick={() => setViewMode('monthly')}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'monthly'
+                ? 'bg-white text-pepper-red shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Havi
+          </button>
+        </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* Mobile-first Hero KPI Card */}
+      <div className="md:hidden space-y-3">
+        <Card className="bg-gradient-to-br from-pepper-red to-red-700 text-white">
+          <div className="text-center py-4">
+            <p className="text-white/80 text-sm font-medium mb-1">{getDisplayLabel()}</p>
+            <p className="text-4xl font-bold mb-2">
+              <AnimatedCurrency value={getDisplayRevenue()} />
+            </p>
+            {viewMode === 'monthly' && stats.monthlyBudget > 0 && (
+              <div className="flex items-center justify-center gap-2 mt-2">
+                {stats.budgetVariance >= 0 ? (
+                  <ArrowUpRight className="h-4 w-4 text-green-300" />
+                ) : (
+                  <ArrowDownRight className="h-4 w-4 text-red-300" />
+                )}
+                <span className={`text-sm ${stats.budgetVariance >= 0 ? 'text-green-200' : 'text-red-200'}`}>
+                  {stats.budgetPercentage.toFixed(1)}% a tervhez képest
+                </span>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Mobile compact secondary stats */}
+        <div className="grid grid-cols-2 gap-2">
+          {viewMode !== 'weekly' && (
+            <div className="bg-blue-50 rounded-lg p-3 text-center">
+              <p className="text-xs text-blue-600 mb-1">Heti</p>
+              <p className="text-sm font-bold text-blue-800">{formatCurrency(stats.weeklyRevenue)}</p>
+            </div>
+          )}
+          {viewMode !== 'monthly' && (
+            <div className="bg-purple-50 rounded-lg p-3 text-center">
+              <p className="text-xs text-purple-600 mb-1">Havi</p>
+              <p className="text-sm font-bold text-purple-800">{formatCurrency(stats.monthlyRevenue)}</p>
+            </div>
+          )}
+          {viewMode !== 'daily' && (
+            <div className="bg-green-50 rounded-lg p-3 text-center">
+              <p className="text-xs text-green-600 mb-1">Tegnap</p>
+              <p className="text-sm font-bold text-green-800">{formatCurrency(stats.previousDayRevenue)}</p>
+            </div>
+          )}
+          {(stats.yesterdayDiscrepancies.length > 0 || stats.missingData.length > 0) && (
+            <div className={`rounded-lg p-3 text-center ${
+              stats.yesterdayDiscrepancies.length > 0 ? 'bg-red-50' : 'bg-yellow-50'
+            }`}>
+              <p className={`text-xs mb-1 ${
+                stats.yesterdayDiscrepancies.length > 0 ? 'text-red-600' : 'text-yellow-600'
+              }`}>
+                {stats.yesterdayDiscrepancies.length > 0 ? 'Eltérések' : 'Hiányzó'}
+              </p>
+              <p className={`text-sm font-bold ${
+                stats.yesterdayDiscrepancies.length > 0 ? 'text-red-800' : 'text-yellow-800'
+              }`}>
+                {stats.yesterdayDiscrepancies.length > 0
+                  ? `${stats.yesterdayDiscrepancies.length} db`
+                  : `${stats.missingData.length} egység`
+                }
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Budget vs Actual Card - shown in monthly view */}
+      {viewMode === 'monthly' && stats.monthlyBudget > 0 && (
+        <div className="hidden md:block">
+          <Card className="bg-gradient-to-r from-gray-50 to-gray-100 border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Terv vs Tény - {new Date().toLocaleDateString('hu-HU', { month: 'long' })}</p>
+                <div className="flex items-center gap-4 mt-2">
+                  <div>
+                    <p className="text-xs text-gray-500">Tény</p>
+                    <p className="text-xl font-bold text-gray-900">{formatCurrency(stats.monthlyRevenue)}</p>
+                  </div>
+                  <div className="text-2xl text-gray-300">/</div>
+                  <div>
+                    <p className="text-xs text-gray-500">Terv</p>
+                    <p className="text-xl font-bold text-gray-600">{formatCurrency(stats.monthlyBudget)}</p>
+                  </div>
+                </div>
+              </div>
+              <div className={`text-right p-4 rounded-xl ${stats.budgetVariance >= 0 ? 'bg-green-100' : 'bg-red-100'}`}>
+                <div className="flex items-center gap-1">
+                  {stats.budgetVariance >= 0 ? (
+                    <ArrowUpRight className="h-5 w-5 text-green-600" />
+                  ) : (
+                    <ArrowDownRight className="h-5 w-5 text-red-600" />
+                  )}
+                  <span className={`text-2xl font-bold ${stats.budgetVariance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {stats.budgetPercentage.toFixed(0)}%
+                  </span>
+                </div>
+                <p className={`text-sm ${stats.budgetVariance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {stats.budgetVariance >= 0 ? '+' : ''}{formatCurrency(stats.budgetVariance)}
+                </p>
+              </div>
+            </div>
+            {/* Progress bar */}
+            <div className="mt-4">
+              <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-1000 ${
+                    stats.budgetPercentage >= 100 ? 'bg-green-500' : stats.budgetPercentage >= 80 ? 'bg-yellow-500' : 'bg-red-500'
+                  }`}
+                  style={{ width: `${Math.min(stats.budgetPercentage, 100)}%` }}
+                />
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* KPI Cards - hidden on mobile when hero is shown */}
+      <div className="hidden md:grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-green-200 rounded-lg shrink-0">

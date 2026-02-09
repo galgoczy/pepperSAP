@@ -276,15 +276,24 @@ Ez a dokumentum összefoglalja az új fejlesztéseket áttekintéshez és teszte
 
 ## 8. Mobil reszponzív nézet
 
-**Státusz:** ⏳ Tervezett
+**Státusz:** ✅ Kész
+**Érintett komponens:** AdminDashboard.jsx
 
-### Tervezett funkciók
-- [ ] Kompakt KPI kártyák mobilon
-- [ ] Legutóbbi munkanap forgalma kiemelve
-- [ ] Heti/havi nézet toggle
-- [ ] Terv vs tény gyors áttekintés
-- [ ] Reszponzív táblák (horizontal scroll)
-- [ ] Mobil-barát formok
+### Funkciók
+- [x] Kompakt KPI kártyák mobilon (nagy hero card)
+- [x] Legutóbbi munkanap forgalma kiemelve
+- [x] Napi/Heti/Havi nézet toggle
+- [x] Terv vs tény gyors áttekintés (havi nézetben)
+- [x] Másodlagos statisztikák kompakt grid
+- [x] Budget progress bar vizualizáció
+- [x] Reszponzív layout (md:hidden / hidden md:block)
+
+### Tesztelési checklist
+- [ ] Mobil nézet megfelelő (Chrome DevTools)
+- [ ] Nézet toggle működik
+- [ ] Budget összehasonlítás megjelenik
+- [ ] Animált számok működnek
+- [ ] KPI kártyák olvashatóak
 
 ---
 
