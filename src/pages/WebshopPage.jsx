@@ -23,12 +23,17 @@ import { formatCurrency, formatDate } from '../lib/utils';
 import * as XLSX from 'xlsx';
 
 export default function WebshopPage() {
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, isEvents, isUnit, unitId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [revenueData, setRevenueData] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
   const [units, setUnits] = useState([]);
   const [categories, setCategories] = useState([]);
+
+  // Check if user can view all units (admin or events)
+  const canViewAllUnits = isAdmin || isEvents;
+  // Check if user can add/import data (admin only)
+  const canEdit = isAdmin;
 
   // Filters
   const [dateFrom, setDateFrom] = useState(() => {
@@ -66,8 +71,12 @@ export default function WebshopPage() {
         .lte('date', dateTo)
         .order('date', { ascending: false });
 
+      // Filter by selected unit or user's own unit
       if (selectedUnit !== 'all') {
         query = query.eq('unit_id', selectedUnit);
+      } else if (isUnit && unitId) {
+        // Unit users can only see their own unit's data
+        query = query.eq('unit_id', unitId);
       }
 
       const { data: revenue, error: revenueError } = await query;
@@ -103,7 +112,7 @@ export default function WebshopPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, selectedUnit]);
+  }, [dateFrom, dateTo, selectedUnit, isUnit, unitId]);
 
   const fetchUnits = async () => {
     const { data } = await supabase
@@ -169,13 +178,15 @@ export default function WebshopPage() {
         </div>
 
         <div className="flex gap-2">
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            <Upload className="h-4 w-4" />
-            Import
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              <Upload className="h-4 w-4" />
+              Import
+            </button>
+          )}
           <button
             onClick={handleExport}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -183,13 +194,15 @@ export default function WebshopPage() {
             <Download className="h-4 w-4" />
             Export
           </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-pepper-red text-white rounded-lg hover:bg-red-700"
-          >
-            <Plus className="h-4 w-4" />
-            Új nap
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-pepper-red text-white rounded-lg hover:bg-red-700"
+            >
+              <Plus className="h-4 w-4" />
+              Új nap
+            </button>
+          )}
         </div>
       </div>
 
@@ -275,23 +288,25 @@ export default function WebshopPage() {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Egység
-            </label>
-            <select
-              value={selectedUnit}
-              onChange={(e) => setSelectedUnit(e.target.value)}
-              className="rounded-lg border-gray-300 shadow-sm focus:ring-pepper-red focus:border-pepper-red"
-            >
-              <option value="all">Összes egység</option>
-              {units.map((unit) => (
-                <option key={unit.id} value={unit.id}>
-                  {unit.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {canViewAllUnits && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Egység
+              </label>
+              <select
+                value={selectedUnit}
+                onChange={(e) => setSelectedUnit(e.target.value)}
+                className="rounded-lg border-gray-300 shadow-sm focus:ring-pepper-red focus:border-pepper-red"
+              >
+                <option value="all">Összes egység</option>
+                {units.map((unit) => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <button
             onClick={fetchData}
