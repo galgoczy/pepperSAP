@@ -19,6 +19,7 @@ import {
   LifeBuoy,
   History,
   Megaphone,
+  MessageSquareWarning,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
@@ -149,6 +150,12 @@ export default function Sidebar({ isOpen, onClose }) {
           label: 'Kampányok',
           icon: Megaphone,
           to: '/campaigns',
+          show: noProfileYet || isAdmin,
+        },
+        {
+          label: 'Reklamációk',
+          icon: MessageSquareWarning,
+          to: '/complaints',
           show: noProfileYet || isAdmin,
         },
         {
