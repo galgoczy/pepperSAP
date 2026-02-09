@@ -876,21 +876,118 @@ function RecentEntriesList({ unitId, onSelectDate }) {
   );
 }
 
-// Component to show entries with missing protocols
+// Component to show entries with discrepancies (both complete and incomplete)
 function IncompleteEntriesList({ unitId, onSelectDate }) {
-  const [entries, setEntries] = useState([]);
+  const [incompleteEntries, setIncompleteEntries] = useState([]);
+  const [completeEntries, setCompleteEntries] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Generate protocol PDF
+  const generateProtocolPdf = (entry, protocol) => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let y = 20;
+
+    // Header
+    doc.setFillColor(211, 47, 47);
+    doc.rect(0, 0, pageWidth, 25, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('ELTÉRÉS JEGYZŐKÖNYV'), pageWidth / 2, 15, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+
+    y = 40;
+
+    // Date and register info
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Dátum:'), 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(formatDate(entry.date), 60, y);
+    y += 10;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Pénztárgép:'), 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(sanitizeForPdf(protocol.register), 60, y);
+    y += 10;
+
+    if (protocol.apNumber) {
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('AP szám:'), 20, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(protocol.apNumber, 60, y);
+      y += 10;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Eltérés típusa:'), 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(sanitizeForPdf(protocol.type), 60, y);
+    y += 10;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Összeg:'), 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(180, 0, 0);
+    doc.text(formatPdfCurrency(protocol.amount) + (protocol.currency && protocol.currency !== 'HUF' ? ' ' + protocol.currency : ''), 60, y);
+    doc.setTextColor(0, 0, 0);
+    y += 15;
+
+    // Reason box
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Indoklás:'), 20, y);
+    y += 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setFillColor(245, 245, 245);
+    doc.rect(20, y - 4, pageWidth - 40, 40, 'F');
+    doc.setFontSize(11);
+
+    // Word wrap the note
+    const note = protocol.note || 'Nincs megadva';
+    const splitNote = doc.splitTextToSize(sanitizeForPdf(note), pageWidth - 50);
+    doc.text(splitNote, 25, y + 4);
+    y += 50;
+
+    // Signature section
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Keltezés:'), 20, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(new Date().toLocaleDateString('hu-HU'), 60, y);
+    y += 20;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(sanitizeForPdf('Vezető neve:'), 20, y);
+    doc.line(60, y + 1, 150, y + 1);
+    y += 20;
+
+    doc.text(sanitizeForPdf('Aláírás:'), 20, y);
+    doc.line(60, y + 1, 150, y + 1);
+    y += 30;
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setTextColor(128, 128, 128);
+    doc.text(sanitizeForPdf('Pepper House Pénzügyi Nyilvántartó Rendszer'), pageWidth / 2, 280, { align: 'center' });
+    doc.text(sanitizeForPdf('Nyomtatva: ' + new Date().toLocaleString('hu-HU')), pageWidth / 2, 285, { align: 'center' });
+
+    // Save
+    const fileName = `elutesi_jegyzokonyv_${entry.date}_${protocol.register.replace(/\s+/g, '_')}.pdf`;
+    doc.save(sanitizeForPdf(fileName));
+  };
+
   useEffect(() => {
-    async function fetchIncompleteEntries() {
+    async function fetchEntries() {
       if (!unitId) {
-        setEntries([]);
+        setIncompleteEntries([]);
+        setCompleteEntries([]);
         setLoading(false);
         return;
       }
 
       try {
-        // Get all daily revenue entries for this unit
         const { data: revenueData, error } = await supabase
           .from('daily_revenue')
           .select('*')
@@ -899,8 +996,8 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
 
         if (error) throw error;
 
-        // Check each entry for discrepancies without protocols
-        const incompleteList = [];
+        const incomplete = [];
+        const complete = [];
 
         for (const entry of revenueData || []) {
           const { data: crData } = await supabase
@@ -913,62 +1010,87 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
 
           if (crData) {
             const missingProtocols = [];
+            const completedProtocols = [];
 
             crData.forEach(cr => {
               const discAmount = parseFloat(cr.discrepancy_amount) || 0;
               const cardTerminalDiff = (parseFloat(cr.card_payment) || 0) - (parseFloat(cr.terminal_card) || 0);
+              const registerName = cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Ismeretlen';
+              const apNumber = cr.cash_registers?.ap_number || '';
 
               // Check discrepancy_amount
-              if (discAmount !== 0 && !cr.discrepancy_note) {
-                missingProtocols.push({
-                  register: cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Ismeretlen',
+              if (discAmount !== 0) {
+                const protocolData = {
+                  register: registerName,
+                  apNumber,
                   type: 'Elütés',
                   amount: discAmount,
-                });
+                  note: cr.discrepancy_note,
+                };
+                if (cr.discrepancy_note) {
+                  completedProtocols.push(protocolData);
+                } else {
+                  missingProtocols.push(protocolData);
+                }
               }
 
               // Check card vs terminal difference
-              if (cardTerminalDiff !== 0 && !cr.terminal_discrepancy_note) {
-                missingProtocols.push({
-                  register: cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Ismeretlen',
+              if (cardTerminalDiff !== 0) {
+                const protocolData = {
+                  register: registerName,
+                  apNumber,
                   type: 'Kártya-terminál eltérés',
                   amount: cardTerminalDiff,
-                });
+                  note: cr.terminal_discrepancy_note,
+                };
+                if (cr.terminal_discrepancy_note) {
+                  completedProtocols.push(protocolData);
+                } else {
+                  missingProtocols.push(protocolData);
+                }
               }
 
               // Check discrepancies array
               if (cr.discrepancies && Array.isArray(cr.discrepancies)) {
                 cr.discrepancies.forEach(d => {
-                  if (parseFloat(d.amount) !== 0 && !d.note) {
-                    missingProtocols.push({
-                      register: cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Ismeretlen',
+                  if (parseFloat(d.amount) !== 0) {
+                    const protocolData = {
+                      register: registerName,
+                      apNumber,
                       type: 'Elütés',
                       amount: d.amount,
                       currency: d.currency,
-                    });
+                      note: d.note,
+                    };
+                    if (d.note) {
+                      completedProtocols.push(protocolData);
+                    } else {
+                      missingProtocols.push(protocolData);
+                    }
                   }
                 });
               }
             });
 
             if (missingProtocols.length > 0) {
-              incompleteList.push({
-                ...entry,
-                missingProtocols,
-              });
+              incomplete.push({ ...entry, protocols: missingProtocols });
+            }
+            if (completedProtocols.length > 0) {
+              complete.push({ ...entry, protocols: completedProtocols });
             }
           }
         }
 
-        setEntries(incompleteList);
+        setIncompleteEntries(incomplete);
+        setCompleteEntries(complete);
       } catch (error) {
-        console.error('Error fetching incomplete entries:', error);
+        console.error('Error fetching entries:', error);
       } finally {
         setLoading(false);
       }
     }
 
-    fetchIncompleteEntries();
+    fetchEntries();
   }, [unitId]);
 
   if (loading) {
@@ -981,59 +1103,131 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
     );
   }
 
-  if (entries.length === 0) {
+  const hasAny = incompleteEntries.length > 0 || completeEntries.length > 0;
+
+  if (!hasAny) {
     return (
       <Card>
         <div className="text-center py-8">
           <CheckCircle className="h-16 w-16 mx-auto mb-4 text-green-500" />
           <p className="text-lg font-semibold text-gray-900">Minden rendben!</p>
-          <p className="text-gray-500 mt-2">Nincs hiányzó jegyzőkönyv</p>
+          <p className="text-gray-500 mt-2">Nincs eltérés a rendszerben</p>
         </div>
       </Card>
     );
   }
 
   return (
-    <Card>
-      <div className="flex items-center gap-3 mb-4 p-4 bg-red-50 rounded-lg border border-red-200">
-        <AlertTriangle className="h-6 w-6 text-red-500 flex-shrink-0" />
-        <div>
-          <p className="font-semibold text-red-800">{entries.length} nap jegyzőkönyv nélküli eltéréssel</p>
-          <p className="text-sm text-red-600">Kérlek írj jegyzőkönyvet minden eltéréshez!</p>
-        </div>
-      </div>
+    <div className="space-y-6">
+      {/* Incomplete entries - red */}
+      {incompleteEntries.length > 0 && (
+        <Card>
+          <div className="flex items-center gap-3 mb-4 p-4 bg-red-50 rounded-lg border border-red-200">
+            <AlertTriangle className="h-6 w-6 text-red-500 flex-shrink-0" />
+            <div>
+              <p className="font-semibold text-red-800">{incompleteEntries.length} nap jegyzőkönyv nélküli eltéréssel</p>
+              <p className="text-sm text-red-600">Kérlek írj jegyzőkönyvet minden eltéréshez!</p>
+            </div>
+          </div>
 
-      <div className="space-y-3">
-        {entries.map((entry) => (
-          <button
-            key={entry.id}
-            onClick={() => onSelectDate(entry.date)}
-            className="w-full p-4 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors text-left"
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="h-5 w-5 text-red-500" />
-                  <p className="font-semibold text-gray-900">{formatDate(entry.date)}</p>
+          <div className="space-y-3">
+            {incompleteEntries.map((entry) => (
+              <button
+                key={entry.id}
+                onClick={() => onSelectDate(entry.date)}
+                className="w-full p-4 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors text-left"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle className="h-5 w-5 text-red-500" />
+                      <p className="font-semibold text-gray-900">{formatDate(entry.date)}</p>
+                    </div>
+                    <div className="space-y-1">
+                      {entry.protocols.map((p, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-sm">
+                          <span className="text-red-600 font-medium">{p.register}:</span>
+                          <span className="text-gray-600">{p.type}</span>
+                          <span className="text-red-600 font-mono">
+                            {formatCurrency(p.amount)} {p.currency && p.currency !== 'HUF' ? p.currency : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-red-400 mt-1" />
                 </div>
-                <div className="space-y-1">
-                  {entry.missingProtocols.map((mp, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-sm">
-                      <span className="text-red-600 font-medium">{mp.register}:</span>
-                      <span className="text-gray-600">{mp.type}</span>
-                      <span className="text-red-600 font-mono">
-                        {formatCurrency(mp.amount)} {mp.currency && mp.currency !== 'HUF' ? mp.currency : ''}
-                      </span>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Complete entries - green */}
+      {completeEntries.length > 0 && (
+        <Card>
+          <div className="flex items-center gap-3 mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
+            <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />
+            <div>
+              <p className="font-semibold text-green-800">{completeEntries.length} nap rendezett eltéréssel</p>
+              <p className="text-sm text-green-600">Jegyzőkönyv rögzítve - nyomtatható</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {completeEntries.map((entry) => (
+              <div
+                key={entry.id}
+                className="p-4 bg-green-50 border border-green-200 rounded-lg"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                    <p className="font-semibold text-gray-900">{formatDate(entry.date)}</p>
+                  </div>
+                  <button
+                    onClick={() => onSelectDate(entry.date)}
+                    className="text-sm text-green-600 hover:text-green-800"
+                  >
+                    Részletek →
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {entry.protocols.map((p, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-white p-3 rounded-lg border border-green-100">
+                      <div>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-green-700 font-medium">{p.register}:</span>
+                          <span className="text-gray-600">{p.type}</span>
+                          <span className="text-green-700 font-mono">
+                            {formatCurrency(p.amount)} {p.currency && p.currency !== 'HUF' ? p.currency : ''}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1 truncate max-w-md">
+                          {p.note}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          generateProtocolPdf(entry, p);
+                        }}
+                        className="flex-shrink-0"
+                      >
+                        <Printer className="h-4 w-4 mr-1" />
+                        Jegyzőkönyv
+                      </Button>
                     </div>
                   ))}
                 </div>
               </div>
-              <ChevronRight className="h-5 w-5 text-red-400 mt-1" />
-            </div>
-          </button>
-        ))}
-      </div>
-    </Card>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
   );
 }
 
