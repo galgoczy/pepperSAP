@@ -410,7 +410,9 @@ export function AuthProvider({ children }) {
 
   // Determine effective role (actual or simulated)
   const isTestAdmin = profile?.role === 'admin' &&
-    (user?.email === 'gergo@pepperhouse.hu' || user?.email === 'info@pepperhouse.hu');
+    (user?.email === 'gergo@pepperhouse.hu' ||
+     user?.email === 'info@pepperhouse.hu' ||
+     user?.email === 'admin@test.local');
   const effectiveRole = viewAsRole || profile?.role;
   const effectiveUnitId = viewAsRole ? viewAsUnit : profile?.unit_id;
 
