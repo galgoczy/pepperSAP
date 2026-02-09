@@ -20,6 +20,7 @@ import {
   History,
   Megaphone,
   MessageSquareWarning,
+  Percent,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
@@ -156,6 +157,12 @@ export default function Sidebar({ isOpen, onClose }) {
           label: 'Reklamációk',
           icon: MessageSquareWarning,
           to: '/complaints',
+          show: noProfileYet || isAdmin,
+        },
+        {
+          label: 'Kedvezmények',
+          icon: Percent,
+          to: '/discounts',
           show: noProfileYet || isAdmin,
         },
         {
