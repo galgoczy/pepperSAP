@@ -21,6 +21,7 @@ import {
   Megaphone,
   MessageSquareWarning,
   Percent,
+  ShoppingCart,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
@@ -59,6 +60,12 @@ export default function Sidebar({ isOpen, onClose }) {
           icon: Receipt,
           to: '/expenses',
           show: noProfileYet || (!isEvents && !isAccountant),
+        },
+        {
+          label: 'Webáruház',
+          icon: ShoppingCart,
+          to: '/webshop',
+          show: noProfileYet || isAdmin || (!isEvents && !isAccountant),
         },
         {
           label: 'Rendezvények',

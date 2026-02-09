@@ -28,6 +28,7 @@ import AuditLogPage from './pages/AuditLogPage';
 import CampaignsPage from './pages/CampaignsPage';
 import ComplaintsPage from './pages/ComplaintsPage';
 import DiscountsPage from './pages/DiscountsPage';
+import WebshopPage from './pages/WebshopPage';
 import MicrosoftCallbackPage from './pages/MicrosoftCallbackPage';
 
 function App() {
@@ -188,6 +189,14 @@ function App() {
               element={
                 <ProtectedRoute requireAdmin>
                   <DiscountsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/webshop"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'unit']}>
+                  <WebshopPage />
                 </ProtectedRoute>
               }
             />

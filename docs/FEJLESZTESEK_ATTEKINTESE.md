@@ -193,20 +193,34 @@ Ez a dokumentum összefoglalja az új fejlesztéseket áttekintéshez és teszte
 
 ## 6. Webáruház integráció
 
-**Státusz:** ⏳ Tervezett
-**Menüpont:** Dashboard + Pénzügy → Webáruház
-**Hozzáférés:** Admin/Unit
+**Státusz:** ✅ Kész
+**Menüpont:** Főmenü → Webáruház
+**URL:** `/webshop`
+**Hozzáférés:** Admin és Unit felhasználók
 
-### Tervezett funkciók
-- [ ] Napi webáruház forgalom import
-- [ ] Egységenkénti bontás
-- [ ] Top termékek listázása
-- [ ] Dashboard widget
-- [ ] Excel/CSV import
-- [ ] (Opcionális) API integráció
+### Funkciók
+- [x] Napi webáruház forgalom rögzítése
+- [x] Egységenkénti bontás
+- [x] Top termékek megjelenítése (expandable row)
+- [x] Statisztika kártyák (össz bevétel, rendelések, átlag kosár, napok)
+- [x] Excel/CSV import funkció
+- [x] Excel export
+- [x] Dátum és egység szűrés
+- [x] Upsert logika (dátum+egység unique)
 
 ### Adatbázis
-- `webshop_daily_revenue` - napi forgalom
+- `webshop_daily_revenue` - napi forgalom egységenként
+- `webshop_top_products` - top termékek naponta
+- `webshop_product_categories` - termék kategóriák
+- Automatikus átlag kosárérték számítás (GENERATED ALWAYS)
+
+### Tesztelési checklist
+- [ ] Manuális adat rögzítés
+- [ ] Excel import működik
+- [ ] Szűrők működnek
+- [ ] Top termékek megjelennek
+- [ ] Export működik
+- [ ] Unit user csak saját egységét látja
 
 ---
 
@@ -288,6 +302,9 @@ A Supabase dashboard SQL editor-ban futtasd sorrendben:
 
 -- 5. Discounts
 \i supabase/migrations/20260209_discounts.sql
+
+-- 6. Webshop
+\i supabase/migrations/20260209_webshop.sql
 ```
 
 Vagy másold be egyenként a fájlok tartalmát.
