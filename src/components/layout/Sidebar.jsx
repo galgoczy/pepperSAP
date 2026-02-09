@@ -15,6 +15,7 @@ import {
   Target,
   BarChart3,
   Calculator,
+  Upload,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
@@ -41,6 +42,12 @@ export default function Sidebar({ isOpen, onClose }) {
           icon: CalendarDays,
           to: '/daily',
           show: noProfileYet || (!isEvents && !isAccountant),
+        },
+        {
+          label: 'Adat import',
+          icon: Upload,
+          to: '/cashier-import',
+          show: noProfileYet || isAdmin,
         },
         {
           label: 'Kifizetések',
