@@ -17,6 +17,8 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sessionError, setSessionError] = useState(false);
+  const [viewAsRole, setViewAsRole] = useState(null); // For testing: 'admin', 'unit', 'events', or null
+  const [viewAsUnit, setViewAsUnit] = useState(null); // Simulated unit for testing
   const userRef = useRef(null);
   const isSigningOut = useRef(false);
 
@@ -406,6 +408,25 @@ export function AuthProvider({ children }) {
     supabase.auth.signOut().catch(() => {});
   }, []);
 
+  // Determine effective role (actual or simulated)
+  const isTestAdmin = profile?.role === 'admin' &&
+    (user?.email === 'gergo@pepperhouse.hu' || user?.email === 'info@pepperhouse.hu');
+  const effectiveRole = viewAsRole || profile?.role;
+  const effectiveUnitId = viewAsRole ? viewAsUnit : profile?.unit_id;
+
+  // Function to set view mode (only for test admin)
+  const setViewMode = (role, unitId = null) => {
+    if (!isTestAdmin) return;
+    setViewAsRole(role);
+    setViewAsUnit(unitId);
+  };
+
+  // Function to reset to admin view
+  const resetViewMode = () => {
+    setViewAsRole(null);
+    setViewAsUnit(null);
+  };
+
   const value = {
     user,
     profile,
@@ -415,14 +436,23 @@ export function AuthProvider({ children }) {
     signOut,
     forceLogout,
     isAuthenticated: !!user,
-    isAdmin: profile?.role === 'admin',
-    isUnit: profile?.role === 'unit',
-    isEvents: profile?.role === 'events',
-    isAccountant: profile?.role === 'accountant',
-    canEdit: profile?.role !== 'accountant',
-    canViewAllUnits: profile?.role === 'admin' || profile?.role === 'accountant',
-    unitId: profile?.unit_id,
-    role: profile?.role,
+    // Role checks use effective role when viewing as another role
+    isAdmin: effectiveRole === 'admin',
+    isUnit: effectiveRole === 'unit',
+    isEvents: effectiveRole === 'events',
+    isAccountant: effectiveRole === 'accountant',
+    canEdit: effectiveRole !== 'accountant',
+    canViewAllUnits: effectiveRole === 'admin' || effectiveRole === 'accountant',
+    unitId: effectiveUnitId,
+    role: effectiveRole,
+    // Keep original role available
+    actualRole: profile?.role,
+    actualIsAdmin: profile?.role === 'admin',
+    // View mode functions (only work for test admin)
+    isTestAdmin,
+    viewAsRole,
+    setViewMode,
+    resetViewMode,
     refetchProfile: () => user && fetchProfile(user.id),
   };
 

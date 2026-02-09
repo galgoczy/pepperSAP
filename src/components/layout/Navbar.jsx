@@ -1,12 +1,35 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X, LogOut, User, Settings } from 'lucide-react';
+import { Menu, X, LogOut, User, Settings, Eye, Building2, PartyPopper, Shield } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../lib/supabase';
 
 export default function Navbar({ onMenuClick, isSidebarOpen }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const { user, profile, signOut } = useAuth();
+  const [units, setUnits] = useState([]);
+  const {
+    user,
+    profile,
+    signOut,
+    isTestAdmin,
+    viewAsRole,
+    setViewMode,
+    resetViewMode,
+    actualRole,
+  } = useAuth();
   const navigate = useNavigate();
+
+  // Fetch units for view mode selection
+  useEffect(() => {
+    if (isTestAdmin) {
+      supabase
+        .from('units')
+        .select('id, name, type')
+        .eq('is_active', true)
+        .order('name')
+        .then(({ data }) => setUnits(data || []));
+    }
+  }, [isTestAdmin]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -68,7 +91,7 @@ export default function Navbar({ onMenuClick, isSidebarOpen }) {
                   className="fixed inset-0 z-10"
                   onClick={() => setIsProfileOpen(false)}
                 />
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-20">
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-20">
                   <div className="px-4 py-3 border-b border-gray-200">
                     <p className="text-sm font-medium text-gray-900">
                       {profile?.full_name || 'Felhasználó'}
@@ -77,11 +100,92 @@ export default function Navbar({ onMenuClick, isSidebarOpen }) {
                       {user?.email}
                     </p>
                     <p className="text-xs text-pepper-red font-medium mt-1">
-                      {profile?.role === 'admin' && 'Adminisztrátor'}
-                      {profile?.role === 'unit' && 'Éttermi egység'}
-                      {profile?.role === 'events' && 'Rendezvény egység'}
+                      {actualRole === 'admin' && 'Adminisztrátor'}
+                      {actualRole === 'unit' && 'Éttermi egység'}
+                      {actualRole === 'events' && 'Rendezvény egység'}
                     </p>
+                    {viewAsRole && (
+                      <div className="mt-2 px-2 py-1 bg-amber-100 text-amber-800 text-xs rounded-full inline-flex items-center gap-1">
+                        <Eye className="h-3 w-3" />
+                        Nézet: {viewAsRole === 'unit' ? 'Egység' : viewAsRole === 'events' ? 'Rendezvény' : 'Admin'}
+                      </div>
+                    )}
                   </div>
+
+                  {/* View mode switcher - only for test admin */}
+                  {isTestAdmin && (
+                    <div className="px-4 py-3 border-b border-gray-200">
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <Eye className="h-3 w-3" />
+                        Teszt nézet váltás
+                      </p>
+                      <div className="space-y-1">
+                        <button
+                          onClick={() => {
+                            resetViewMode();
+                            setIsProfileOpen(false);
+                            navigate('/');
+                          }}
+                          className={`flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg transition-colors ${
+                            !viewAsRole
+                              ? 'bg-pepper-red text-white'
+                              : 'text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          <Shield className="h-4 w-4" />
+                          Admin nézet
+                        </button>
+                        <div className="relative">
+                          <button
+                            onClick={() => {
+                              const unitSelect = document.getElementById('unit-select');
+                              if (unitSelect) unitSelect.classList.toggle('hidden');
+                            }}
+                            className={`flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg transition-colors ${
+                              viewAsRole === 'unit'
+                                ? 'bg-blue-600 text-white'
+                                : 'text-gray-700 hover:bg-gray-100'
+                            }`}
+                          >
+                            <Building2 className="h-4 w-4" />
+                            Egység nézet
+                          </button>
+                          <div id="unit-select" className="hidden mt-1 ml-6 space-y-1">
+                            {units.filter(u => u.type === 'restaurant').map((unit) => (
+                              <button
+                                key={unit.id}
+                                onClick={() => {
+                                  setViewMode('unit', unit.id);
+                                  setIsProfileOpen(false);
+                                  navigate('/');
+                                }}
+                                className="block w-full px-3 py-1.5 text-xs text-left text-gray-600 hover:bg-blue-50 hover:text-blue-700 rounded"
+                              >
+                                {unit.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const eventsUnit = units.find(u => u.type === 'events');
+                            setViewMode('events', eventsUnit?.id);
+                            setIsProfileOpen(false);
+                            navigate('/');
+                          }}
+                          className={`flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg transition-colors ${
+                            viewAsRole === 'events'
+                              ? 'bg-purple-600 text-white'
+                              : 'text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          <PartyPopper className="h-4 w-4" />
+                          Rendezvény nézet
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="py-1">
                     <Link
                       to="/settings"
