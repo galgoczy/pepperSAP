@@ -23,6 +23,7 @@ import {
   Percent,
   ShoppingCart,
   Wallet,
+  MessageCircle,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
@@ -43,6 +44,12 @@ export default function Sidebar({ isOpen, onClose }) {
           label: 'Főoldal',
           icon: LayoutDashboard,
           to: '/',
+          show: !isAccountant,
+        },
+        {
+          label: 'Munkatér',
+          icon: MessageCircle,
+          to: '/workspace',
           show: !isAccountant,
         },
       ],

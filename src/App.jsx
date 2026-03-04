@@ -29,7 +29,9 @@ import CampaignsPage from './pages/CampaignsPage';
 import ComplaintsPage from './pages/ComplaintsPage';
 import DiscountsPage from './pages/DiscountsPage';
 import WebshopPage from './pages/WebshopPage';
+import WorkspacePage from './pages/WorkspacePage';
 import MicrosoftCallbackPage from './pages/MicrosoftCallbackPage';
+import WorkspacePage from './pages/WorkspacePage';
 
 function App() {
   return (
@@ -110,6 +112,7 @@ function App() {
             <Route path="/inventory" element={<InventoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/support" element={<SupportPage />} />
+            <Route path="/workspace" element={<WorkspacePage />} />
 
             {/* Admin only routes */}
             <Route
