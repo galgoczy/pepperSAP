@@ -425,6 +425,12 @@ export default function WorkspacePage() {
                       type="text"
                       value={messageContent}
                       onChange={(e) => setMessageContent(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey && messageContent.trim()) {
+                          e.preventDefault();
+                          sendMessage(e);
+                        }
+                      }}
                       placeholder={
                         messageType === 'text'
                           ? 'Írj üzenetet...'
