@@ -31,7 +31,6 @@ import DiscountsPage from './pages/DiscountsPage';
 import WebshopPage from './pages/WebshopPage';
 import WorkspacePage from './pages/WorkspacePage';
 import MicrosoftCallbackPage from './pages/MicrosoftCallbackPage';
-import WorkspacePage from './pages/WorkspacePage';
 
 function App() {
   return (
