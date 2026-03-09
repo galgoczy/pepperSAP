@@ -65,7 +65,10 @@ export default function WorkspacePage() {
       .order('channel_type')
       .order('name');
 
-    if (!error && data) {
+    if (error) {
+      console.error('Csatornák betöltési hiba:', error);
+    } else if (data) {
+      console.log('Csatornák betöltve:', data.length);
       setChannels(data);
       // Select first channel if none selected
       if (!selectedChannel && data.length > 0) {
@@ -76,11 +79,14 @@ export default function WorkspacePage() {
 
   // Fetch users for mentions and assignees
   const fetchUsers = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('user_profiles')
       .select('id, full_name, email, role');
 
-    if (data) {
+    if (error) {
+      console.error('Felhasználók betöltési hiba:', error);
+    } else if (data) {
+      console.log('Felhasználók betöltve:', data.length);
       const usersMap = {};
       data.forEach(u => {
         usersMap[u.id] = u;
@@ -147,7 +153,15 @@ export default function WorkspacePage() {
   // Send message
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!messageContent.trim() || !selectedChannel) return;
+    if (!messageContent.trim()) {
+      console.error('Üzenet üres');
+      return;
+    }
+    if (!selectedChannel) {
+      console.error('Nincs kiválasztott csatorna');
+      alert('Hiba: Nincs kiválasztott csatorna. Frissítsd az oldalt.');
+      return;
+    }
 
     setSending(true);
 
@@ -172,7 +186,10 @@ export default function WorkspacePage() {
       .from('workspace_messages')
       .insert(newMessage);
 
-    if (!error) {
+    if (error) {
+      console.error('Üzenet küldési hiba:', error);
+      alert(`Hiba az üzenet küldésekor: ${error.message}`);
+    } else {
       // Clear form
       setMessageContent('');
       setLinkUrl('');
