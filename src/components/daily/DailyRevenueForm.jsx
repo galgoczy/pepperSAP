@@ -25,6 +25,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     total_revenue: '',
+    customer_count: '',
     mark_color: null,
   });
   const [expandedRegisters, setExpandedRegisters] = useState({});
@@ -46,11 +47,13 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     if (revenue) {
       setFormData({
         total_revenue: revenue.total_revenue || '',
+        customer_count: revenue.customer_count || '',
         mark_color: revenue.mark_color || null,
       });
     } else {
       setFormData({
         total_revenue: '',
+        customer_count: '',
         mark_color: null,
       });
     }
@@ -140,15 +143,24 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Software revenue */}
       <Card title="Éttermi szoftver forgalom">
-        <Input
-          label="Teljes forgalom"
-          type="number"
-          step="0.01"
-          value={formData.total_revenue}
-          onChange={(e) => handleChange('total_revenue', e.target.value)}
-          suffix="Ft"
-          required
-        />
+        <div className="space-y-4">
+          <Input
+            label="Teljes forgalom"
+            type="number"
+            step="0.01"
+            value={formData.total_revenue}
+            onChange={(e) => handleChange('total_revenue', e.target.value)}
+            suffix="Ft"
+            required
+          />
+          <Input
+            label="Napi fogyasztói létszám"
+            type="number"
+            value={formData.customer_count}
+            onChange={(e) => handleChange('customer_count', e.target.value)}
+            suffix="fő"
+          />
+        </div>
       </Card>
 
       {/* Cash registers section */}
