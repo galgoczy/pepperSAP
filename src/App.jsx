@@ -19,6 +19,7 @@ import SettingsPage from './pages/SettingsPage';
 import UnitsPage from './pages/UnitsPage';
 import UsersPage from './pages/UsersPage';
 import MonthlyFinancialDataPage from './pages/MonthlyFinancialDataPage';
+import CashManagementPage from './pages/CashManagementPage';
 import MicrosoftCallbackPage from './pages/MicrosoftCallbackPage';
 
 function App() {
@@ -114,6 +115,14 @@ function App() {
               element={
                 <ProtectedRoute requireAdmin>
                   <MonthlyFinancialDataPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/cash-management"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'unit', 'events']}>
+                  <CashManagementPage />
                 </ProtectedRoute>
               }
             />

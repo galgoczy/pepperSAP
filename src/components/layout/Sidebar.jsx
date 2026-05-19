@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   CalendarDays,
   Receipt,
+  Wallet,
   PartyPopper,
   FileText,
   FolderOpen,
@@ -44,6 +45,12 @@ export default function Sidebar({ isOpen, onClose }) {
           icon: Receipt,
           to: '/expenses',
           show: noProfileYet || (!isEvents && !isAccountant),
+        },
+        {
+          label: 'Házipénztárak',
+          icon: Wallet,
+          to: '/cash-management',
+          show: noProfileYet || isAdmin || (!isEvents && !isAccountant),
         },
         {
           label: 'Rendezvények',

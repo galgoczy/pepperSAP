@@ -12,6 +12,7 @@ const SHOW_SZEP_FIELDS = false;
 const DEFAULT_DISCREPANCY = { amount: '', currency: 'HUF', note: '' };
 
 const DEFAULT_FORM_DATA = {
+  software_revenue: '',
   vat_0_percent: '',
   vat_5_percent: '',
   vat_18_percent: '',
@@ -40,6 +41,7 @@ function computeFormData(existingData) {
   }
 
   return {
+    software_revenue: existingData.software_revenue || '',
     vat_0_percent: existingData.vat_0_percent || '',
     vat_5_percent: existingData.vat_5_percent || '',
     vat_18_percent: existingData.vat_18_percent || '',
@@ -271,6 +273,22 @@ export default function CashRegisterSection({
       {/* Expanded content */}
       {expanded && (
         <div className="mt-6 space-y-6 border-t border-gray-200 pt-6">
+          {/* Software revenue for this register */}
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 mb-3">
+              Szoftver forgalom (opcionális)
+            </h4>
+            <Input
+              label="Éttermi szoftver forgalom ezen a pénztárgépen"
+              type="number"
+              step="0.01"
+              value={formData.software_revenue}
+              onChange={(e) => handleChange('software_revenue', e.target.value)}
+              suffix="Ft"
+              placeholder="Ha kitöltöd, a teljes forgalom automatikusan összegződik"
+            />
+          </div>
+
           {/* VAT breakdown */}
           <div>
             <h4 className="text-sm font-medium text-gray-700 mb-3">

@@ -27,9 +27,11 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     total_revenue: '',
     guest_count: '',
     mark_color: null,
+    software_revenue_manual_override: false,
   });
   const [expandedRegisters, setExpandedRegisters] = useState({});
   const cashRegisterDataRef = useRef({});
+  const [perRegisterSoftwareSum, setPerRegisterSoftwareSum] = useState(0);
 
   // Initialize expanded state for all registers
   useEffect(() => {
@@ -49,12 +51,14 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         total_revenue: revenue.total_revenue || '',
         guest_count: revenue.guest_count || '',
         mark_color: revenue.mark_color || null,
+        software_revenue_manual_override: revenue.software_revenue_manual_override || false,
       });
     } else {
       setFormData({
         total_revenue: '',
         guest_count: '',
         mark_color: null,
+        software_revenue_manual_override: false,
       });
     }
   }, [revenue, date]);
@@ -68,12 +72,33 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     return map;
   }, [cashRegisterRevenues]);
 
+  // Initialize perRegisterSoftwareSum from existing data
+  useEffect(() => {
+    const sum = cashRegisterRevenues.reduce(
+      (total, r) => total + (parseFloat(r.software_revenue) || 0),
+      0
+    );
+    setPerRegisterSoftwareSum(sum);
+  }, [cashRegisterRevenues]);
+
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleCashRegisterChange = (registerId, data) => {
     cashRegisterDataRef.current[registerId] = data;
+
+    // Calculate sum of per-register software revenues
+    const sum = Object.values(cashRegisterDataRef.current).reduce(
+      (total, regData) => total + (parseFloat(regData?.software_revenue) || 0),
+      0
+    );
+    setPerRegisterSoftwareSum(sum);
+
+    // Auto-update total if not in manual override mode and there's a sum
+    if (!formData.software_revenue_manual_override && sum > 0) {
+      setFormData(prev => ({ ...prev, total_revenue: sum.toString() }));
+    }
   };
 
   const toggleExpand = (registerId) => {
@@ -144,15 +169,56 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       {/* Software revenue */}
       <Card title="Éttermi szoftver forgalom">
         <div className="space-y-4">
-          <Input
-            label="Teljes forgalom"
-            type="number"
-            step="0.01"
-            value={formData.total_revenue}
-            onChange={(e) => handleChange('total_revenue', e.target.value)}
-            suffix="Ft"
-            required
-          />
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Teljes forgalom
+              </label>
+              {perRegisterSoftwareSum > 0 && (
+                <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.software_revenue_manual_override}
+                    onChange={(e) => {
+                      const isManual = e.target.checked;
+                      setFormData(prev => ({
+                        ...prev,
+                        software_revenue_manual_override: isManual,
+                        // If switching to auto mode, use the sum
+                        total_revenue: isManual ? prev.total_revenue : perRegisterSoftwareSum.toString(),
+                      }));
+                    }}
+                    className="h-4 w-4 text-pepper-red rounded border-gray-300 focus:ring-pepper-red"
+                  />
+                  Kézi megadás
+                </label>
+              )}
+            </div>
+            <Input
+              type="number"
+              step="0.01"
+              value={formData.total_revenue}
+              onChange={(e) => {
+                handleChange('total_revenue', e.target.value);
+                // If user manually edits and there's a sum, switch to manual mode
+                if (perRegisterSoftwareSum > 0) {
+                  handleChange('software_revenue_manual_override', true);
+                }
+              }}
+              suffix="Ft"
+              required
+            />
+            {perRegisterSoftwareSum > 0 && !formData.software_revenue_manual_override && (
+              <p className="text-xs text-green-600 mt-1">
+                ✓ Automatikusan összegezve a pénztárgépekből
+              </p>
+            )}
+            {perRegisterSoftwareSum > 0 && formData.software_revenue_manual_override && (
+              <p className="text-xs text-gray-500 mt-1">
+                Pénztárgépek összege: {formatCurrency(perRegisterSoftwareSum)}
+              </p>
+            )}
+          </div>
           <Input
             label="Fogyasztói létszám"
             type="number"

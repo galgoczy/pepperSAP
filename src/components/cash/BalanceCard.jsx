@@ -1,0 +1,66 @@
+import { Wallet, Banknote } from 'lucide-react';
+import { Card } from '../common';
+import { formatCurrency } from '../../lib/utils';
+
+export default function BalanceCard({ title, cash, reserve, pocketsTotal, loading }) {
+  if (loading) {
+    return (
+      <Card>
+        <div className="animate-pulse space-y-4">
+          <div className="h-6 bg-gray-200 rounded w-1/3"></div>
+          <div className="h-10 bg-gray-200 rounded w-2/3"></div>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Cash balance */}
+        <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+          <div className="flex items-center gap-2 text-green-700 mb-2">
+            <Banknote className="h-5 w-5" />
+            <span className="text-sm font-medium">Készpénz</span>
+          </div>
+          <p className={`text-2xl font-bold ${cash >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+            {formatCurrency(cash)}
+          </p>
+        </div>
+
+        {/* Reserve balance */}
+        <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <div className="flex items-center gap-2 text-blue-700 mb-2">
+            <Wallet className="h-5 w-5" />
+            <span className="text-sm font-medium">Tartalék</span>
+          </div>
+          <p className={`text-2xl font-bold ${reserve >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
+            {formatCurrency(reserve)}
+          </p>
+        </div>
+      </div>
+
+      {/* Pockets info for central */}
+      {pocketsTotal !== undefined && pocketsTotal > 0 && (
+        <div className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-amber-700">Zsebekben elkülönítve:</span>
+            <span className="font-semibold text-amber-700">{formatCurrency(pocketsTotal)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Total */}
+      <div className="mt-4 pt-4 border-t border-gray-200">
+        <div className="flex items-center justify-between">
+          <span className="text-gray-600">Összesen:</span>
+          <span className={`text-xl font-bold ${(cash + reserve) >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
+            {formatCurrency(cash + reserve)}
+          </span>
+        </div>
+      </div>
+    </Card>
+  );
+}
