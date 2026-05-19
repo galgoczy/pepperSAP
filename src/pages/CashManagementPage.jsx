@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Send, Building2, Wallet } from 'lucide-react';
+import { Send, Building2, Wallet, Edit2, Trash2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import {
@@ -157,7 +157,7 @@ function AdminCashView({ units }) {
     refetch: refetchTransfers,
   } = useTransfers(null); // null = all transfers
   const { payments, loading: paymentsLoading, createPayment, refetch: refetchPayments } = useCentralPayments();
-  const { revisions, loading: revisionsLoading, createRevision } = useRevisions();
+  const { revisions, loading: revisionsLoading, createRevision, updateRevision, deleteRevision } = useRevisions();
   const {
     pockets,
     activePockets,
@@ -352,7 +352,18 @@ function AdminCashView({ units }) {
               Új revízió
             </Button>
           </div>
-          <RevisionsList revisions={revisions} loading={revisionsLoading} />
+          <RevisionsList
+            revisions={revisions}
+            loading={revisionsLoading}
+            onUpdate={async (id, data) => {
+              await updateRevision(id, data);
+              refetchCentral();
+            }}
+            onDelete={async (id) => {
+              await deleteRevision(id);
+              refetchCentral();
+            }}
+          />
         </div>
       )}
 
@@ -428,7 +439,10 @@ function CentralPaymentsList({ payments, loading }) {
 }
 
 // Revisions List
-function RevisionsList({ revisions, loading }) {
+function RevisionsList({ revisions, loading, onUpdate, onDelete }) {
+  const [editModal, setEditModal] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+
   if (loading) {
     return <Card><div className="animate-pulse h-32 bg-gray-200 rounded"></div></Card>;
   }
@@ -437,29 +451,182 @@ function RevisionsList({ revisions, loading }) {
     return <Card><p className="text-center text-gray-500 py-6">Nincsenek revíziók</p></Card>;
   }
 
+  const handleDelete = async () => {
+    if (deleteConfirm) {
+      await onDelete(deleteConfirm.id);
+      setDeleteConfirm(null);
+    }
+  };
+
   return (
-    <Card>
-      <div className="space-y-3">
-        {revisions.map((revision) => (
-          <div key={revision.id} className="p-4 border border-gray-200 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-gray-900">
-                  {revision.revision_type === 'cash' ? 'Készpénz' : 'Tartalék'} revízió
-                </p>
-                <p className="text-sm text-gray-500">
-                  {formatDate(revision.revision_date)}
-                  {revision.notes && ` • ${revision.notes}`}
-                </p>
+    <>
+      <Card>
+        <div className="space-y-3">
+          {revisions.map((revision) => (
+            <div
+              key={revision.id}
+              className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+              onClick={() => setEditModal(revision)}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-gray-900">
+                    {revision.revision_type === 'cash' ? 'Készpénz' : 'Tartalék'} revízió
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {formatDate(revision.revision_date)}
+                    {revision.notes && ` • ${revision.notes}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <p className={`text-lg font-bold ${revision.discrepancy_amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {revision.discrepancy_amount >= 0 ? '+' : ''}{formatCurrency(revision.discrepancy_amount)}
+                  </p>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditModal(revision); }}
+                      className="p-1.5 text-gray-400 hover:text-pepper-red rounded"
+                      title="Szerkesztés"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm(revision); }}
+                      className="p-1.5 text-gray-400 hover:text-red-600 rounded"
+                      title="Törlés"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
-              <p className={`text-lg font-bold ${revision.discrepancy_amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {revision.discrepancy_amount >= 0 ? '+' : ''}{formatCurrency(revision.discrepancy_amount)}
-              </p>
             </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Edit Modal */}
+      {editModal && (
+        <RevisionEditModal
+          revision={editModal}
+          onClose={() => setEditModal(null)}
+          onSubmit={async (data) => {
+            await onUpdate(editModal.id, data);
+            setEditModal(null);
+          }}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        title="Revízió törlése"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-600">
+            Biztosan törölni szeretnéd ezt a revíziót?
+          </p>
+          <p className="text-sm text-gray-500">
+            {deleteConfirm?.revision_type === 'cash' ? 'Készpénz' : 'Tartalék'} revízió •{' '}
+            {deleteConfirm && formatDate(deleteConfirm.revision_date)} •{' '}
+            <span className={deleteConfirm?.discrepancy_amount >= 0 ? 'text-green-600' : 'text-red-600'}>
+              {deleteConfirm?.discrepancy_amount >= 0 ? '+' : ''}{deleteConfirm && formatCurrency(deleteConfirm.discrepancy_amount)}
+            </span>
+          </p>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="secondary" onClick={() => setDeleteConfirm(null)}>Mégse</Button>
+            <Button variant="danger" onClick={handleDelete}>Törlés</Button>
           </div>
-        ))}
-      </div>
-    </Card>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
+// Revision Edit Modal
+function RevisionEditModal({ revision, onClose, onSubmit }) {
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    revision_date: revision.revision_date,
+    revision_type: revision.revision_type,
+    calculated_amount: revision.calculated_amount || '',
+    physical_amount: revision.physical_amount || '',
+    notes: revision.notes || '',
+  });
+
+  const discrepancy = (parseFloat(formData.physical_amount) || 0) - (parseFloat(formData.calculated_amount) || 0);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await onSubmit({
+        ...formData,
+        discrepancy_amount: discrepancy,
+        calculated_amount: parseFloat(formData.calculated_amount) || null,
+        physical_amount: parseFloat(formData.physical_amount) || null,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title="Revízió szerkesztése" size="md">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Select
+          label="Típus"
+          value={formData.revision_type}
+          onChange={(e) => setFormData(prev => ({ ...prev, revision_type: e.target.value }))}
+          options={[
+            { value: 'cash', label: 'Készpénz' },
+            { value: 'reserve', label: 'Tartalék' },
+          ]}
+        />
+        <Input
+          label="Dátum"
+          type="date"
+          value={formData.revision_date}
+          onChange={(e) => setFormData(prev => ({ ...prev, revision_date: e.target.value }))}
+          max={getToday()}
+          required
+        />
+        <Input
+          label="Számított összeg (rendszer)"
+          type="number"
+          step="1"
+          value={formData.calculated_amount}
+          onChange={(e) => setFormData(prev => ({ ...prev, calculated_amount: e.target.value }))}
+          suffix="Ft"
+        />
+        <Input
+          label="Tényleges összeg (megszámolt)"
+          type="number"
+          step="1"
+          value={formData.physical_amount}
+          onChange={(e) => setFormData(prev => ({ ...prev, physical_amount: e.target.value }))}
+          suffix="Ft"
+        />
+        {(formData.calculated_amount || formData.physical_amount) && (
+          <div className={`p-3 rounded-lg ${discrepancy >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            Eltérés: <strong>{discrepancy >= 0 ? '+' : ''}{formatCurrency(discrepancy)}</strong>
+          </div>
+        )}
+        <Textarea
+          label="Megjegyzés"
+          value={formData.notes}
+          onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+          rows={2}
+          placeholder="Mi okozta az eltérést?"
+        />
+        <div className="flex justify-end gap-3 pt-4">
+          <Button type="button" variant="secondary" onClick={onClose}>Mégse</Button>
+          <Button type="submit" loading={loading}>Mentés</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

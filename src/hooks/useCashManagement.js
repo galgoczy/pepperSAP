@@ -431,7 +431,43 @@ export function useRevisions() {
     }
   };
 
-  return { revisions, loading, refetch: fetchRevisions, createRevision };
+  const updateRevision = async (revisionId, revisionData) => {
+    try {
+      const { error } = await supabase
+        .from('cash_revisions')
+        .update(revisionData)
+        .eq('id', revisionId);
+
+      if (error) throw error;
+
+      toast.success('Revízió módosítva');
+      fetchRevisions();
+    } catch (error) {
+      console.error('Error updating revision:', error);
+      toast.error('Hiba a revízió módosításakor');
+      throw error;
+    }
+  };
+
+  const deleteRevision = async (revisionId) => {
+    try {
+      const { error } = await supabase
+        .from('cash_revisions')
+        .delete()
+        .eq('id', revisionId);
+
+      if (error) throw error;
+
+      toast.success('Revízió törölve');
+      fetchRevisions();
+    } catch (error) {
+      console.error('Error deleting revision:', error);
+      toast.error('Hiba a revízió törlésekor');
+      throw error;
+    }
+  };
+
+  return { revisions, loading, refetch: fetchRevisions, createRevision, updateRevision, deleteRevision };
 }
 
 /**
