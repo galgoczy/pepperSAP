@@ -154,8 +154,9 @@ function AdminCashView({ units }) {
     createTransfer,
     approveTransfer,
     modifyTransfer,
+    refetch: refetchTransfers,
   } = useTransfers(null); // null = all transfers
-  const { payments, loading: paymentsLoading, createPayment } = useCentralPayments();
+  const { payments, loading: paymentsLoading, createPayment, refetch: refetchPayments } = useCentralPayments();
   const { revisions, loading: revisionsLoading, createRevision } = useRevisions();
   const {
     pockets,
@@ -172,6 +173,21 @@ function AdminCashView({ units }) {
 
   const restaurantUnits = units.filter(u => u.type === 'restaurant');
   const pendingTransfers = transfers.filter(t => t.status === 'pending');
+
+  // Handle unit selection change - refetch data when switching back to central
+  const handleUnitChange = (newUnitId) => {
+    const wasViewingUnit = selectedUnitId !== null;
+    const switchingToCentral = !newUnitId;
+
+    setSelectedUnitId(newUnitId || null);
+
+    // Refetch central data when switching back from unit view
+    if (wasViewingUnit && switchingToCentral) {
+      refetchCentral();
+      refetchTransfers();
+      refetchPayments();
+    }
+  };
 
   const handleApprove = async (id) => {
     await approveTransfer(id);
@@ -212,7 +228,7 @@ function AdminCashView({ units }) {
           </div>
           <Select
             value={selectedUnitId || ''}
-            onChange={(e) => setSelectedUnitId(e.target.value || null)}
+            onChange={(e) => handleUnitChange(e.target.value)}
             options={unitOptions}
             className="w-48"
           />
@@ -233,7 +249,7 @@ function AdminCashView({ units }) {
         </div>
         <Select
           value={selectedUnitId || ''}
-          onChange={(e) => setSelectedUnitId(e.target.value || null)}
+          onChange={(e) => handleUnitChange(e.target.value)}
           options={unitOptions}
           className="w-48"
         />
