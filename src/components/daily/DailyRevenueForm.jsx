@@ -27,7 +27,9 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     total_revenue: '',
     customer_count: '',
     mark_color: null,
+    software_revenue_manual_override: false,
   });
+  const [calculatedSoftwareRevenue, setCalculatedSoftwareRevenue] = useState(0);
   const [expandedRegisters, setExpandedRegisters] = useState({});
   const cashRegisterDataRef = useRef({});
 
@@ -49,12 +51,14 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         total_revenue: revenue.total_revenue || '',
         customer_count: revenue.customer_count || '',
         mark_color: revenue.mark_color || null,
+        software_revenue_manual_override: revenue.software_revenue_manual_override || false,
       });
     } else {
       setFormData({
         total_revenue: '',
         customer_count: '',
         mark_color: null,
+        software_revenue_manual_override: false,
       });
     }
   }, [revenue, date]);
@@ -68,12 +72,34 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     return map;
   }, [cashRegisterRevenues]);
 
+  // Calculate initial software revenue sum when data loads
+  useEffect(() => {
+    if (cashRegisterRevenues.length > 0) {
+      const total = cashRegisterRevenues.reduce((sum, r) => {
+        return sum + (parseFloat(r.software_revenue) || 0);
+      }, 0);
+      setCalculatedSoftwareRevenue(total);
+    }
+  }, [cashRegisterRevenues]);
+
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleCashRegisterChange = (registerId, data) => {
     cashRegisterDataRef.current[registerId] = data;
+
+    // Recalculate total software revenue from all registers
+    const total = cashRegisters.reduce((sum, register) => {
+      const regData = cashRegisterDataRef.current[register.id] || existingDataByRegister()[register.id] || {};
+      return sum + (parseFloat(regData.software_revenue) || 0);
+    }, 0);
+    setCalculatedSoftwareRevenue(total);
+
+    // Auto-update total_revenue if not in manual override mode
+    if (!formData.software_revenue_manual_override && total > 0) {
+      setFormData((prev) => ({ ...prev, total_revenue: total.toString() }));
+    }
   };
 
   const toggleExpand = (registerId) => {
@@ -144,15 +170,47 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       {/* Software revenue */}
       <Card title="Éttermi szoftver forgalom">
         <div className="space-y-4">
-          <Input
-            label="Teljes forgalom"
-            type="number"
-            step="0.01"
-            value={formData.total_revenue}
-            onChange={(e) => handleChange('total_revenue', e.target.value)}
-            suffix="Ft"
-            required
-          />
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">
+                Teljes forgalom
+              </label>
+              {cashRegisters.length > 0 && (
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={formData.software_revenue_manual_override}
+                    onChange={(e) => handleChange('software_revenue_manual_override', e.target.checked)}
+                    className="rounded border-gray-300 text-pepper-red focus:ring-pepper-red"
+                  />
+                  Kézi felülírás
+                </label>
+              )}
+            </div>
+            <Input
+              type="number"
+              step="0.01"
+              value={formData.total_revenue}
+              onChange={(e) => {
+                handleChange('total_revenue', e.target.value);
+                if (cashRegisters.length > 0) {
+                  handleChange('software_revenue_manual_override', true);
+                }
+              }}
+              suffix="Ft"
+              required
+            />
+            {cashRegisters.length > 0 && calculatedSoftwareRevenue > 0 && !formData.software_revenue_manual_override && (
+              <p className="mt-1 text-xs text-green-600">
+                Automatikusan számolva a pénztárgépekből: {formatCurrency(calculatedSoftwareRevenue)}
+              </p>
+            )}
+            {cashRegisters.length > 0 && formData.software_revenue_manual_override && calculatedSoftwareRevenue > 0 && (
+              <p className="mt-1 text-xs text-amber-600">
+                Kézi mód - Pénztárgépek összege: {formatCurrency(calculatedSoftwareRevenue)}
+              </p>
+            )}
+          </div>
           <Input
             label="Napi fogyasztói létszám"
             type="number"

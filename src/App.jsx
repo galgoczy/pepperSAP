@@ -31,6 +31,7 @@ import DiscountsPage from './pages/DiscountsPage';
 import WebshopPage from './pages/WebshopPage';
 import WorkspacePage from './pages/WorkspacePage';
 import MicrosoftCallbackPage from './pages/MicrosoftCallbackPage';
+import CashManagementPage from './pages/CashManagementPage';
 
 function App() {
   return (
@@ -199,6 +200,14 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['admin', 'unit']}>
                   <WebshopPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/cash-management"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'unit']}>
+                  <CashManagementPage />
                 </ProtectedRoute>
               }
             />

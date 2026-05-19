@@ -88,6 +88,12 @@ export default function Sidebar({ isOpen, onClose }) {
           to: '/events',
           show: noProfileYet || isAdmin || isEvents,
         },
+        {
+          label: 'Házipénztár',
+          icon: Wallet,
+          to: '/cash-management',
+          show: noProfileYet || isAdmin || (!isEvents && !isAccountant),
+        },
       ],
     },
     // Kontrolling section

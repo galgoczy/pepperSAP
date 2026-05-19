@@ -17,6 +17,7 @@ const DEFAULT_FORM_DATA = {
   vat_18_percent: '',
   vat_27_percent: '',
   tips: '',
+  software_revenue: '',
   discrepancies: [], // Array of {amount, currency, note}
   cash_payment: '',
   card_payment: '',
@@ -45,6 +46,7 @@ function computeFormData(existingData) {
     vat_18_percent: existingData.vat_18_percent || '',
     vat_27_percent: existingData.vat_27_percent || '',
     tips: existingData.tips || '',
+    software_revenue: existingData.software_revenue || '',
     discrepancies: discrepancies,
     cash_payment: existingData.cash_payment || '',
     card_payment: existingData.card_payment || '',
@@ -271,6 +273,21 @@ export default function CashRegisterSection({
       {/* Expanded content */}
       {expanded && (
         <div className="mt-6 space-y-6 border-t border-gray-200 pt-6">
+          {/* Software revenue per register */}
+          <div>
+            <h4 className="text-sm font-medium text-gray-700 mb-3">
+              Éttermi szoftver forgalom (ehhez a pénztárgéphez)
+            </h4>
+            <Input
+              type="number"
+              step="0.01"
+              value={formData.software_revenue}
+              onChange={(e) => handleChange('software_revenue', e.target.value)}
+              suffix="Ft"
+              placeholder="Opcionális - csak ha kasszánként különböző"
+            />
+          </div>
+
           {/* VAT breakdown */}
           <div>
             <h4 className="text-sm font-medium text-gray-700 mb-3">
