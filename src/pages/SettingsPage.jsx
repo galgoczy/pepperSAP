@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { User, Lock, Bell, Shield } from 'lucide-react';
+import { User, Lock, Bell, Shield, Eye } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { useAppSettings } from '../hooks/useAppSettings';
 import { Card, Button, Input } from '../components/common';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 
 export default function SettingsPage() {
-  const { user, profile, refetchProfile } = useAuth();
+  const { user, profile, isAdmin, refetchProfile } = useAuth();
+  const { settings, updateSetting } = useAppSettings();
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [newPassword, setNewPassword] = useState('');
@@ -154,6 +156,38 @@ export default function SettingsPage() {
           </div>
         </form>
       </Card>
+
+      {/* Display Settings (Admin only) */}
+      {isAdmin && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <Eye className="h-5 w-5 text-gray-400" />
+              Megjelenítési beállítások
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <label className="flex items-center justify-between cursor-pointer">
+              <div>
+                <p className="font-medium text-gray-900">Tartalék mutatása</p>
+                <p className="text-sm text-gray-500">
+                  Ha kikapcsolod, a tartalék nem jelenik meg a házipénztárban és a riportokban
+                </p>
+              </div>
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={settings.showReserve}
+                  onChange={(e) => updateSetting('showReserve', e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-pepper-red/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pepper-red"></div>
+              </div>
+            </label>
+          </div>
+        </Card>
+      )}
 
       {/* Notifications Section (Future) */}
       <Card

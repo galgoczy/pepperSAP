@@ -2,7 +2,7 @@ import { Wallet, Banknote } from 'lucide-react';
 import { Card } from '../common';
 import { formatCurrency } from '../../lib/utils';
 
-export default function BalanceCard({ title, cash, reserve, pocketsTotal, loading }) {
+export default function BalanceCard({ title, cash, reserve, pocketsTotal, loading, showReserve = true }) {
   if (loading) {
     return (
       <Card>
@@ -14,11 +14,13 @@ export default function BalanceCard({ title, cash, reserve, pocketsTotal, loadin
     );
   }
 
+  const total = showReserve ? cash + reserve : cash;
+
   return (
     <Card>
       <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className={`grid gap-4 ${showReserve ? 'md:grid-cols-2' : ''}`}>
         {/* Cash balance */}
         <div className="p-4 bg-green-50 rounded-lg border border-green-200">
           <div className="flex items-center gap-2 text-green-700 mb-2">
@@ -31,15 +33,17 @@ export default function BalanceCard({ title, cash, reserve, pocketsTotal, loadin
         </div>
 
         {/* Reserve balance */}
-        <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="flex items-center gap-2 text-blue-700 mb-2">
-            <Wallet className="h-5 w-5" />
-            <span className="text-sm font-medium">Tartalék</span>
+        {showReserve && (
+          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="flex items-center gap-2 text-blue-700 mb-2">
+              <Wallet className="h-5 w-5" />
+              <span className="text-sm font-medium">Tartalék</span>
+            </div>
+            <p className={`text-2xl font-bold ${reserve >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
+              {formatCurrency(reserve)}
+            </p>
           </div>
-          <p className={`text-2xl font-bold ${reserve >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-            {formatCurrency(reserve)}
-          </p>
-        </div>
+        )}
       </div>
 
       {/* Pockets info for central */}
@@ -52,15 +56,17 @@ export default function BalanceCard({ title, cash, reserve, pocketsTotal, loadin
         </div>
       )}
 
-      {/* Total */}
-      <div className="mt-4 pt-4 border-t border-gray-200">
-        <div className="flex items-center justify-between">
-          <span className="text-gray-600">Összesen:</span>
-          <span className={`text-xl font-bold ${(cash + reserve) >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
-            {formatCurrency(cash + reserve)}
-          </span>
+      {/* Total - only show if reserve is visible (otherwise it's redundant) */}
+      {showReserve && (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="flex items-center justify-between">
+            <span className="text-gray-600">Összesen:</span>
+            <span className={`text-xl font-bold ${total >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
+              {formatCurrency(total)}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
     </Card>
   );
 }

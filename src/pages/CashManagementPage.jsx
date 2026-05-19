@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Send, Building2, Wallet, Edit2, Trash2 } from 'lucide-react';
+import { Send, Building2, Wallet, Edit2, Trash2, History } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
+import { useAppSettings } from '../hooks/useAppSettings';
 import {
   useUnitBalance,
   useCentralBalance,
@@ -9,8 +10,9 @@ import {
   useCentralPayments,
   useRevisions,
   usePockets,
+  useCashHistory,
 } from '../hooks/useCashManagement';
-import { Card, Button, Input, Select, Modal } from '../components/common';
+import { Card, Button, Input, Select, Modal, Badge } from '../components/common';
 import { Textarea } from '../components/common/Input';
 import BalanceCard from '../components/cash/BalanceCard';
 import TransferForm from '../components/cash/TransferForm';
@@ -32,6 +34,8 @@ export default function CashManagementPage() {
 
 // Unit view (for non-admin users)
 function UnitCashView({ unitId, units }) {
+  const { settings } = useAppSettings();
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -41,13 +45,13 @@ function UnitCashView({ unitId, units }) {
           <p className="text-gray-500 mt-1">Egyenleg és átküldések kezelése</p>
         </div>
       </div>
-      <UnitCashViewContent unitId={unitId} units={units} isAdmin={false} />
+      <UnitCashViewContent unitId={unitId} units={units} isAdmin={false} showReserve={settings.showReserve} />
     </div>
   );
 }
 
 // Reusable unit cash view content (used by both regular users and admin when viewing a unit)
-function UnitCashViewContent({ unitId, units, isAdmin = false }) {
+function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = true }) {
   const { balance, loading: balanceLoading, refetch: refetchBalance } = useUnitBalance(unitId);
   const {
     transfers,
@@ -95,6 +99,7 @@ function UnitCashViewContent({ unitId, units, isAdmin = false }) {
         cash={balance.cash}
         reserve={balance.reserve}
         loading={balanceLoading}
+        showReserve={showReserve}
       />
 
       {/* Incoming transfers needing approval */}
@@ -147,6 +152,7 @@ function UnitCashViewContent({ unitId, units, isAdmin = false }) {
 function AdminCashView({ units }) {
   const [activeTab, setActiveTab] = useState('central');
   const [selectedUnitId, setSelectedUnitId] = useState(null);
+  const { settings } = useAppSettings();
   const { balance: centralBalance, pocketsTotal, loading: centralLoading, refetch: refetchCentral } = useCentralBalance();
   const {
     transfers,
@@ -167,6 +173,7 @@ function AdminCashView({ units }) {
     returnPartial,
     closePocket,
   } = usePockets();
+  const { history, loading: historyLoading, refetch: refetchHistory } = useCashHistory(15);
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
@@ -186,6 +193,7 @@ function AdminCashView({ units }) {
       refetchCentral();
       refetchTransfers();
       refetchPayments();
+      refetchHistory();
     }
   };
 
@@ -234,7 +242,7 @@ function AdminCashView({ units }) {
           />
         </div>
         {/* Render UnitCashView for selected unit */}
-        <UnitCashViewContent unitId={selectedUnitId} units={units} isAdmin={true} />
+        <UnitCashViewContent unitId={selectedUnitId} units={units} isAdmin={true} showReserve={settings.showReserve} />
       </div>
     );
   }
@@ -287,6 +295,7 @@ function AdminCashView({ units }) {
             reserve={centralBalance.reserve}
             pocketsTotal={pocketsTotal}
             loading={centralLoading}
+            showReserve={settings.showReserve}
           />
 
           {/* Quick actions */}
@@ -315,6 +324,9 @@ function AdminCashView({ units }) {
               />
             </div>
           )}
+
+          {/* Cash History */}
+          <CashHistoryList history={history} loading={historyLoading} showReserve={settings.showReserve} />
         </div>
       )}
 
@@ -822,5 +834,92 @@ function RevisionModal({ isOpen, onClose, onSubmit }) {
         </div>
       </form>
     </Modal>
+  );
+}
+
+// Cash History List
+function CashHistoryList({ history, loading, showReserve }) {
+  if (loading) {
+    return (
+      <Card>
+        <div className="animate-pulse space-y-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-12 bg-gray-200 rounded"></div>
+          ))}
+        </div>
+      </Card>
+    );
+  }
+
+  // Filter out reserve transactions if showReserve is false
+  const filteredHistory = showReserve
+    ? history
+    : history.filter(h => h.cashType !== 'reserve');
+
+  if (filteredHistory.length === 0) {
+    return (
+      <Card>
+        <div className="flex items-center gap-2 mb-4">
+          <History className="h-5 w-5 text-gray-400" />
+          <h3 className="text-lg font-semibold text-gray-900">Számlatörténet</h3>
+        </div>
+        <p className="text-center text-gray-500 py-4">Nincs tranzakció</p>
+      </Card>
+    );
+  }
+
+  const getTypeLabel = (type) => {
+    switch (type) {
+      case 'transfer': return 'Átküldés';
+      case 'payment': return 'Kifizetés';
+      case 'revision': return 'Revízió';
+      default: return type;
+    }
+  };
+
+  const getTypeVariant = (type) => {
+    switch (type) {
+      case 'transfer': return 'info';
+      case 'payment': return 'warning';
+      case 'revision': return 'secondary';
+      default: return 'secondary';
+    }
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-4">
+        <History className="h-5 w-5 text-gray-400" />
+        <h3 className="text-lg font-semibold text-gray-900">Számlatörténet</h3>
+      </div>
+      <div className="space-y-2">
+        {filteredHistory.map((item) => (
+          <div
+            key={item.id}
+            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+          >
+            <div className="flex items-center gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Badge variant={getTypeVariant(item.type)} size="sm">
+                    {getTypeLabel(item.type)}
+                  </Badge>
+                  {showReserve && (
+                    <Badge variant={item.cashType === 'cash' ? 'success' : 'info'} size="sm">
+                      {item.cashType === 'cash' ? 'Készpénz' : 'Tartalék'}
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm text-gray-900 mt-1">{item.description}</p>
+                <p className="text-xs text-gray-500">{formatDate(item.date)}</p>
+              </div>
+            </div>
+            <p className={`text-lg font-bold ${item.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {item.amount >= 0 ? '+' : ''}{formatCurrency(item.amount)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }

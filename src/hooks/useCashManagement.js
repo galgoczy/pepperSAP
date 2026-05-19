@@ -637,3 +637,97 @@ export function usePockets() {
     closePocket,
   };
 }
+
+/**
+ * Hook for central cash history (combines transfers, payments, revisions)
+ */
+export function useCashHistory(limit = 20) {
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchHistory = useCallback(async () => {
+    try {
+      // Fetch all three data sources in parallel
+      const [transfersResult, paymentsResult, revisionsResult] = await Promise.all([
+        supabase
+          .from('cash_transfers')
+          .select(`
+            id,
+            amount,
+            transfer_type,
+            transfer_date,
+            status,
+            source_type,
+            destination_type,
+            source_unit:units!cash_transfers_source_unit_id_fkey(name),
+            destination_unit:units!cash_transfers_destination_unit_id_fkey(name),
+            notes
+          `)
+          .in('status', ['approved', 'modified'])
+          .or('destination_type.eq.central,source_type.eq.central')
+          .order('transfer_date', { ascending: false })
+          .limit(limit),
+        supabase
+          .from('central_payments')
+          .select('id, amount, payment_date, payment_type, supplier_name, item_description, notes')
+          .order('payment_date', { ascending: false })
+          .limit(limit),
+        supabase
+          .from('cash_revisions')
+          .select('id, revision_date, revision_type, discrepancy_amount, notes')
+          .order('revision_date', { ascending: false })
+          .limit(limit),
+      ]);
+
+      // Transform and combine all records
+      const transfers = (transfersResult.data || []).map(t => ({
+        id: `transfer-${t.id}`,
+        type: 'transfer',
+        date: t.transfer_date,
+        amount: t.destination_type === 'central' ? t.amount : -t.amount,
+        cashType: t.transfer_type,
+        description: t.destination_type === 'central'
+          ? `Beérkezett: ${t.source_unit?.name || 'Ismeretlen'}`
+          : `Kiküldve: ${t.destination_unit?.name || 'Ismeretlen'}`,
+        notes: t.notes,
+      }));
+
+      const payments = (paymentsResult.data || []).map(p => ({
+        id: `payment-${p.id}`,
+        type: 'payment',
+        date: p.payment_date,
+        amount: -p.amount,
+        cashType: p.payment_type,
+        description: p.supplier_name || p.item_description || 'Kifizetés',
+        notes: p.notes,
+      }));
+
+      const revisions = (revisionsResult.data || []).map(r => ({
+        id: `revision-${r.id}`,
+        type: 'revision',
+        date: r.revision_date,
+        amount: r.discrepancy_amount,
+        cashType: r.revision_type,
+        description: 'Revízió',
+        notes: r.notes,
+      }));
+
+      // Combine and sort by date
+      const combined = [...transfers, ...payments, ...revisions]
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, limit);
+
+      setHistory(combined);
+    } catch (error) {
+      console.error('Error fetching cash history:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [limit]);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
+
+  return { history, loading, refetch: fetchHistory };
+}
