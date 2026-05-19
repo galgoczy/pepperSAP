@@ -232,7 +232,7 @@ export function useTransfers(unitId, direction = 'all') {
       setTransfers(data || []);
     } catch (error) {
       console.error('Error fetching transfers:', error);
-      toast.error('Hiba az átutalások betöltésekor');
+      toast.error('Hiba az átküldések betöltésekor');
     } finally {
       setLoading(false);
     }
@@ -255,12 +255,12 @@ export function useTransfers(unitId, direction = 'all') {
 
       if (error) throw error;
 
-      toast.success('Átutalás létrehozva');
+      toast.success('Átküldés létrehozva');
       fetchTransfers();
       return data;
     } catch (error) {
       console.error('Error creating transfer:', error);
-      toast.error('Hiba az átutalás létrehozásakor');
+      toast.error('Hiba az átküldés létrehozásakor');
       throw error;
     }
   };
@@ -278,7 +278,7 @@ export function useTransfers(unitId, direction = 'all') {
 
       if (error) throw error;
 
-      toast.success('Átutalás jóváhagyva');
+      toast.success('Átküldés jóváhagyva');
       fetchTransfers();
     } catch (error) {
       console.error('Error approving transfer:', error);
@@ -309,7 +309,7 @@ export function useTransfers(unitId, direction = 'all') {
 
       if (error) throw error;
 
-      toast.success('Átutalás módosítva és jóváhagyva');
+      toast.success('Átküldés módosítva és jóváhagyva');
       fetchTransfers();
     } catch (error) {
       console.error('Error modifying transfer:', error);

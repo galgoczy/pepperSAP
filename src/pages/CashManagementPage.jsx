@@ -69,11 +69,11 @@ function UnitCashView({ unitId, units }) {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Házipénztár</h1>
-          <p className="text-gray-500 mt-1">Egyenleg és átutalások kezelése</p>
+          <p className="text-gray-500 mt-1">Egyenleg és átküldések kezelése</p>
         </div>
         <Button onClick={() => setShowTransferForm(true)}>
           <Send className="h-4 w-4" />
-          Átutalás küldése
+          Átküldés
         </Button>
       </div>
 
@@ -89,7 +89,7 @@ function UnitCashView({ unitId, units }) {
       {incomingTransfers.length > 0 && (
         <div>
           <h2 className="text-lg font-semibold text-gray-900 mb-3">
-            Bejövő átutalások jóváhagyásra ({incomingTransfers.length})
+            Bejövő átküldések jóváhagyásra ({incomingTransfers.length})
           </h2>
           <TransferList
             transfers={incomingTransfers}
@@ -104,7 +104,7 @@ function UnitCashView({ unitId, units }) {
 
       {/* All transfers */}
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-3">Összes átutalás</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-3">Összes átküldés</h2>
         <TransferList
           transfers={allTransfers}
           loading={transfersLoading}
@@ -169,7 +169,7 @@ function AdminCashView({ units }) {
 
   const tabs = [
     { id: 'central', label: 'Központ', icon: Building2 },
-    { id: 'transfers', label: `Átutalások${pendingTransfers.length > 0 ? ` (${pendingTransfers.length})` : ''}` },
+    { id: 'transfers', label: `Átküldések${pendingTransfers.length > 0 ? ` (${pendingTransfers.length})` : ''}` },
     { id: 'payments', label: 'Kifizetések' },
     { id: 'revisions', label: 'Revíziók' },
     { id: 'pockets', label: 'Zsebek', icon: Wallet },
@@ -180,7 +180,7 @@ function AdminCashView({ units }) {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Házipénztárak</h1>
-        <p className="text-gray-500 mt-1">Központi pénztár és átutalások kezelése</p>
+        <p className="text-gray-500 mt-1">Központi pénztár és átküldések kezelése</p>
       </div>
 
       {/* Tab navigation */}
@@ -231,7 +231,7 @@ function AdminCashView({ units }) {
           {pendingTransfers.filter(t => t.destination_type === 'central').length > 0 && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-3">
-                Bejövő átutalások jóváhagyásra
+                Bejövő átküldések jóváhagyásra
               </h2>
               <TransferList
                 transfers={pendingTransfers.filter(t => t.destination_type === 'central')}
@@ -248,7 +248,7 @@ function AdminCashView({ units }) {
 
       {activeTab === 'transfers' && (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900">Összes átutalás</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Összes átküldés</h2>
           <TransferList
             transfers={transfers}
             loading={transfersLoading}

@@ -37,7 +37,7 @@ export default function TransferList({
   if (transfers.length === 0) {
     return (
       <Card>
-        <p className="text-center text-gray-500 py-8">Nincsenek átutalások</p>
+        <p className="text-center text-gray-500 py-8">Nincsenek átküldések</p>
       </Card>
     );
   }

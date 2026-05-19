@@ -69,7 +69,7 @@ export default function TransferForm({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Átutalás küldése"
+      title="Átküldés"
       size="md"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
