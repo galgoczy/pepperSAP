@@ -32,6 +32,22 @@ export default function CashManagementPage() {
 
 // Unit view (for non-admin users)
 function UnitCashView({ unitId, units }) {
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Házipénztár</h1>
+          <p className="text-gray-500 mt-1">Egyenleg és átküldések kezelése</p>
+        </div>
+      </div>
+      <UnitCashViewContent unitId={unitId} units={units} isAdmin={false} />
+    </div>
+  );
+}
+
+// Reusable unit cash view content (used by both regular users and admin when viewing a unit)
+function UnitCashViewContent({ unitId, units, isAdmin = false }) {
   const { balance, loading: balanceLoading, refetch: refetchBalance } = useUnitBalance(unitId);
   const {
     transfers,
@@ -64,13 +80,9 @@ function UnitCashView({ unitId, units }) {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Házipénztár</h1>
-          <p className="text-gray-500 mt-1">Egyenleg és átküldések kezelése</p>
-        </div>
+    <>
+      {/* Action button */}
+      <div className="flex justify-end">
         <Button onClick={() => setShowTransferForm(true)}>
           <Send className="h-4 w-4" />
           Átküldés
@@ -97,6 +109,7 @@ function UnitCashView({ unitId, units }) {
             onApprove={handleApprove}
             onModify={handleModify}
             currentUnitId={unitId}
+            isAdmin={isAdmin}
             showActions={true}
           />
         </div>
@@ -111,6 +124,7 @@ function UnitCashView({ unitId, units }) {
           onApprove={handleApprove}
           onModify={handleModify}
           currentUnitId={unitId}
+          isAdmin={isAdmin}
           showActions={true}
         />
       </div>
@@ -123,14 +137,16 @@ function UnitCashView({ unitId, units }) {
         units={restaurantUnits}
         sourceUnitId={unitId}
         sourceType="unit"
+        isAdmin={isAdmin}
       />
-    </div>
+    </>
   );
 }
 
 // Admin/Central view
 function AdminCashView({ units }) {
   const [activeTab, setActiveTab] = useState('central');
+  const [selectedUnitId, setSelectedUnitId] = useState(null);
   const { balance: centralBalance, pocketsTotal, loading: centralLoading, refetch: refetchCentral } = useCentralBalance();
   const {
     transfers,
@@ -175,12 +191,52 @@ function AdminCashView({ units }) {
     { id: 'pockets', label: 'Zsebek', icon: Wallet },
   ];
 
+  const unitOptions = [
+    { value: '', label: 'Központ' },
+    ...restaurantUnits.map(u => ({ value: u.id, label: u.name })),
+  ];
+
+  const selectedUnit = restaurantUnits.find(u => u.id === selectedUnitId);
+
+  // If a unit is selected, show UnitCashView for that unit
+  if (selectedUnitId) {
+    return (
+      <div className="space-y-6">
+        {/* Header with unit selector */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Házipénztárak</h1>
+            <p className="text-gray-500 mt-1">
+              Egység kezelése: <span className="font-medium text-gray-700">{selectedUnit?.name}</span>
+            </p>
+          </div>
+          <Select
+            value={selectedUnitId || ''}
+            onChange={(e) => setSelectedUnitId(e.target.value || null)}
+            options={unitOptions}
+            className="w-48"
+          />
+        </div>
+        {/* Render UnitCashView for selected unit */}
+        <UnitCashViewContent unitId={selectedUnitId} units={units} isAdmin={true} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Házipénztárak</h1>
-        <p className="text-gray-500 mt-1">Központi pénztár és átküldések kezelése</p>
+      {/* Header with unit selector */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Házipénztárak</h1>
+          <p className="text-gray-500 mt-1">Központi pénztár és átküldések kezelése</p>
+        </div>
+        <Select
+          value={selectedUnitId || ''}
+          onChange={(e) => setSelectedUnitId(e.target.value || null)}
+          options={unitOptions}
+          className="w-48"
+        />
       </div>
 
       {/* Tab navigation */}
