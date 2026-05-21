@@ -104,7 +104,6 @@ export default function WorkspacePage() {
       .from('workspace_messages')
       .select('*')
       .eq('channel_id', selectedChannel.id)
-      .eq('is_deleted', false)
       .order('created_at', { ascending: true })
       .limit(100);
 
@@ -167,7 +166,7 @@ export default function WorkspacePage() {
 
     const newMessage = {
       channel_id: selectedChannel.id,
-      user_id: user.id,
+      author_id: user.id,
       content: messageContent.trim(),
       message_type: messageType,
     };
@@ -179,7 +178,7 @@ export default function WorkspacePage() {
 
     if (messageType === 'task') {
       newMessage.task_assignee_id = taskAssignee || null;
-      newMessage.task_due_date = taskDueDate || null;
+      newMessage.task_deadline = taskDueDate || null;
     }
 
     const { error } = await supabase
@@ -486,8 +485,8 @@ export default function WorkspacePage() {
 
 // Message item component
 function MessageItem({ message, users, currentUserId, onToggleTask }) {
-  const isOwnMessage = message.user_id === currentUserId;
-  const userName = users[message.user_id]?.full_name || users[message.user_id]?.email || 'Ismeretlen';
+  const isOwnMessage = message.author_id === currentUserId;
+  const userName = users[message.author_id]?.full_name || users[message.author_id]?.email || 'Ismeretlen';
   const assigneeName = message.task_assignee_id
     ? users[message.task_assignee_id]?.full_name || 'Valaki'
     : null;
@@ -554,10 +553,10 @@ function MessageItem({ message, users, currentUserId, onToggleTask }) {
                   {assigneeName}
                 </span>
               )}
-              {message.task_due_date && (
+              {message.task_deadline && (
                 <span className="text-xs text-gray-500 flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
-                  {formatDate(message.task_due_date)}
+                  {formatDate(message.task_deadline)}
                 </span>
               )}
             </div>
