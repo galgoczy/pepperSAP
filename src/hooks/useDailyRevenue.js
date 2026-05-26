@@ -119,11 +119,20 @@ export function useDailyRevenue(unitId, date) {
     // Remove mark_color if null to avoid errors when column doesn't exist
     const { mark_color, ...restData } = revenueData;
 
+    // Numeric fields that should be converted to null if empty
+    const numericFields = [
+      'total_revenue', 'customer_count',
+      'vip_loading', 'vip_revenue',
+      'protocol_net', 'protocol_gross', 'protocol_vat_rate',
+      'mckinsey_net', 'mckinsey_gross', 'mckinsey_vat_rate',
+      'extra_cash_revenue'
+    ];
+
     // Convert empty strings to null for numeric fields
     const cleanedData = Object.fromEntries(
       Object.entries(restData).map(([key, value]) => [
         key,
-        value === '' ? null : value
+        value === '' ? null : (numericFields.includes(key) ? parseFloat(value) || null : value)
       ])
     );
 

@@ -1,11 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Save, Palette, Calculator, AlertCircle } from 'lucide-react';
+import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark, Banknote } from 'lucide-react';
 import { useDailyRevenue } from '../../hooks/useDailyRevenue';
 import { useActiveCashRegisters, useAllCashRegisterRevenue } from '../../hooks/useCashRegisterRevenue';
 import { Card, Button, Input, LoadingSpinner } from '../common';
 import CashRegisterSection from './CashRegisterSection';
+import EfoPayments from './EfoPayments';
 import { formatCurrency } from '../../lib/utils';
 import toast from 'react-hot-toast';
+
+const VAT_RATES = [
+  { value: 27, label: '27%' },
+  { value: 18, label: '18%' },
+  { value: 5, label: '5%' },
+  { value: 0, label: '0%' },
+];
 
 // Color options for marking entries
 const MARK_COLORS = [
@@ -28,6 +36,19 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     guest_count: '',
     mark_color: null,
     software_revenue_manual_override: false,
+    // VIP fields (info only)
+    vip_loading: '',
+    vip_revenue: '',
+    // Protocol revenue
+    protocol_net: '',
+    protocol_gross: '',
+    protocol_vat_rate: 27,
+    // McKinsey revenue (Államkincstár only)
+    mckinsey_net: '',
+    mckinsey_gross: '',
+    mckinsey_vat_rate: 27,
+    // Extra cash revenue
+    extra_cash_revenue: '',
   });
   const [expandedRegisters, setExpandedRegisters] = useState({});
   const cashRegisterDataRef = useRef({});
@@ -45,6 +66,10 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     }
   }, [cashRegisters]);
 
+  // Check if this is the Államkincstár unit
+  const isAllamkincstar = unitName?.toLowerCase().includes('államkincstár') ||
+                          unitName?.toLowerCase().includes('allamkincstar');
+
   useEffect(() => {
     if (revenue) {
       setFormData({
@@ -52,6 +77,19 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         guest_count: revenue.guest_count || '',
         mark_color: revenue.mark_color || null,
         software_revenue_manual_override: revenue.software_revenue_manual_override || false,
+        // VIP fields
+        vip_loading: revenue.vip_loading || '',
+        vip_revenue: revenue.vip_revenue || '',
+        // Protocol revenue
+        protocol_net: revenue.protocol_net || '',
+        protocol_gross: revenue.protocol_gross || '',
+        protocol_vat_rate: revenue.protocol_vat_rate ?? 27,
+        // McKinsey revenue
+        mckinsey_net: revenue.mckinsey_net || '',
+        mckinsey_gross: revenue.mckinsey_gross || '',
+        mckinsey_vat_rate: revenue.mckinsey_vat_rate ?? 27,
+        // Extra cash revenue
+        extra_cash_revenue: revenue.extra_cash_revenue || '',
       });
     } else {
       setFormData({
@@ -59,6 +97,15 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         guest_count: '',
         mark_color: null,
         software_revenue_manual_override: false,
+        vip_loading: '',
+        vip_revenue: '',
+        protocol_net: '',
+        protocol_gross: '',
+        protocol_vat_rate: 27,
+        mckinsey_net: '',
+        mckinsey_gross: '',
+        mckinsey_vat_rate: 27,
+        extra_cash_revenue: '',
       });
     }
   }, [revenue, date]);
@@ -83,6 +130,74 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // Auto-calculate gross from net (or vice versa) for Protocol
+  const handleProtocolNetChange = (value) => {
+    const net = parseFloat(value) || 0;
+    const vatRate = formData.protocol_vat_rate / 100;
+    const gross = Math.round(net * (1 + vatRate));
+    setFormData((prev) => ({
+      ...prev,
+      protocol_net: value,
+      protocol_gross: gross > 0 ? gross.toString() : '',
+    }));
+  };
+
+  const handleProtocolGrossChange = (value) => {
+    const gross = parseFloat(value) || 0;
+    const vatRate = formData.protocol_vat_rate / 100;
+    const net = Math.round(gross / (1 + vatRate));
+    setFormData((prev) => ({
+      ...prev,
+      protocol_gross: value,
+      protocol_net: net > 0 ? net.toString() : '',
+    }));
+  };
+
+  const handleProtocolVatChange = (value) => {
+    const vatRate = parseFloat(value) / 100;
+    const net = parseFloat(formData.protocol_net) || 0;
+    const gross = Math.round(net * (1 + vatRate));
+    setFormData((prev) => ({
+      ...prev,
+      protocol_vat_rate: parseFloat(value),
+      protocol_gross: gross > 0 ? gross.toString() : '',
+    }));
+  };
+
+  // Auto-calculate gross from net for McKinsey
+  const handleMcKinseyNetChange = (value) => {
+    const net = parseFloat(value) || 0;
+    const vatRate = formData.mckinsey_vat_rate / 100;
+    const gross = Math.round(net * (1 + vatRate));
+    setFormData((prev) => ({
+      ...prev,
+      mckinsey_net: value,
+      mckinsey_gross: gross > 0 ? gross.toString() : '',
+    }));
+  };
+
+  const handleMcKinseyGrossChange = (value) => {
+    const gross = parseFloat(value) || 0;
+    const vatRate = formData.mckinsey_vat_rate / 100;
+    const net = Math.round(gross / (1 + vatRate));
+    setFormData((prev) => ({
+      ...prev,
+      mckinsey_gross: value,
+      mckinsey_net: net > 0 ? net.toString() : '',
+    }));
+  };
+
+  const handleMcKinseyVatChange = (value) => {
+    const vatRate = parseFloat(value) / 100;
+    const net = parseFloat(formData.mckinsey_net) || 0;
+    const gross = Math.round(net * (1 + vatRate));
+    setFormData((prev) => ({
+      ...prev,
+      mckinsey_vat_rate: parseFloat(value),
+      mckinsey_gross: gross > 0 ? gross.toString() : '',
+    }));
   };
 
   const handleCashRegisterChange = (registerId, data) => {
@@ -231,6 +346,157 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         </div>
       </Card>
 
+      {/* VIP Section - info only */}
+      <Card
+        title={
+          <div className="flex items-center gap-2">
+            <Star className="h-5 w-5 text-amber-500" />
+            VIP
+          </div>
+        }
+      >
+        <p className="text-sm text-gray-500 mb-4">
+          VIP adatok - csak tájékoztató jellegű, nem számít bele a forgalomba
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input
+            label="VIP töltés"
+            type="number"
+            step="0.01"
+            value={formData.vip_loading}
+            onChange={(e) => handleChange('vip_loading', e.target.value)}
+            suffix="Ft"
+          />
+          <Input
+            label="VIP forgalom"
+            type="number"
+            step="0.01"
+            value={formData.vip_revenue}
+            onChange={(e) => handleChange('vip_revenue', e.target.value)}
+            suffix="Ft"
+          />
+        </div>
+      </Card>
+
+      {/* Protocol Revenue Section */}
+      <Card
+        title={
+          <div className="flex items-center gap-2">
+            <Building className="h-5 w-5 text-blue-500" />
+            Protokoll bevétel
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Input
+              label="Nettó összeg"
+              type="number"
+              step="0.01"
+              value={formData.protocol_net}
+              onChange={(e) => handleProtocolNetChange(e.target.value)}
+              suffix="Ft"
+            />
+            <Input
+              label="Bruttó összeg"
+              type="number"
+              step="0.01"
+              value={formData.protocol_gross}
+              onChange={(e) => handleProtocolGrossChange(e.target.value)}
+              suffix="Ft"
+            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                ÁFA kulcs
+              </label>
+              <select
+                value={formData.protocol_vat_rate}
+                onChange={(e) => handleProtocolVatChange(e.target.value)}
+                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-pepper-red focus:ring-pepper-red"
+              >
+                {VAT_RATES.map((rate) => (
+                  <option key={rate.value} value={rate.value}>
+                    {rate.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* McKinsey Revenue Section - only for Államkincstár */}
+      {isAllamkincstar && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <Landmark className="h-5 w-5 text-emerald-600" />
+              McKinsey bevétel
+            </div>
+          }
+        >
+          <p className="text-sm text-gray-500 mb-4">
+            Államkincstár specifikus bevétel
+          </p>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Input
+                label="Nettó összeg"
+                type="number"
+                step="0.01"
+                value={formData.mckinsey_net}
+                onChange={(e) => handleMcKinseyNetChange(e.target.value)}
+                suffix="Ft"
+              />
+              <Input
+                label="Bruttó összeg"
+                type="number"
+                step="0.01"
+                value={formData.mckinsey_gross}
+                onChange={(e) => handleMcKinseyGrossChange(e.target.value)}
+                suffix="Ft"
+              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  ÁFA kulcs
+                </label>
+                <select
+                  value={formData.mckinsey_vat_rate}
+                  onChange={(e) => handleMcKinseyVatChange(e.target.value)}
+                  className="w-full rounded-lg border-gray-300 shadow-sm focus:border-pepper-red focus:ring-pepper-red"
+                >
+                  {VAT_RATES.map((rate) => (
+                    <option key={rate.value} value={rate.value}>
+                      {rate.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Extra Cash Revenue */}
+      <Card
+        title={
+          <div className="flex items-center gap-2">
+            <Banknote className="h-5 w-5 text-green-600" />
+            Egyéb készpénz bevétel
+          </div>
+        }
+      >
+        <Input
+          label="Összeg"
+          type="number"
+          step="0.01"
+          value={formData.extra_cash_revenue}
+          onChange={(e) => handleChange('extra_cash_revenue', e.target.value)}
+          suffix="Ft"
+          helper="Egyéb, pénztárgépen kívüli készpénz bevétel"
+        />
+      </Card>
+
       {/* Cash registers section */}
       {cashRegisters.length === 0 ? (
         <Card className="border-2 border-dashed border-gray-300">
@@ -273,6 +539,9 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
           ))}
         </div>
       )}
+
+      {/* EFO Payments */}
+      <EfoPayments unitId={unitId} date={date} />
 
       {/* Color marking */}
       <Card
