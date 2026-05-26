@@ -40,7 +40,9 @@ export function useDailyRevenue(unitId, date) {
         .select('*')
         .eq('unit_id', unitId)
         .eq('date', date)
-        .single();
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
       if (error && error.code !== 'PGRST116') {
         throw error;
