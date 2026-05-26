@@ -72,11 +72,6 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
 
   useEffect(() => {
     if (revenue) {
-      console.log('Revenue data loaded:', {
-        total_revenue: revenue.total_revenue,
-        guest_count: revenue.guest_count,
-        raw_revenue: revenue
-      });
       setFormData({
         total_revenue: revenue.total_revenue || '',
         guest_count: revenue.guest_count || '',
