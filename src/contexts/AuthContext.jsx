@@ -6,9 +6,23 @@ export const AuthContext = createContext(null);
 
 // Predefined user roles based on email
 const EMAIL_ROLE_MAP = {
+  // Admins
   'gergo@pepperhouse.hu': { role: 'admin', unit_name: null },
   'info@pepperhouse.hu': { role: 'admin', unit_name: null },
+  'penzugy@pepperhouse.hu': { role: 'admin', unit_name: null },
+  'iroda@pepperhouse.hu': { role: 'admin', unit_name: null },
+  'hr@pepperhouse.hu': { role: 'admin', unit_name: null },
+
+  // Unit users
   'szentkiralyi@pepperhouse.hu': { role: 'unit', unit_name: 'Szentkirályi' },
+  'allamkincstar@pepperhouse.hu': { role: 'unit', unit_name: 'Államkincstár' },
+  'knorr69@pepperhouse.hu': { role: 'unit', unit_name: 'Knorr 69' },
+  'knorr86@pepperhouse.hu': { role: 'unit', unit_name: 'Knorr 86' },
+  'knorr105@pepperhouse.hu': { role: 'unit', unit_name: 'Knorr 105' },
+  'kti@pepperhouse.hu': { role: 'unit', unit_name: 'KTI' },
+  'rsr@pepperhouse.hu': { role: 'unit', unit_name: 'RSR' },
+
+  // Events
   'rendezveny@pepperhouse.hu': { role: 'events', unit_name: 'Rendezvény Egység' },
 };
 
