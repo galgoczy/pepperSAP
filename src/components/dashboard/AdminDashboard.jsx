@@ -52,6 +52,8 @@ export default function AdminDashboard() {
     recentExpenses: [],
     recentEntries: [],
     last5DaysRevenue: [],
+    weeklyChartData: [],
+    monthlyChartData: [],
     // Sales pipeline stats
     openDeals: 0,
     weightedForecast: 0,
@@ -204,6 +206,78 @@ export default function AdminDashboard() {
           };
         });
 
+        // Weekly chart data: Monday shows previous week, otherwise current week
+        const isMonday = now.getDay() === 1;
+        let weekStart, weekEnd;
+        if (isMonday) {
+          // Show previous week (Mon-Sun)
+          const prevMonday = new Date(now);
+          prevMonday.setDate(now.getDate() - 7);
+          weekStart = prevMonday;
+          weekEnd = new Date(prevMonday);
+          weekEnd.setDate(prevMonday.getDate() + 6);
+        } else {
+          // Show current week (from Monday to yesterday)
+          weekStart = monday;
+          weekEnd = yesterday;
+        }
+
+        const weekDays = [];
+        const currentWeekDate = new Date(weekStart);
+        while (currentWeekDate <= weekEnd) {
+          weekDays.push(currentWeekDate.toISOString().split('T')[0]);
+          currentWeekDate.setDate(currentWeekDate.getDate() + 1);
+        }
+
+        const { data: weeklyChartRaw } = await supabase
+          .from('daily_revenue')
+          .select('date, total_revenue')
+          .gte('date', weekDays[0])
+          .lte('date', weekDays[weekDays.length - 1] || weekDays[0]);
+
+        const weeklyRevenueByDate = {};
+        (weeklyChartRaw || []).forEach((r) => {
+          weeklyRevenueByDate[r.date] = (weeklyRevenueByDate[r.date] || 0) + (parseFloat(r.total_revenue) || 0);
+        });
+
+        const weeklyChartData = weekDays.map((date) => {
+          const d = new Date(date);
+          const dayName = d.toLocaleDateString('hu-HU', { weekday: 'short' });
+          return {
+            label: `${dayName} ${d.getDate()}.`,
+            value: weeklyRevenueByDate[date] || 0,
+            date,
+          };
+        });
+
+        // Monthly chart data: current month by day
+        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        const monthDays = [];
+        for (let i = 1; i <= Math.min(yesterday.getDate(), daysInMonth); i++) {
+          const d = new Date(now.getFullYear(), now.getMonth(), i);
+          monthDays.push(d.toISOString().split('T')[0]);
+        }
+
+        const { data: monthlyChartRaw } = await supabase
+          .from('daily_revenue')
+          .select('date, total_revenue')
+          .gte('date', firstDayOfMonth)
+          .lte('date', yesterdayStr);
+
+        const monthlyRevenueByDate = {};
+        (monthlyChartRaw || []).forEach((r) => {
+          monthlyRevenueByDate[r.date] = (monthlyRevenueByDate[r.date] || 0) + (parseFloat(r.total_revenue) || 0);
+        });
+
+        const monthlyChartData = monthDays.map((date) => {
+          const d = new Date(date);
+          return {
+            label: `${d.getDate()}.`,
+            value: monthlyRevenueByDate[date] || 0,
+            date,
+          };
+        });
+
         // Fetch deals for sales pipeline widget
         let dealsData = [];
         try {
@@ -282,6 +356,8 @@ export default function AdminDashboard() {
           units: units || [],
           previousDayRevenues: previousDayRevenues || [],
           last5DaysRevenue,
+          weeklyChartData,
+          monthlyChartData,
           // Sales pipeline
           openDeals: openDealsCount,
           weightedForecast,
@@ -572,16 +648,29 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* 5-day revenue trend chart */}
-      {stats.last5DaysRevenue?.length > 0 && (
-        <Card>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-gray-600">Elmúlt 5 nap forgalma</h3>
-            <TrendingUp className="h-4 w-4 text-gray-400" />
-          </div>
-          <MiniTrendChart data={stats.last5DaysRevenue} height={100} />
-        </Card>
-      )}
+      {/* Revenue trend chart - changes based on viewMode */}
+      {(() => {
+        const chartData = viewMode === 'monthly'
+          ? stats.monthlyChartData
+          : viewMode === 'weekly'
+            ? stats.weeklyChartData
+            : stats.last5DaysRevenue;
+        const chartTitle = viewMode === 'monthly'
+          ? `${new Date().toLocaleDateString('hu-HU', { month: 'long' })} napi forgalma`
+          : viewMode === 'weekly'
+            ? (new Date().getDay() === 1 ? 'Előző hét forgalma' : 'Aktuális hét forgalma')
+            : 'Elmúlt 5 nap forgalma';
+
+        return chartData?.length > 0 && (
+          <Card>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-600">{chartTitle}</h3>
+              <TrendingUp className="h-4 w-4 text-gray-400" />
+            </div>
+            <MiniTrendChart data={chartData} height={100} />
+          </Card>
+        );
+      })()}
 
       {/* Warnings */}
       {stats.missingData.length > 0 && (

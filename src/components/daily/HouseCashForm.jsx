@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Save, Wallet, Banknote, ArrowRight, TrendingUp, Calculator } from 'lucide-react';
 import { useHouseCash } from '../../hooks/useDailyRevenue';
 import { Card, Button, Input, LoadingSpinner } from '../common';
+import OpeningBalanceRevision from './OpeningBalanceRevision';
 import { formatCurrency } from '../../lib/utils';
 
 const DEFAULT_CHANGE_AMOUNT = 30000;
@@ -144,6 +145,12 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
             {formatCurrency(openingBalance)}
           </span>
         </div>
+        <OpeningBalanceRevision
+          unitId={unitId}
+          date={date}
+          currentBalance={openingBalance}
+          onRevisionApproved={() => window.location.reload()}
+        />
       </Card>
 
       {/* Change amount - separate info */}
