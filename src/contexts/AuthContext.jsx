@@ -77,7 +77,6 @@ export function AuthProvider({ children }) {
     // Create new profile
     const newProfile = {
       id: authUser.id,
-      email: email,
       full_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || email.split('@')[0],
       role: roleConfig.role,
       unit_id: unitId,
