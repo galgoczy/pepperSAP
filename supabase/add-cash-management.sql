@@ -162,6 +162,7 @@ ALTER TABLE cash_pockets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pocket_transactions ENABLE ROW LEVEL SECURITY;
 
 -- Transfers: users can see their unit's transfers, admins see all
+DROP POLICY IF EXISTS "Users can view their transfers" ON cash_transfers;
 CREATE POLICY "Users can view their transfers" ON cash_transfers
   FOR SELECT USING (
     EXISTS (
@@ -175,6 +176,7 @@ CREATE POLICY "Users can view their transfers" ON cash_transfers
     )
   );
 
+DROP POLICY IF EXISTS "Users can create transfers from their unit" ON cash_transfers;
 CREATE POLICY "Users can create transfers from their unit" ON cash_transfers
   FOR INSERT WITH CHECK (
     EXISTS (
@@ -184,6 +186,7 @@ CREATE POLICY "Users can create transfers from their unit" ON cash_transfers
     )
   );
 
+DROP POLICY IF EXISTS "Users can update transfers they receive or admin" ON cash_transfers;
 CREATE POLICY "Users can update transfers they receive or admin" ON cash_transfers
   FOR UPDATE USING (
     EXISTS (
@@ -197,21 +200,25 @@ CREATE POLICY "Users can update transfers they receive or admin" ON cash_transfe
   );
 
 -- Central payments, revisions, pockets: admin only
+DROP POLICY IF EXISTS "Admins can manage central_payments" ON central_payments;
 CREATE POLICY "Admins can manage central_payments" ON central_payments
   FOR ALL USING (
     EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role = 'admin')
   );
 
+DROP POLICY IF EXISTS "Admins can manage cash_revisions" ON cash_revisions;
 CREATE POLICY "Admins can manage cash_revisions" ON cash_revisions
   FOR ALL USING (
     EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role = 'admin')
   );
 
+DROP POLICY IF EXISTS "Admins can manage cash_pockets" ON cash_pockets;
 CREATE POLICY "Admins can manage cash_pockets" ON cash_pockets
   FOR ALL USING (
     EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role = 'admin')
   );
 
+DROP POLICY IF EXISTS "Admins can manage pocket_transactions" ON pocket_transactions;
 CREATE POLICY "Admins can manage pocket_transactions" ON pocket_transactions
   FOR ALL USING (
     EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role = 'admin')
@@ -221,11 +228,14 @@ CREATE POLICY "Admins can manage pocket_transactions" ON pocket_transactions
 -- TRIGGERS
 -- ============================================
 
+DROP TRIGGER IF EXISTS update_cash_transfers_updated_at ON cash_transfers;
 CREATE TRIGGER update_cash_transfers_updated_at BEFORE UPDATE
 ON cash_transfers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_central_payments_updated_at ON central_payments;
 CREATE TRIGGER update_central_payments_updated_at BEFORE UPDATE
 ON central_payments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_cash_pockets_updated_at ON cash_pockets;
 CREATE TRIGGER update_cash_pockets_updated_at BEFORE UPDATE
 ON cash_pockets FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
