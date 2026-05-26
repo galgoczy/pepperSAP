@@ -47,7 +47,7 @@ export default function Sidebar({ isOpen, onClose }) {
           show: !isAccountant,
         },
         {
-          label: 'Munkatér',
+          label: 'Pepper Placc',
           icon: MessageCircle,
           to: '/workspace',
           show: !isAccountant,
@@ -80,7 +80,7 @@ export default function Sidebar({ isOpen, onClose }) {
           label: 'Webáruház',
           icon: ShoppingCart,
           to: '/webshop',
-          show: noProfileYet || isAdmin || (!isEvents && !isAccountant),
+          show: noProfileYet || isAdmin,
         },
         {
           label: 'Rendezvények',

@@ -267,7 +267,7 @@ export default function WorkspacePage() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <MessageSquare className="h-7 w-7 text-pepper-red" />
-          Munkatér
+          Pepper Placc
         </h1>
         <p className="text-gray-600 mt-1">
           Belső kommunikáció és feladatok
