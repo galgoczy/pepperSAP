@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Plus, PartyPopper, ChevronRight, Calendar } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useEvents } from '../hooks/useEvents';
@@ -27,14 +27,18 @@ function groupEventsByMonth(events) {
 
 export default function EventsPage() {
   const { isAdmin, unitId } = useAuth();
+  const navigate = useNavigate();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const { events, loading, createEvent } = useEvents(isAdmin ? null : unitId);
 
   const groupedEvents = useMemo(() => groupEventsByMonth(events), [events]);
 
   const handleCreate = async (data) => {
-    await createEvent(data);
+    const newEvent = await createEvent(data);
     setIsFormOpen(false);
+    if (newEvent?.id) {
+      navigate(`/events/${newEvent.id}`);
+    }
   };
 
   if (loading) {

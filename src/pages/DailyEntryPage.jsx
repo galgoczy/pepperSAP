@@ -580,14 +580,31 @@ export default function DailyEntryPage() {
               <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 <span className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-sm font-bold">3</span>
                 Napi kifizetések
-                <Button
-                  size="sm"
-                  onClick={() => setShowExpenseForm(!showExpenseForm)}
-                  className="ml-auto"
-                >
-                  <Plus className="h-4 w-4" />
-                  Új kifizetés
-                </Button>
+                <div className="ml-auto flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => setShowExpenseForm(!showExpenseForm)}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Új kifizetés
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setShowEfoForm(true)}
+                  >
+                    <Users className="h-4 w-4" />
+                    EFO
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setShowWageForm(true)}
+                  >
+                    <Banknote className="h-4 w-4" />
+                    Heti bér
+                  </Button>
+                </div>
               </h2>
 
               {showExpenseForm && (
@@ -609,6 +626,42 @@ export default function DailyEntryPage() {
                 date={selectedDate}
                 onEditExpense={(expense) => setEditingExpense(expense)}
               />
+
+              {/* EFO payment modal for "Minden adat" tab */}
+              <Modal
+                isOpen={showEfoForm}
+                onClose={() => setShowEfoForm(false)}
+                title="Új EFO kifizetés"
+                size="lg"
+              >
+                <EfoPaymentForm
+                  unitId={effectiveUnitId}
+                  defaultDate={selectedDate}
+                  onSuccess={() => {
+                    setShowEfoForm(false);
+                    setExpenseRefreshKey(k => k + 1);
+                  }}
+                  onCancel={() => setShowEfoForm(false)}
+                />
+              </Modal>
+
+              {/* Wage payment modal for "Minden adat" tab */}
+              <Modal
+                isOpen={showWageForm}
+                onClose={() => setShowWageForm(false)}
+                title="Új Heti bér fizetés"
+                size="lg"
+              >
+                <WagePaymentForm
+                  unitId={effectiveUnitId}
+                  defaultDate={selectedDate}
+                  onSuccess={() => {
+                    setShowWageForm(false);
+                    setExpenseRefreshKey(k => k + 1);
+                  }}
+                  onCancel={() => setShowWageForm(false)}
+                />
+              </Modal>
             </div>
           </div>
         )}
