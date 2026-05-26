@@ -20,23 +20,23 @@ BEGIN
 
   -- Create cash registers if not exist
   INSERT INTO cash_registers (unit_id, ap_number, name, status)
-  VALUES (v_unit_id, 'A09111376', 'Pénztárgép 1', 'active')
+  VALUES (v_unit_id, 'APA09111376', 'Pénztárgép 1', 'active')
   ON CONFLICT (ap_number) DO NOTHING;
   INSERT INTO cash_registers (unit_id, ap_number, name, status)
-  VALUES (v_unit_id, 'A24010154', 'Pénztárgép 2', 'active')
+  VALUES (v_unit_id, 'APA24010154', 'Pénztárgép 2', 'active')
   ON CONFLICT (ap_number) DO NOTHING;
   INSERT INTO cash_registers (unit_id, ap_number, name, status)
-  VALUES (v_unit_id, 'A13609805', 'Pénztárgép 3', 'active')
+  VALUES (v_unit_id, 'APA13609805', 'Pénztárgép 3', 'active')
   ON CONFLICT (ap_number) DO NOTHING;
   INSERT INTO cash_registers (unit_id, ap_number, name, status)
-  VALUES (v_unit_id, 'A09110892', 'Pénztárgép 4', 'active')
+  VALUES (v_unit_id, 'APA09110892', 'Pénztárgép 4', 'active')
   ON CONFLICT (ap_number) DO NOTHING;
 
   -- Get cash register IDs
-  SELECT id INTO v_cr1_id FROM cash_registers WHERE ap_number = 'A09111376';
-  SELECT id INTO v_cr2_id FROM cash_registers WHERE ap_number = 'A24010154';
-  SELECT id INTO v_cr3_id FROM cash_registers WHERE ap_number = 'A13609805';
-  SELECT id INTO v_cr4_id FROM cash_registers WHERE ap_number = 'A09110892';
+  SELECT id INTO v_cr1_id FROM cash_registers WHERE ap_number = 'APA09111376';
+  SELECT id INTO v_cr2_id FROM cash_registers WHERE ap_number = 'APA24010154';
+  SELECT id INTO v_cr3_id FROM cash_registers WHERE ap_number = 'APA13609805';
+  SELECT id INTO v_cr4_id FROM cash_registers WHERE ap_number = 'APA09110892';
 
   -- 2026-04-01
   SELECT id INTO v_rev_id FROM daily_revenue WHERE unit_id = v_unit_id AND date = '2026-04-01';
