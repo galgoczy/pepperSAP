@@ -14,6 +14,12 @@ BEGIN
     RAISE EXCEPTION 'Unit Knorr 105 not found';
   END IF;
 
+  -- DELETE existing April-May 2026 data first
+  DELETE FROM daily_revenue
+  WHERE unit_id = v_unit_id
+    AND date >= '2026-04-01'
+    AND date <= '2026-05-31';
+
   -- =============================================
   -- APRIL 2026 Daily Revenue
   -- =============================================

@@ -14,6 +14,15 @@ BEGIN
     RAISE EXCEPTION 'Unit Knorr 105 not found';
   END IF;
 
+  -- DELETE existing April-May 2026 cash register revenue first
+  DELETE FROM cash_register_revenue
+  WHERE daily_revenue_id IN (
+    SELECT id FROM daily_revenue
+    WHERE unit_id = v_unit_id
+      AND date >= '2026-04-01'
+      AND date <= '2026-05-31'
+  );
+
   INSERT INTO cash_registers (unit_id, ap_number, name, status)
   VALUES (v_unit_id, 'APA09111376', 'Pénztárgép 1', 'active')
   ON CONFLICT (ap_number) DO NOTHING;
