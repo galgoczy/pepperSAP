@@ -72,6 +72,11 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
 
   useEffect(() => {
     if (revenue) {
+      console.log('Revenue data loaded:', {
+        total_revenue: revenue.total_revenue,
+        guest_count: revenue.guest_count,
+        raw_revenue: revenue
+      });
       setFormData({
         total_revenue: revenue.total_revenue || '',
         guest_count: revenue.guest_count || '',
@@ -335,7 +340,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
             )}
           </div>
           <Input
-            label="Fogyasztói létszám"
+            label="Napi fogyasztói létszám"
             type="number"
             step="1"
             min="0"
