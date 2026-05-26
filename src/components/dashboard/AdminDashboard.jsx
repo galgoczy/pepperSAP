@@ -19,6 +19,7 @@ import {
 import { Card, Badge, LoadingSpinner } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
+import { getPreviousWorkingDay, isWorkingDay } from '../../lib/holidays';
 import { useAnimatedNumber } from '../../hooks/useAnimatedNumber';
 import { MiniTrendChart } from '../charts/RevenueTrendChart';
 
@@ -46,7 +47,7 @@ export default function AdminDashboard() {
     previousDayDate: null,
     weeklyRevenue: 0,
     monthlyRevenue: 0,
-    yesterdayDiscrepancies: [],
+    previousDayDiscrepancies: [],
     missingData: [],
     houseCash: [],
     recentExpenses: [],
@@ -69,12 +70,13 @@ export default function AdminDashboard() {
   useEffect(() => {
     async function fetchDashboardData() {
       try {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        const now = new Date();
+
+        // Get previous working day (skips weekends and Hungarian holidays)
+        const previousWorkingDayStr = getPreviousWorkingDay(now);
+        const previousWorkingDay = new Date(previousWorkingDayStr);
 
         // Get first day of current month
-        const now = new Date();
         const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
           .toISOString().split('T')[0];
 
@@ -91,11 +93,11 @@ export default function AdminDashboard() {
           .select('*')
           .eq('is_active', true);
 
-        // Fetch YESTERDAY's revenue for all units (data is entered at end of day)
+        // Fetch previous working day's revenue for all units (skips weekends/holidays)
         const { data: previousDayRevenues } = await supabase
           .from('daily_revenue')
           .select('*, units(name)')
-          .eq('date', yesterdayStr);
+          .eq('date', previousWorkingDayStr);
 
         // Calculate total previous day revenue
         const previousDayTotal = (previousDayRevenues || []).reduce(
@@ -103,12 +105,12 @@ export default function AdminDashboard() {
           0
         );
 
-        // Fetch weekly revenue (from Monday to yesterday - not including today)
+        // Fetch weekly revenue (from Monday to previous working day)
         const { data: weeklyRevenues } = await supabase
           .from('daily_revenue')
           .select('total_revenue')
           .gte('date', mondayStr)
-          .lte('date', yesterdayStr);
+          .lte('date', previousWorkingDayStr);
 
         // Calculate weekly total
         const weeklyTotal = (weeklyRevenues || []).reduce(
@@ -116,12 +118,12 @@ export default function AdminDashboard() {
           0
         );
 
-        // Fetch monthly revenue (up to yesterday)
+        // Fetch monthly revenue (up to previous working day)
         const { data: monthlyRevenues } = await supabase
           .from('daily_revenue')
           .select('total_revenue')
           .gte('date', firstDayOfMonth)
-          .lte('date', yesterdayStr);
+          .lte('date', previousWorkingDayStr);
 
         // Calculate monthly total
         const monthlyTotal = (monthlyRevenues || []).reduce(
@@ -129,22 +131,22 @@ export default function AdminDashboard() {
           0
         );
 
-        // Check for discrepancies from yesterday
-        const { data: yesterdayRevenues } = await supabase
+        // Check for discrepancies from previous working day
+        const { data: prevDayDiscrepancies } = await supabase
           .from('daily_revenue')
           .select('*, units(name)')
-          .eq('date', yesterdayStr)
+          .eq('date', previousWorkingDayStr)
           .gt('discrepancy_amount', 0);
 
-        // Find units missing YESTERDAY's data (not today's)
-        const { data: yesterdayData } = await supabase
+        // Find units missing previous working day's data
+        const { data: prevDayData } = await supabase
           .from('daily_revenue')
           .select('unit_id')
-          .eq('date', yesterdayStr);
+          .eq('date', previousWorkingDayStr);
 
-        const unitsWithYesterdayData = new Set((yesterdayData || []).map((r) => r.unit_id));
+        const unitsWithPrevDayData = new Set((prevDayData || []).map((r) => r.unit_id));
         const restaurantUnits = (units || []).filter((u) => u.type === 'restaurant');
-        const missingUnits = restaurantUnits.filter((u) => !unitsWithYesterdayData.has(u.id));
+        const missingUnits = restaurantUnits.filter((u) => !unitsWithPrevDayData.has(u.id));
 
         // Fetch LATEST house cash for each unit (not just today's)
         const { data: latestHouseCash } = await supabase
@@ -176,19 +178,22 @@ export default function AdminDashboard() {
           .order('created_at', { ascending: false })
           .limit(20);
 
-        // Fetch last 5 days revenue for chart (ending with yesterday, not today)
-        const last5Days = [];
-        for (let i = 5; i >= 1; i--) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          last5Days.push(d.toISOString().split('T')[0]);
+        // Fetch last 5 working days revenue for chart (skips weekends/holidays)
+        const last5WorkingDays = [];
+        let tempDate = new Date(previousWorkingDayStr);
+        for (let i = 0; i < 5; i++) {
+          last5WorkingDays.unshift(tempDate.toISOString().split('T')[0]);
+          // Go back to previous working day
+          tempDate.setDate(tempDate.getDate() - 1);
+          while (!isWorkingDay(tempDate)) {
+            tempDate.setDate(tempDate.getDate() - 1);
+          }
         }
 
         const { data: last5DaysData } = await supabase
           .from('daily_revenue')
           .select('date, total_revenue')
-          .gte('date', last5Days[0])
-          .lte('date', last5Days[4]);
+          .in('date', last5WorkingDays);
 
         // Aggregate by date
         const revenueByDate = {};
@@ -196,7 +201,7 @@ export default function AdminDashboard() {
           revenueByDate[r.date] = (revenueByDate[r.date] || 0) + (parseFloat(r.total_revenue) || 0);
         });
 
-        const last5DaysRevenue = last5Days.map((date) => {
+        const last5DaysRevenue = last5WorkingDays.map((date) => {
           const d = new Date(date);
           const dayName = d.toLocaleDateString('hu-HU', { weekday: 'short' });
           return {
@@ -207,33 +212,35 @@ export default function AdminDashboard() {
         });
 
         // Weekly chart data: Monday shows previous week, otherwise current week
+        // Only include working days (Mon-Fri, excluding holidays)
         const isMonday = now.getDay() === 1;
         let weekStart, weekEnd;
         if (isMonday) {
-          // Show previous week (Mon-Sun)
+          // Show previous week (Mon-Fri)
           const prevMonday = new Date(now);
           prevMonday.setDate(now.getDate() - 7);
           weekStart = prevMonday;
           weekEnd = new Date(prevMonday);
-          weekEnd.setDate(prevMonday.getDate() + 6);
+          weekEnd.setDate(prevMonday.getDate() + 4); // Friday
         } else {
-          // Show current week (from Monday to yesterday)
+          // Show current week (from Monday to previous working day)
           weekStart = monday;
-          weekEnd = yesterday;
+          weekEnd = previousWorkingDay;
         }
 
         const weekDays = [];
         const currentWeekDate = new Date(weekStart);
         while (currentWeekDate <= weekEnd) {
-          weekDays.push(currentWeekDate.toISOString().split('T')[0]);
+          if (isWorkingDay(currentWeekDate)) {
+            weekDays.push(currentWeekDate.toISOString().split('T')[0]);
+          }
           currentWeekDate.setDate(currentWeekDate.getDate() + 1);
         }
 
-        const { data: weeklyChartRaw } = await supabase
+        const { data: weeklyChartRaw } = weekDays.length > 0 ? await supabase
           .from('daily_revenue')
           .select('date, total_revenue')
-          .gte('date', weekDays[0])
-          .lte('date', weekDays[weekDays.length - 1] || weekDays[0]);
+          .in('date', weekDays) : { data: [] };
 
         const weeklyRevenueByDate = {};
         (weeklyChartRaw || []).forEach((r) => {
@@ -250,19 +257,20 @@ export default function AdminDashboard() {
           };
         });
 
-        // Monthly chart data: current month by day
+        // Monthly chart data: current month, only working days
         const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
         const monthDays = [];
-        for (let i = 1; i <= Math.min(yesterday.getDate(), daysInMonth); i++) {
+        for (let i = 1; i <= Math.min(previousWorkingDay.getDate(), daysInMonth); i++) {
           const d = new Date(now.getFullYear(), now.getMonth(), i);
-          monthDays.push(d.toISOString().split('T')[0]);
+          if (isWorkingDay(d)) {
+            monthDays.push(d.toISOString().split('T')[0]);
+          }
         }
 
-        const { data: monthlyChartRaw } = await supabase
+        const { data: monthlyChartRaw } = monthDays.length > 0 ? await supabase
           .from('daily_revenue')
           .select('date, total_revenue')
-          .gte('date', firstDayOfMonth)
-          .lte('date', yesterdayStr);
+          .in('date', monthDays) : { data: [] };
 
         const monthlyRevenueByDate = {};
         (monthlyChartRaw || []).forEach((r) => {
@@ -345,10 +353,10 @@ export default function AdminDashboard() {
 
         setStats({
           previousDayRevenue: previousDayTotal,
-          previousDayDate: yesterdayStr,
+          previousDayDate: previousWorkingDayStr,
           weeklyRevenue: weeklyTotal,
           monthlyRevenue: monthlyTotal,
-          yesterdayDiscrepancies: yesterdayRevenues || [],
+          previousDayDiscrepancies: prevDayDiscrepancies || [],
           missingData: missingUnits,
           houseCash: houseCashData,
           recentExpenses: recentExpenses || [],
@@ -406,7 +414,7 @@ export default function AdminDashboard() {
       case 'monthly':
         return 'Havi forgalom';
       default:
-        return 'Tegnapi forgalom';
+        return 'Előző napi forgalom';
     }
   };
 
@@ -499,20 +507,20 @@ export default function AdminDashboard() {
               <p className="text-sm font-bold text-green-800">{formatCurrency(stats.previousDayRevenue)}</p>
             </div>
           )}
-          {(stats.yesterdayDiscrepancies.length > 0 || stats.missingData.length > 0) && (
+          {(stats.previousDayDiscrepancies.length > 0 || stats.missingData.length > 0) && (
             <div className={`rounded-lg p-3 text-center ${
-              stats.yesterdayDiscrepancies.length > 0 ? 'bg-red-50' : 'bg-yellow-50'
+              stats.previousDayDiscrepancies.length > 0 ? 'bg-red-50' : 'bg-yellow-50'
             }`}>
               <p className={`text-xs mb-1 ${
-                stats.yesterdayDiscrepancies.length > 0 ? 'text-red-600' : 'text-yellow-600'
+                stats.previousDayDiscrepancies.length > 0 ? 'text-red-600' : 'text-yellow-600'
               }`}>
-                {stats.yesterdayDiscrepancies.length > 0 ? 'Eltérések' : 'Hiányzó'}
+                {stats.previousDayDiscrepancies.length > 0 ? 'Eltérések' : 'Hiányzó'}
               </p>
               <p className={`text-sm font-bold ${
-                stats.yesterdayDiscrepancies.length > 0 ? 'text-red-800' : 'text-yellow-800'
+                stats.previousDayDiscrepancies.length > 0 ? 'text-red-800' : 'text-yellow-800'
               }`}>
-                {stats.yesterdayDiscrepancies.length > 0
-                  ? `${stats.yesterdayDiscrepancies.length} db`
+                {stats.previousDayDiscrepancies.length > 0
+                  ? `${stats.previousDayDiscrepancies.length} db`
                   : `${stats.missingData.length} egység`
                 }
               </p>
@@ -579,7 +587,7 @@ export default function AdminDashboard() {
               <TrendingUp className="h-6 w-6 text-green-700" />
             </div>
             <div className="min-w-0">
-              <p className="text-sm text-green-600 font-medium">Tegnapi forgalom</p>
+              <p className="text-sm text-green-600 font-medium">Előző napi forgalom</p>
               <p className="text-base font-bold text-green-800 break-words">
                 <AnimatedCurrency value={stats.previousDayRevenue} />
               </p>
@@ -615,16 +623,16 @@ export default function AdminDashboard() {
           </div>
         </Card>
 
-        {stats.yesterdayDiscrepancies.length > 0 && (
+        {stats.previousDayDiscrepancies.length > 0 && (
           <Card className="bg-gradient-to-br from-red-50 to-red-100 border-red-200">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-red-200 rounded-lg shrink-0">
                 <AlertTriangle className="h-6 w-6 text-red-700" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm text-red-600 font-medium">Tegnapi eltérések</p>
+                <p className="text-sm text-red-600 font-medium">Előző napi eltérések</p>
                 <p className="text-base font-bold text-red-800">
-                  {stats.yesterdayDiscrepancies.length}
+                  {stats.previousDayDiscrepancies.length}
                 </p>
               </div>
             </div>
@@ -678,9 +686,9 @@ export default function AdminDashboard() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
             <div>
-              <h3 className="font-medium text-yellow-800">Hiányzó tegnapi adatok</h3>
+              <h3 className="font-medium text-yellow-800">Hiányzó előző napi adatok</h3>
               <p className="text-sm text-yellow-700 mt-1">
-                Az alábbi egységeknél még nem rögzítettek tegnapi forgalmi adatokat:
+                Az alábbi egységeknél még nem rögzítettek előző napi forgalmi adatokat:
               </p>
               <div className="flex flex-wrap gap-2 mt-2">
                 {stats.missingData.map((unit) => (
@@ -697,10 +705,10 @@ export default function AdminDashboard() {
       {/* Unit revenues */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Yesterday's revenue by unit */}
-        <Card title="Tegnapi forgalom egységenként">
+        <Card title="Előző napi forgalom egységenként">
           {stats.previousDayRevenues?.length === 0 ? (
             <p className="text-gray-500 text-center py-4">
-              Még nincsenek tegnapi adatok
+              Még nincsenek előző napi adatok
             </p>
           ) : (
             <div className="space-y-3">
