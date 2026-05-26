@@ -354,116 +354,116 @@ BEGIN
   END IF;
 
   -- APRIL 2026 Expenses
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-02', 'TEDI', 'A23601070/0523/00001', 3150, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-09', 'Central Drinks', '2026/CD26007529', 77667, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-10', 'TEDI', 'A23601071/0527/00001', 4500, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-10', 'TESCO GLOBAL', 'A05702970/1656/00002', 13393, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-10', 'OÁZIS KFT', 'A23473726/0182/00002', 7370, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-10', 'HELIT KFT', '617053409', 56492, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-10', 'KICHEN SHOP HUNGARY', 'KC85724', 30120, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-13', 'Bike Cafe', '2026/00318', 10990, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-13', 'Tescoma', 'SZ/A28200150/1493/00001', 11860, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-11', 'Tesco', 'A05702970/1657/00001', 24093, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-16', 'HELIT', '617056668', 54334, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-23', 'HELIT', '617061157', 50424, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-23', 'AUCHAN MAGYARORSZÁG', 'AI09/0121821', 13491, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-18', 'Rojik Kft', 'M-002814-LI/2026', 1785, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-24', 'ALZA.hu', 'AHUW261102294', 222960, true, 'transfer', 'ez a tv RSR');
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-29', 'HELIT', '617064850', 66161, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-29', 'Meta', '816173190832598', 8027, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-30', 'Koták András', 'KA-2026-1', 40000, false, 'cash', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-30', 'Uni-Flock', '416185', 165796, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-27', 'Meta', '816173190832598', 7380, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-16', 'UNI-FLOCK KFT', '415260', 87276, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-16', 'UNI-FLOCK KFT', '415163', -87276, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-04-16', 'Metro', '2026-0-0-11-0010-011530', 16041, true, 'transfer', NULL);
 
   -- MAY 2026 Expenses
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-01', 'Tesco', 'A05702969/1677/00001', 31746, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-07', 'VOYAGEX MORINI KFT', 'KS2670550', 37793, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-07', 'HELIT KFT', '617069485', 121491, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-08', 'Altificer Hungary Kft', 'RTFCR-2026-5340', 28778, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-08', 'Rozmár', 'KS2670550', 37793, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-13', 'UNI-FLOCK', '417325', 142367, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-15', 'HELIT KFT', '617074783', 51337, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-15', 'CENTRAL DRINKS', '2026/CD26010865', 275551, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-18', 'Magyar Posta', 'SZ/0222011/03571/00001', 12000, false, 'cash', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-14', 'Klixon Kft', 'E-KLXN-2026-182', 19892, false, 'cash', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-06', 'Aldi', 'A05201524/0378/00001', 13279, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-14', 'ALZA.hu', 'dijbekérő 596319424', 69390, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-21', 'OÁZIS', 'A23473770/0218/00001', 2890, true, 'transfer', NULL);
 
-  INSERT INTO expenses (unit_id, invoice_date, vendor_name, invoice_number, amount, is_official, payment_method, notes)
+  INSERT INTO expenses (unit_id, invoice_date, supplier_name, invoice_number, amount, is_official, payment_method, notes)
   VALUES (v_unit_id, '2026-05-21', 'HELIT', '617078336', 157666, true, 'transfer', NULL);
 
 END $$;
