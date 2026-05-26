@@ -58,6 +58,7 @@ const TEST_ACCOUNTS = [
     role: 'Admin',
     icon: Shield,
     color: 'bg-red-600 hover:bg-red-700',
+    disabled: true,
   },
   {
     email: 'szentkiralyi@pepperhouse.hu',
@@ -65,6 +66,7 @@ const TEST_ACCOUNTS = [
     role: 'Étterem',
     icon: Store,
     color: 'bg-blue-600 hover:bg-blue-700',
+    disabled: false,
   },
   {
     email: 'rendezveny@pepperhouse.hu',
@@ -72,6 +74,7 @@ const TEST_ACCOUNTS = [
     role: 'Events',
     icon: PartyPopper,
     color: 'bg-purple-600 hover:bg-purple-700',
+    disabled: false,
   },
 ];
 
@@ -315,12 +318,13 @@ export default function LoginForm() {
             {TEST_ACCOUNTS.map((account) => {
               const Icon = account.icon;
               const isLoading = loadingAccount === account.email;
+              const isDisabled = loading || account.disabled;
               return (
                 <button
                   key={account.email}
-                  onClick={() => handleMicrosoftLogin(account.email)}
-                  disabled={loading}
-                  className={`${account.color} text-white rounded-lg p-3 flex flex-col items-center gap-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
+                  onClick={() => !account.disabled && handleMicrosoftLogin(account.email)}
+                  disabled={isDisabled}
+                  className={`${account.disabled ? 'bg-gray-300 cursor-not-allowed' : account.color} text-white rounded-lg p-3 flex flex-col items-center gap-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {isLoading ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
