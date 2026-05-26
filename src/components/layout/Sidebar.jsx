@@ -59,7 +59,7 @@ export default function Sidebar({ isOpen, onClose }) {
       title: 'Pénzügy',
       items: [
         {
-          label: 'Napi bevétel',
+          label: 'Napi jelentés',
           icon: CalendarDays,
           to: '/daily',
           show: noProfileYet || (!isEvents && !isAccountant),
