@@ -101,6 +101,12 @@ export default function Sidebar({ isOpen, onClose }) {
       title: 'Kontrolling',
       items: [
         {
+          label: 'Jelentések',
+          icon: FileText,
+          to: '/reports',
+          show: true,
+        },
+        {
           label: 'Terv-tény',
           icon: BarChart3,
           to: '/controlling',
@@ -111,12 +117,6 @@ export default function Sidebar({ isOpen, onClose }) {
           icon: Calculator,
           to: '/budget',
           show: noProfileYet || isAdmin,
-        },
-        {
-          label: 'Riportok',
-          icon: FileText,
-          to: '/reports',
-          show: true,
         },
       ],
     },

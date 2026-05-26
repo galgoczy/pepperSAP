@@ -1,6 +1,7 @@
 -- April 2026 Events Import
 -- Generated from rendezveny_aprilis.xlsx
 -- 13 events, total revenue: 5,591,430 Ft
+-- Updated with line_items breakdown
 
 DO $$
 DECLARE
@@ -18,8 +19,8 @@ BEGIN
   VALUES (events_unit_id, 'Koncert Maxakkord', 'event', '2026-04-10', 'Főzés helye: Knorr105')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'Koncert Maxakkord', 483526, 'transfer', '2026-04-10', 'Étel: 167400 Ft, Ital: 303126 Ft, Egyéb: 13000 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'Koncert Maxakkord', 380729, 27, 483526, 'transfer', '2026-04-10', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "167400"}, {"description": "Ital", "vat_rate": "27", "currency": "HUF", "gross_amount": "303126"}, {"description": "Egyéb", "vat_rate": "27", "currency": "HUF", "gross_amount": "13000"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 57060, 'Étel költség - Koncert Maxakkord', 'transfer', '2026-04-10');
@@ -33,8 +34,8 @@ BEGIN
   VALUES (events_unit_id, 'Rita Kft', 'event', '2026-04-10', 'Főzés helye: Knorr105')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'Rita Kft', 47400, 'transfer', '2026-04-10', 'Étel: 47400 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'Rita Kft', 37323, 27, 47400, 'transfer', '2026-04-10', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "47400"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 29844, 'Étel költség - Rita Kft', 'transfer', '2026-04-10');
@@ -44,8 +45,8 @@ BEGIN
   VALUES (events_unit_id, 'BPMK', 'event', '2026-04-14', 'Főzés helye: Knorr105')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'BPMK', 602679, 'transfer', '2026-04-14', 'Étel: 334264 Ft, Ital: 87122 Ft, Személyzet: 73025 Ft, Kitelepülés: 80328 Ft, Eszközbérlet: 27940 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'BPMK', 474550, 27, 602679, 'transfer', '2026-04-14', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "334264"}, {"description": "Ital", "vat_rate": "27", "currency": "HUF", "gross_amount": "87122"}, {"description": "Személyzet", "vat_rate": "27", "currency": "HUF", "gross_amount": "73025"}, {"description": "Kitelepülés", "vat_rate": "27", "currency": "HUF", "gross_amount": "80328"}, {"description": "Eszközbérlet", "vat_rate": "27", "currency": "HUF", "gross_amount": "27940"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 37194, 'Étel költség - BPMK', 'transfer', '2026-04-14');
@@ -59,8 +60,8 @@ BEGIN
   VALUES (events_unit_id, 'Károli GáspárEgyetem', 'event', '2026-04-15', 'Főzés helye: Knorr105')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'Károli GáspárEgyetem', 651969, 'transfer', '2026-04-15', 'Étel: 493801 Ft, Ital: 115811 Ft, Személyzet: 35857 Ft, Egyéb: 6500 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'Károli GáspárEgyetem', 513361, 27, 651969, 'transfer', '2026-04-15', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "493801"}, {"description": "Ital", "vat_rate": "27", "currency": "HUF", "gross_amount": "115811"}, {"description": "Személyzet", "vat_rate": "27", "currency": "HUF", "gross_amount": "35857"}, {"description": "Egyéb", "vat_rate": "27", "currency": "HUF", "gross_amount": "6500"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 74460, 'Étel költség - Károli GáspárEgyetem', 'transfer', '2026-04-15');
@@ -74,8 +75,8 @@ BEGIN
   VALUES (events_unit_id, 'Forever', 'event', '2026-04-17', 'Főzés helye: Knorr105')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'Forever', 458442, 'transfer', '2026-04-17', 'Étel: 261061 Ft, Ital: 43351 Ft, Személyzet: 36530 Ft, Kitelepülés: 57150 Ft, Bútor: 57150 Ft, Egyéb: 3200 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'Forever', 360978, 27, 458442, 'transfer', '2026-04-17', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "261061"}, {"description": "Ital", "vat_rate": "27", "currency": "HUF", "gross_amount": "43351"}, {"description": "Személyzet", "vat_rate": "27", "currency": "HUF", "gross_amount": "36530"}, {"description": "Kitelepülés", "vat_rate": "27", "currency": "HUF", "gross_amount": "57150"}, {"description": "Bútor", "vat_rate": "27", "currency": "HUF", "gross_amount": "57150"}, {"description": "Egyéb", "vat_rate": "27", "currency": "HUF", "gross_amount": "3200"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 40247, 'Étel költség - Forever', 'transfer', '2026-04-17');
@@ -91,8 +92,8 @@ BEGIN
   VALUES (events_unit_id, 'Knorr69 Konf.', 'event', '2026-04-17', 'Főzés helye: Knorr105')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'Knorr69 Konf.', 1129084, 'transfer', '2026-04-17', 'Étel: 782544 Ft, Ital: 283105 Ft, Személyzet: 55535 Ft, Egyéb: 7900 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'Knorr69 Konf.', 889043, 27, 1129084, 'transfer', '2026-04-17', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "782544"}, {"description": "Ital", "vat_rate": "27", "currency": "HUF", "gross_amount": "283105"}, {"description": "Személyzet", "vat_rate": "27", "currency": "HUF", "gross_amount": "55535"}, {"description": "Egyéb", "vat_rate": "27", "currency": "HUF", "gross_amount": "7900"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 251094, 'Étel költség - Knorr69 Konf.', 'transfer', '2026-04-17');
@@ -110,8 +111,8 @@ BEGIN
   VALUES (events_unit_id, 'Viki szülinap', 'event', '2026-04-18', 'Főzés helye: Szentkirályi')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'Viki szülinap', 342641, 'transfer', '2026-04-18', 'Étel: 311492 Ft, Személyzet: 31149 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'Viki szülinap', 269796, 27, 342641, 'transfer', '2026-04-18', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "311492"}, {"description": "Személyzet", "vat_rate": "27", "currency": "HUF", "gross_amount": "31149"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 68806, 'Étel költség - Viki szülinap', 'transfer', '2026-04-18');
@@ -123,8 +124,8 @@ BEGIN
   VALUES (events_unit_id, 'Csucsu szülinap', 'event', '2026-04-18', 'Főzés helye: Szentkirályi')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'Csucsu szülinap', 481900, 'transfer', '2026-04-18', 'Étel: 270000 Ft, Ital: 141900 Ft, Személyzet: 30000 Ft, Logisztika: 40000 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'Csucsu szülinap', 379449, 27, 481900, 'transfer', '2026-04-18', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "270000"}, {"description": "Ital", "vat_rate": "27", "currency": "HUF", "gross_amount": "141900"}, {"description": "Személyzet", "vat_rate": "27", "currency": "HUF", "gross_amount": "30000"}, {"description": "Logisztika", "vat_rate": "27", "currency": "HUF", "gross_amount": "40000"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 106185, 'Étel költség - Csucsu szülinap', 'transfer', '2026-04-18');
@@ -138,8 +139,8 @@ BEGIN
   VALUES (events_unit_id, 'Nyúl Kupa', 'event', '2026-04-19', 'Főzés helye: Szentkirályi')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'Nyúl Kupa', 330210, 'transfer', '2026-04-19', 'Étel: 267420 Ft, Ital: 62790 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'Nyúl Kupa', 260008, 27, 330210, 'transfer', '2026-04-19', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "267420"}, {"description": "Ital", "vat_rate": "27", "currency": "HUF", "gross_amount": "62790"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 66069, 'Étel költség - Nyúl Kupa', 'transfer', '2026-04-19');
@@ -153,8 +154,8 @@ BEGIN
   VALUES (events_unit_id, 'Colorcon', 'event', '2026-04-21', 'Főzés helye: MÁK')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'Colorcon', 465582, 'transfer', '2026-04-21', 'Étel: 427482 Ft, Logisztika: 38100 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'Colorcon', 366600, 27, 465582, 'transfer', '2026-04-21', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "427482"}, {"description": "Logisztika", "vat_rate": "27", "currency": "HUF", "gross_amount": "38100"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 117147, 'Étel költség - Colorcon', 'transfer', '2026-04-21');
@@ -166,8 +167,8 @@ BEGIN
   VALUES (events_unit_id, 'Shell', 'event', '2026-04-27', 'Főzés helye: MÁK')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'Shell', 139065, 'transfer', '2026-04-27', 'Étel: 120015 Ft, Logisztika: 19050 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'Shell', 109500, 27, 139065, 'transfer', '2026-04-27', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "120015"}, {"description": "Logisztika", "vat_rate": "27", "currency": "HUF", "gross_amount": "19050"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 25193, 'Étel költség - Shell', 'transfer', '2026-04-27');
@@ -179,8 +180,8 @@ BEGIN
   VALUES (events_unit_id, 'Colorcon', 'event', '2026-04-28', 'Főzés helye: MÁK')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'Colorcon', 243332, 'transfer', '2026-04-28', 'Étel: 217932 Ft, Logisztika: 25400 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'Colorcon', 191600, 27, 243332, 'transfer', '2026-04-28', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "217932"}, {"description": "Logisztika", "vat_rate": "27", "currency": "HUF", "gross_amount": "25400"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Logisztika', 5000, 'Logisztika költség - Colorcon', 'transfer', '2026-04-28');
@@ -190,8 +191,8 @@ BEGIN
   VALUES (events_unit_id, 'Pasek Gabi', 'event', '2026-04-30', 'Főzés helye: Knorr105')
   RETURNING id INTO new_event_id;
 
-  INSERT INTO event_revenues (event_id, unit_id, partner_name, amount, payment_method, invoice_date, notes)
-  VALUES (new_event_id, events_unit_id, 'Pasek Gabi', 215600, 'transfer', '2026-04-30', 'Étel: 215600 Ft');
+  INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
+  VALUES (new_event_id, events_unit_id, 'Pasek Gabi', 169764, 27, 215600, 'transfer', '2026-04-30', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "215600"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 43921, 'Étel költség - Pasek Gabi', 'transfer', '2026-04-30');
