@@ -178,22 +178,20 @@ export default function AdminDashboard() {
           .order('created_at', { ascending: false })
           .limit(20);
 
-        // Fetch last 5 working days revenue for chart (skips weekends/holidays)
-        const last5WorkingDays = [];
-        let tempDate = new Date(previousWorkingDayStr);
-        for (let i = 0; i < 5; i++) {
-          last5WorkingDays.unshift(tempDate.toISOString().split('T')[0]);
-          // Go back to previous working day
-          tempDate.setDate(tempDate.getDate() - 1);
-          while (!isWorkingDay(tempDate)) {
-            tempDate.setDate(tempDate.getDate() - 1);
-          }
+        // Fetch last 5 days revenue for chart (includes weekends)
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const last5Days = [];
+        for (let i = 4; i >= 0; i--) {
+          const d = new Date(yesterday);
+          d.setDate(yesterday.getDate() - i);
+          last5Days.push(d.toISOString().split('T')[0]);
         }
 
         const { data: last5DaysData } = await supabase
           .from('daily_revenue')
           .select('date, total_revenue')
-          .in('date', last5WorkingDays);
+          .in('date', last5Days);
 
         // Aggregate by date
         const revenueByDate = {};
@@ -201,7 +199,7 @@ export default function AdminDashboard() {
           revenueByDate[r.date] = (revenueByDate[r.date] || 0) + (parseFloat(r.total_revenue) || 0);
         });
 
-        const last5DaysRevenue = last5WorkingDays.map((date) => {
+        const last5DaysRevenue = last5Days.map((date) => {
           const d = new Date(date);
           const dayName = d.toLocaleDateString('hu-HU', { weekday: 'short' });
           return {
@@ -212,35 +210,34 @@ export default function AdminDashboard() {
         });
 
         // Weekly chart data: Monday shows previous week, otherwise current week
-        // Only include working days (Mon-Fri, excluding holidays)
+        // Includes all days (weekends too) for the chart
         const isMonday = now.getDay() === 1;
         let weekStart, weekEnd;
         if (isMonday) {
-          // Show previous week (Mon-Fri)
+          // Show previous week (Mon-Sun)
           const prevMonday = new Date(now);
           prevMonday.setDate(now.getDate() - 7);
           weekStart = prevMonday;
           weekEnd = new Date(prevMonday);
-          weekEnd.setDate(prevMonday.getDate() + 4); // Friday
+          weekEnd.setDate(prevMonday.getDate() + 6); // Sunday
         } else {
-          // Show current week (from Monday to previous working day)
+          // Show current week (from Monday to yesterday)
           weekStart = monday;
-          weekEnd = previousWorkingDay;
+          weekEnd = yesterday;
         }
 
         const weekDays = [];
         const currentWeekDate = new Date(weekStart);
         while (currentWeekDate <= weekEnd) {
-          if (isWorkingDay(currentWeekDate)) {
-            weekDays.push(currentWeekDate.toISOString().split('T')[0]);
-          }
+          weekDays.push(currentWeekDate.toISOString().split('T')[0]);
           currentWeekDate.setDate(currentWeekDate.getDate() + 1);
         }
 
         const { data: weeklyChartRaw } = weekDays.length > 0 ? await supabase
           .from('daily_revenue')
           .select('date, total_revenue')
-          .in('date', weekDays) : { data: [] };
+          .gte('date', weekDays[0])
+          .lte('date', weekDays[weekDays.length - 1]) : { data: [] };
 
         const weeklyRevenueByDate = {};
         (weeklyChartRaw || []).forEach((r) => {
@@ -257,20 +254,22 @@ export default function AdminDashboard() {
           };
         });
 
-        // Monthly chart data: current month, only working days
+        // Monthly chart data: current month, all days (including weekends)
         const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
         const monthDays = [];
-        for (let i = 1; i <= Math.min(previousWorkingDay.getDate(), daysInMonth); i++) {
+        for (let i = 1; i <= Math.min(yesterday.getDate(), daysInMonth); i++) {
           const d = new Date(now.getFullYear(), now.getMonth(), i);
-          if (isWorkingDay(d)) {
-            monthDays.push(d.toISOString().split('T')[0]);
-          }
+          monthDays.push(d.toISOString().split('T')[0]);
         }
+
+        const firstDayOfMonthStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
 
         const { data: monthlyChartRaw } = monthDays.length > 0 ? await supabase
           .from('daily_revenue')
           .select('date, total_revenue')
-          .in('date', monthDays) : { data: [] };
+          .gte('date', firstDayOfMonthStr)
+          .lte('date', yesterdayStr) : { data: [] };
 
         const monthlyRevenueByDate = {};
         (monthlyChartRaw || []).forEach((r) => {
