@@ -8,9 +8,11 @@ import DailyRevenueForm from '../components/daily/DailyRevenueForm';
 import HouseCashForm from '../components/daily/HouseCashForm';
 import DailyReport from '../components/daily/DailyReport';
 import ExpenseForm from '../components/expenses/ExpenseForm';
+import EfoPaymentForm from '../components/expenses/EfoPaymentForm';
+import WagePaymentForm from '../components/expenses/WagePaymentForm';
 import { getToday, formatCurrency, formatDate, PAYMENT_METHODS } from '../lib/utils';
 import { supabase } from '../lib/supabase';
-import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronRight, AlertTriangle, CheckCircle, FileText } from 'lucide-react';
+import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote } from 'lucide-react';
 
 // Helper to sanitize Hungarian characters for PDF
 function sanitizeForPdf(text) {
@@ -44,6 +46,8 @@ export default function DailyEntryPage() {
   const urlUnitParam = searchParams.get('unit');
   const [selectedUnit, setSelectedUnit] = useState(urlUnitParam || unitId || '');
   const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [showEfoForm, setShowEfoForm] = useState(false);
+  const [showWageForm, setShowWageForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [expenseRefreshKey, setExpenseRefreshKey] = useState(0);
 
@@ -627,10 +631,18 @@ export default function DailyEntryPage() {
 
         {activeTab === 'expenses' && (
           <div className="space-y-4">
-            <div className="flex justify-end">
+            <div className="flex flex-wrap gap-2 justify-end">
               <Button onClick={() => setShowExpenseForm(!showExpenseForm)}>
                 <Plus className="h-4 w-4" />
                 Új kifizetés
+              </Button>
+              <Button variant="secondary" onClick={() => setShowEfoForm(true)}>
+                <Users className="h-4 w-4" />
+                Új EFO kifizetés
+              </Button>
+              <Button variant="secondary" onClick={() => setShowWageForm(true)}>
+                <Banknote className="h-4 w-4" />
+                Új Heti bér
               </Button>
             </div>
 
@@ -653,6 +665,42 @@ export default function DailyEntryPage() {
               date={selectedDate}
               onEditExpense={(expense) => setEditingExpense(expense)}
             />
+
+            {/* EFO payment modal */}
+            <Modal
+              isOpen={showEfoForm}
+              onClose={() => setShowEfoForm(false)}
+              title="Új EFO kifizetés"
+              size="lg"
+            >
+              <EfoPaymentForm
+                unitId={effectiveUnitId}
+                defaultDate={selectedDate}
+                onSuccess={() => {
+                  setShowEfoForm(false);
+                  setExpenseRefreshKey(k => k + 1);
+                }}
+                onCancel={() => setShowEfoForm(false)}
+              />
+            </Modal>
+
+            {/* Wage payment modal */}
+            <Modal
+              isOpen={showWageForm}
+              onClose={() => setShowWageForm(false)}
+              title="Új Heti bér fizetés"
+              size="lg"
+            >
+              <WagePaymentForm
+                unitId={effectiveUnitId}
+                defaultDate={selectedDate}
+                onSuccess={() => {
+                  setShowWageForm(false);
+                  setExpenseRefreshKey(k => k + 1);
+                }}
+                onCancel={() => setShowWageForm(false)}
+              />
+            </Modal>
           </div>
         )}
 

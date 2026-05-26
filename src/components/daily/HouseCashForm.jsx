@@ -19,18 +19,18 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
   // Opening balance from previous day's closing
   const openingBalance = previousDayClosing || 0;
 
-  // Auto-calculated values from hook
+  // Auto-calculated values from hook (with defaults to prevent NaN)
   const {
-    cashInvoiceExpenses,      // Készpénzes számlák (auto from expenses)
-    nonInvoiceExpenses,       // Nem számlás kifizetések (auto from expenses)
-    totalCashRegisterCash,    // Napi forgalom (auto from cash registers)
-    totalCashRegisterRevenue, // Pénztárgép összes bevétel
-    softwareRevenue,          // Szoftver bevétel
-    wageTypePayments = 0,     // Bér jellegű kifizetések (EFO + wage)
-  } = calculatedData;
+    cashInvoiceExpenses = 0,      // Készpénzes számlák (auto from expenses)
+    nonInvoiceExpenses = 0,       // Nem számlás kifizetések (auto from expenses)
+    totalCashRegisterCash = 0,    // Napi forgalom (auto from cash registers)
+    totalCashRegisterRevenue = 0, // Pénztárgép összes bevétel
+    softwareRevenue = 0,          // Szoftver bevétel
+    wageTypePayments = 0,         // Bér jellegű kifizetések (EFO + wage)
+  } = calculatedData || {};
 
   // Software vs cash register difference (calculated)
-  const softwareCashRegisterDiff = softwareRevenue - totalCashRegisterRevenue;
+  const softwareCashRegisterDiff = (softwareRevenue || 0) - (totalCashRegisterRevenue || 0);
 
   useEffect(() => {
     if (houseCash) {

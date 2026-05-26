@@ -9,14 +9,14 @@ import toast from 'react-hot-toast';
 const QUALIFICATION_THRESHOLD = 22000;
 const NON_QUALIFICATION_THRESHOLD = 19000;
 
-export default function EfoPaymentForm({ onSuccess, onCancel, unitId: propUnitId }) {
+export default function EfoPaymentForm({ onSuccess, onCancel, unitId: propUnitId, defaultDate }) {
   const { isAdmin, unitId: authUnitId } = useAuth();
   const { units } = useUnits();
   const [saving, setSaving] = useState(false);
 
   const [formData, setFormData] = useState({
     unit_id: propUnitId || authUnitId || '',
-    payment_date: new Date().toISOString().split('T')[0],
+    payment_date: defaultDate || new Date().toISOString().split('T')[0],
     employee_name: '',
     total_amount: '',
     requires_qualification: true,
@@ -28,7 +28,10 @@ export default function EfoPaymentForm({ onSuccess, onCancel, unitId: propUnitId
     if (!formData.unit_id && (propUnitId || authUnitId)) {
       setFormData(prev => ({ ...prev, unit_id: propUnitId || authUnitId }));
     }
-  }, [propUnitId, authUnitId, formData.unit_id]);
+    if (defaultDate && formData.payment_date !== defaultDate) {
+      setFormData(prev => ({ ...prev, payment_date: defaultDate }));
+    }
+  }, [propUnitId, authUnitId, formData.unit_id, defaultDate, formData.payment_date]);
 
   const unitOptions = units
     .filter(u => u.type === 'restaurant')
