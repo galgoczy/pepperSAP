@@ -16,6 +16,7 @@ export default function EventForm({ event, onSuccess, onCancel }) {
     event_type: 'event',
     event_date: getToday(),
     description: '',
+    cooking_location_id: '',
   });
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export default function EventForm({ event, onSuccess, onCancel }) {
         event_type: event.event_type || 'event',
         event_date: event.event_date || getToday(),
         description: event.description || '',
+        cooking_location_id: event.cooking_location_id || '',
       });
     }
   }, [event, userUnitId]);
@@ -48,11 +50,19 @@ export default function EventForm({ event, onSuccess, onCancel }) {
   };
 
   const eventsUnits = units.filter((u) => u.type === 'events');
+  const restaurantUnits = units.filter((u) => u.type === 'restaurant');
 
   const eventTypeOptions = Object.entries(EVENT_TYPES).map(([value, label]) => ({
     value,
     label,
   }));
+
+  const cookingLocationOptions = [
+    { value: '', label: 'Válassz helyszínt...' },
+    ...restaurantUnits
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((u) => ({ value: u.id, label: u.name })),
+  ];
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -91,6 +101,13 @@ export default function EventForm({ event, onSuccess, onCancel }) {
           required
         />
       </div>
+
+      <Select
+        label="Főzés helye"
+        value={formData.cooking_location_id}
+        onChange={(e) => handleChange('cooking_location_id', e.target.value)}
+        options={cookingLocationOptions}
+      />
 
       <Textarea
         label="Leírás"

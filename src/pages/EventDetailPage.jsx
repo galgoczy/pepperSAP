@@ -8,9 +8,11 @@ import {
   Printer,
   TrendingUp,
   TrendingDown,
+  ChefHat,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useEvent } from '../hooks/useEvents';
+import { useUnits } from '../hooks/useSupabase';
 import {
   Card,
   Button,
@@ -35,6 +37,7 @@ export default function EventDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   useAuth();
+  const { units } = useUnits();
 
   const {
     event,
@@ -87,6 +90,8 @@ export default function EventDetailPage() {
   const totalExpenses = expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
   const profit = totalRevenue - totalExpenses;
 
+  const cookingLocation = units.find((u) => u.id === event?.cooking_location_id);
+
   const handleDelete = async () => {
     await deleteEvent();
     navigate('/events');
@@ -113,11 +118,17 @@ export default function EventDetailPage() {
         </button>
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900">{event.name}</h1>
-          <div className="flex items-center gap-3 mt-1">
+          <div className="flex items-center gap-3 mt-1 flex-wrap">
             <Badge variant="primary">
               {EVENT_TYPES[event.event_type] || event.event_type}
             </Badge>
             <span className="text-gray-500">{formatDate(event.event_date)}</span>
+            {cookingLocation && (
+              <span className="flex items-center gap-1 text-gray-500">
+                <ChefHat className="h-4 w-4" />
+                {cookingLocation.name}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex gap-2">
