@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, PartyPopper, ChevronRight, Calendar } from 'lucide-react';
+import { Plus, PartyPopper, ChevronRight, Calendar, ChefHat } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useEvents } from '../hooks/useEvents';
 import { Card, Button, Modal, Badge, LoadingSpinner, EmptyState } from '../components/common';
@@ -116,9 +116,15 @@ export default function EventsPage() {
                           {event.name}
                         </h3>
 
-                        <p className="text-sm text-gray-500 mb-4">
-                          {formatDate(event.event_date)}
-                        </p>
+                        <div className="text-sm text-gray-500 mb-4 space-y-1">
+                          <p>{formatDate(event.event_date)}</p>
+                          {event.cooking_location && (
+                            <p className="flex items-center gap-1">
+                              <ChefHat className="h-3 w-3" />
+                              {event.cooking_location.name}
+                            </p>
+                          )}
+                        </div>
 
                         {event.description && (
                           <p className="text-sm text-gray-600 mb-4 line-clamp-2">
