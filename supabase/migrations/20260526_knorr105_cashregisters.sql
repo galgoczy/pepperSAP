@@ -19,17 +19,17 @@ BEGIN
   END IF;
 
   -- Create cash registers if not exist
-  INSERT INTO cash_registers (unit_id, ap_number, name, is_active)
-  VALUES (v_unit_id, 'A09111376', 'Pénztárgép 1', true)
+  INSERT INTO cash_registers (unit_id, ap_number, name, status)
+  VALUES (v_unit_id, 'A09111376', 'Pénztárgép 1', 'active')
   ON CONFLICT (ap_number) DO NOTHING;
-  INSERT INTO cash_registers (unit_id, ap_number, name, is_active)
-  VALUES (v_unit_id, 'A24010154', 'Pénztárgép 2', true)
+  INSERT INTO cash_registers (unit_id, ap_number, name, status)
+  VALUES (v_unit_id, 'A24010154', 'Pénztárgép 2', 'active')
   ON CONFLICT (ap_number) DO NOTHING;
-  INSERT INTO cash_registers (unit_id, ap_number, name, is_active)
-  VALUES (v_unit_id, 'A13609805', 'Pénztárgép 3', true)
+  INSERT INTO cash_registers (unit_id, ap_number, name, status)
+  VALUES (v_unit_id, 'A13609805', 'Pénztárgép 3', 'active')
   ON CONFLICT (ap_number) DO NOTHING;
-  INSERT INTO cash_registers (unit_id, ap_number, name, is_active)
-  VALUES (v_unit_id, 'A09110892', 'Pénztárgép 4', true)
+  INSERT INTO cash_registers (unit_id, ap_number, name, status)
+  VALUES (v_unit_id, 'A09110892', 'Pénztárgép 4', 'active')
   ON CONFLICT (ap_number) DO NOTHING;
 
   -- Get cash register IDs
