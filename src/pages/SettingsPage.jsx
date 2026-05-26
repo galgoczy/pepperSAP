@@ -123,38 +123,40 @@ export default function SettingsPage() {
         </form>
       </Card>
 
-      {/* Password Section */}
+      {/* Password Section - Currently disabled */}
       <Card
         title={
           <div className="flex items-center gap-2">
-            <Lock className="h-5 w-5 text-gray-400" />
-            Jelszó módosítása
+            <Lock className="h-5 w-5 text-gray-300" />
+            <span className="text-gray-400">Jelszó módosítása</span>
           </div>
         }
       >
-        <form onSubmit={handleChangePassword} className="space-y-4">
+        <div className="space-y-4 opacity-50">
           <Input
             label="Új jelszó"
             type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            required
+            value=""
+            disabled
           />
 
           <Input
             label="Új jelszó megerősítése"
             type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
+            value=""
+            disabled
           />
 
+          <p className="text-sm text-gray-500 italic">
+            A jelszó módosítása jelenleg nem elérhető. Microsoft fiókkal történő bejelentkezés esetén a jelszót a Microsoft felületén lehet módosítani.
+          </p>
+
           <div className="pt-4">
-            <Button type="submit" loading={loading}>
+            <Button type="button" disabled>
               Jelszó megváltoztatása
             </Button>
           </div>
-        </form>
+        </div>
       </Card>
 
       {/* Display Settings (Admin only) */}
