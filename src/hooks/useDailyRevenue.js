@@ -46,6 +46,7 @@ export function useDailyRevenue(unitId, date) {
         throw error;
       }
 
+      console.log('Fetched daily revenue:', dailyRevenue);
       setRevenue(dailyRevenue || null);
 
       // If we have a daily_revenue record, fetch cash register data with register info
