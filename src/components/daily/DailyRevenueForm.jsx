@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark, Banknote } from 'lucide-react';
+import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark } from 'lucide-react';
 import { useDailyRevenue } from '../../hooks/useDailyRevenue';
 import { useActiveCashRegisters, useAllCashRegisterRevenue } from '../../hooks/useCashRegisterRevenue';
 import { Card, Button, Input, LoadingSpinner } from '../common';
 import CashRegisterSection from './CashRegisterSection';
-import EfoPayments from './EfoPayments';
 import { formatCurrency } from '../../lib/utils';
 import toast from 'react-hot-toast';
 
@@ -47,8 +46,6 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     mckinsey_net: '',
     mckinsey_gross: '',
     mckinsey_vat_rate: 27,
-    // Extra cash revenue
-    extra_cash_revenue: '',
   });
   const [expandedRegisters, setExpandedRegisters] = useState({});
   const cashRegisterDataRef = useRef({});
@@ -88,8 +85,6 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         mckinsey_net: revenue.mckinsey_net || '',
         mckinsey_gross: revenue.mckinsey_gross || '',
         mckinsey_vat_rate: revenue.mckinsey_vat_rate ?? 27,
-        // Extra cash revenue
-        extra_cash_revenue: revenue.extra_cash_revenue || '',
       });
     } else {
       setFormData({
@@ -105,7 +100,6 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         mckinsey_net: '',
         mckinsey_gross: '',
         mckinsey_vat_rate: 27,
-        extra_cash_revenue: '',
       });
     }
   }, [revenue, date]);
@@ -346,37 +340,48 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         </div>
       </Card>
 
-      {/* VIP Section - info only */}
-      <Card
-        title={
-          <div className="flex items-center gap-2">
-            <Star className="h-5 w-5 text-amber-500" />
-            VIP
+      {/* Cash registers section */}
+      {cashRegisters.length === 0 ? (
+        <Card className="border-2 border-dashed border-gray-300">
+          <div className="text-center py-6">
+            <AlertCircle className="h-12 w-12 mx-auto text-gray-300 mb-3" />
+            <h3 className="text-lg font-medium text-gray-600">
+              Nincsenek aktív pénztárgépek
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Először vegyél fel pénztárgépeket az Egységek menüben
+            </p>
           </div>
-        }
-      >
-        <p className="text-sm text-gray-500 mb-4">
-          VIP adatok - csak tájékoztató jellegű, nem számít bele a forgalomba
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input
-            label="VIP töltés"
-            type="number"
-            step="0.01"
-            value={formData.vip_loading}
-            onChange={(e) => handleChange('vip_loading', e.target.value)}
-            suffix="Ft"
-          />
-          <Input
-            label="VIP forgalom"
-            type="number"
-            step="0.01"
-            value={formData.vip_revenue}
-            onChange={(e) => handleChange('vip_revenue', e.target.value)}
-            suffix="Ft"
-          />
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-pepper-red" />
+              Pénztárgépek ({cashRegisters.length})
+            </h2>
+            <div className="text-right">
+              <div className="text-sm text-gray-500">Összes forgalom</div>
+              <div className="text-lg font-bold text-gray-900">
+                {formatCurrency(totalCashRegisterRevenue)}
+              </div>
+            </div>
+          </div>
+
+          {cashRegisters.map((register) => (
+            <CashRegisterSection
+              key={register.id}
+              register={register}
+              existingData={existingDataByRegister()[register.id]}
+              onChange={handleCashRegisterChange}
+              expanded={expandedRegisters[register.id]}
+              onToggleExpand={() => toggleExpand(register.id)}
+              unitName={unitName}
+              date={date}
+            />
+          ))}
         </div>
-      </Card>
+      )}
 
       {/* Protocol Revenue Section */}
       <Card
@@ -477,71 +482,37 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         </Card>
       )}
 
-      {/* Extra Cash Revenue */}
+      {/* VIP Section - info only */}
       <Card
         title={
           <div className="flex items-center gap-2">
-            <Banknote className="h-5 w-5 text-green-600" />
-            Egyéb készpénz bevétel
+            <Star className="h-5 w-5 text-amber-500" />
+            VIP
           </div>
         }
       >
-        <Input
-          label="Összeg"
-          type="number"
-          step="0.01"
-          value={formData.extra_cash_revenue}
-          onChange={(e) => handleChange('extra_cash_revenue', e.target.value)}
-          suffix="Ft"
-          helper="Egyéb, pénztárgépen kívüli készpénz bevétel"
-        />
-      </Card>
-
-      {/* Cash registers section */}
-      {cashRegisters.length === 0 ? (
-        <Card className="border-2 border-dashed border-gray-300">
-          <div className="text-center py-6">
-            <AlertCircle className="h-12 w-12 mx-auto text-gray-300 mb-3" />
-            <h3 className="text-lg font-medium text-gray-600">
-              Nincsenek aktív pénztárgépek
-            </h3>
-            <p className="text-sm text-gray-500 mt-1">
-              Először vegyél fel pénztárgépeket az Egységek menüben
-            </p>
-          </div>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <Calculator className="h-5 w-5 text-pepper-red" />
-              Pénztárgépek ({cashRegisters.length})
-            </h2>
-            <div className="text-right">
-              <div className="text-sm text-gray-500">Összes forgalom</div>
-              <div className="text-lg font-bold text-gray-900">
-                {formatCurrency(totalCashRegisterRevenue)}
-              </div>
-            </div>
-          </div>
-
-          {cashRegisters.map((register) => (
-            <CashRegisterSection
-              key={register.id}
-              register={register}
-              existingData={existingDataByRegister()[register.id]}
-              onChange={handleCashRegisterChange}
-              expanded={expandedRegisters[register.id]}
-              onToggleExpand={() => toggleExpand(register.id)}
-              unitName={unitName}
-              date={date}
-            />
-          ))}
+        <p className="text-sm text-gray-500 mb-4">
+          VIP adatok - csak tájékoztató jellegű, nem számít bele a forgalomba
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Input
+            label="VIP töltés"
+            type="number"
+            step="0.01"
+            value={formData.vip_loading}
+            onChange={(e) => handleChange('vip_loading', e.target.value)}
+            suffix="Ft"
+          />
+          <Input
+            label="VIP forgalom"
+            type="number"
+            step="0.01"
+            value={formData.vip_revenue}
+            onChange={(e) => handleChange('vip_revenue', e.target.value)}
+            suffix="Ft"
+          />
         </div>
-      )}
-
-      {/* EFO Payments */}
-      <EfoPayments unitId={unitId} date={date} />
+      </Card>
 
       {/* Color marking */}
       <Card

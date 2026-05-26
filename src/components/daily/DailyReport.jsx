@@ -29,17 +29,17 @@ export default function DailyReport({ date, unitId }) {
     );
   }
 
-  // Extract calculated data
+  // Extract calculated data with defaults to prevent NaN
   const {
-    officialExpenses,
-    nonOfficialExpenses,
-    totalCashRegisterCash,
-    totalCashRegisterCard,
-    totalCashRegisterRevenue,
-    softwareRevenue,
-    totalDiscrepancies,
-    adjustedCash,
-  } = calculatedData;
+    officialExpenses = 0,
+    nonOfficialExpenses = 0,
+    totalCashRegisterCash = 0,
+    totalCashRegisterCard = 0,
+    totalCashRegisterRevenue = 0,
+    softwareRevenue = 0,
+    totalDiscrepancies = 0,
+    adjustedCash = 0,
+  } = calculatedData || {};
 
   // Use aggregated cash register totals from the hook
   const cashRegisterTotal =
