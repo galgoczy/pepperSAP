@@ -1,7 +1,7 @@
 -- April 2026 Events Import
 -- Generated from rendezveny_aprilis.xlsx
 -- 13 events, total revenue: 5,591,430 Ft
--- Updated with line_items breakdown
+-- Updated with line_items breakdown and cooking_location_id
 
 -- First, delete existing April 2026 event data to avoid duplicates
 DELETE FROM event_expenses WHERE event_id IN (
@@ -16,16 +16,24 @@ DO $$
 DECLARE
   events_unit_id UUID;
   new_event_id UUID;
+  knorr105_id UUID;
+  szentkiralyi_id UUID;
+  allamkincstar_id UUID;
 BEGIN
   SELECT id INTO events_unit_id FROM units WHERE type = 'events' LIMIT 1;
-  
+
   IF events_unit_id IS NULL THEN
     RAISE EXCEPTION 'No events unit found';
   END IF;
 
-  -- Event: Koncert Maxakkord (2026-04-10)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'Koncert Maxakkord', 'event', '2026-04-10', 'Főzés helye: Knorr105')
+  -- Get cooking location unit IDs
+  SELECT id INTO knorr105_id FROM units WHERE name = 'Knorr 105' LIMIT 1;
+  SELECT id INTO szentkiralyi_id FROM units WHERE name = 'Szentkirályi' LIMIT 1;
+  SELECT id INTO allamkincstar_id FROM units WHERE name = 'Államkincstár' LIMIT 1;
+
+  -- Event: Koncert Maxakkord (2026-04-10) - Főzés helye: Knorr 105
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'Koncert Maxakkord', 'event', '2026-04-10', NULL, knorr105_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
@@ -38,9 +46,9 @@ BEGIN
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Logisztika', 4000, 'Logisztika költség - Koncert Maxakkord', 'transfer', '2026-04-10');
 
-  -- Event: Rita Kft (2026-04-10)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'Rita Kft', 'event', '2026-04-10', 'Főzés helye: Knorr105')
+  -- Event: Rita Kft (2026-04-10) - Főzés helye: Knorr 105
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'Rita Kft', 'event', '2026-04-10', NULL, knorr105_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
@@ -49,9 +57,9 @@ BEGIN
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 29844, 'Étel költség - Rita Kft', 'transfer', '2026-04-10');
 
-  -- Event: BPMK (2026-04-14)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'BPMK', 'event', '2026-04-14', 'Főzés helye: Knorr105')
+  -- Event: BPMK (2026-04-14) - Főzés helye: Knorr 105
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'BPMK', 'event', '2026-04-14', NULL, knorr105_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
@@ -64,24 +72,24 @@ BEGIN
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Logisztika', 3000, 'Logisztika költség - BPMK', 'transfer', '2026-04-14');
 
-  -- Event: Károli GáspárEgyetem (2026-04-15)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'Károli GáspárEgyetem', 'event', '2026-04-15', 'Főzés helye: Knorr105')
+  -- Event: Károli Gáspár Egyetem (2026-04-15) - Főzés helye: Knorr 105
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'Károli Gáspár Egyetem', 'event', '2026-04-15', NULL, knorr105_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
-  VALUES (new_event_id, events_unit_id, 'Károli GáspárEgyetem', 513361, 27, 651969, 'transfer', '2026-04-15', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "493801"}, {"description": "Ital", "vat_rate": "27", "currency": "HUF", "gross_amount": "115811"}, {"description": "Személyzet", "vat_rate": "27", "currency": "HUF", "gross_amount": "35857"}, {"description": "Egyéb", "vat_rate": "27", "currency": "HUF", "gross_amount": "6500"}]');
+  VALUES (new_event_id, events_unit_id, 'Károli Gáspár Egyetem', 513361, 27, 651969, 'transfer', '2026-04-15', '[{"description": "Étel", "vat_rate": "27", "currency": "HUF", "gross_amount": "493801"}, {"description": "Ital", "vat_rate": "27", "currency": "HUF", "gross_amount": "115811"}, {"description": "Személyzet", "vat_rate": "27", "currency": "HUF", "gross_amount": "35857"}, {"description": "Egyéb", "vat_rate": "27", "currency": "HUF", "gross_amount": "6500"}]');
 
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
-  VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 74460, 'Étel költség - Károli GáspárEgyetem', 'transfer', '2026-04-15');
+  VALUES (new_event_id, events_unit_id, 'Alapanyag - Étel', 74460, 'Étel költség - Károli Gáspár Egyetem', 'transfer', '2026-04-15');
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
-  VALUES (new_event_id, events_unit_id, 'Alapanyag - Ital', 34940, 'Ital költség - Károli GáspárEgyetem', 'transfer', '2026-04-15');
+  VALUES (new_event_id, events_unit_id, 'Alapanyag - Ital', 34940, 'Ital költség - Károli Gáspár Egyetem', 'transfer', '2026-04-15');
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
-  VALUES (new_event_id, events_unit_id, 'Logisztika', 5000, 'Logisztika költség - Károli GáspárEgyetem', 'transfer', '2026-04-15');
+  VALUES (new_event_id, events_unit_id, 'Logisztika', 5000, 'Logisztika költség - Károli Gáspár Egyetem', 'transfer', '2026-04-15');
 
-  -- Event: Forever (2026-04-17)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'Forever', 'event', '2026-04-17', 'Főzés helye: Knorr105')
+  -- Event: Forever (2026-04-17) - Főzés helye: Knorr 105
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'Forever', 'event', '2026-04-17', NULL, knorr105_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
@@ -96,9 +104,9 @@ BEGIN
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Logisztika', 4500, 'Logisztika költség - Forever', 'transfer', '2026-04-17');
 
-  -- Event: Knorr69 Konf. (2026-04-17)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'Knorr69 Konf.', 'event', '2026-04-17', 'Főzés helye: Knorr105')
+  -- Event: Knorr69 Konf. (2026-04-17) - Főzés helye: Knorr 105
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'Knorr69 Konf.', 'event', '2026-04-17', NULL, knorr105_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
@@ -115,9 +123,9 @@ BEGIN
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Eszközök', 155524, 'Eszköz költség - Knorr69 Konf.', 'transfer', '2026-04-17');
 
-  -- Event: Viki szülinap (2026-04-18)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'Viki szülinap', 'event', '2026-04-18', 'Főzés helye: Szentkirályi')
+  -- Event: Viki szülinap (2026-04-18) - Főzés helye: Szentkirályi
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'Viki szülinap', 'event', '2026-04-18', NULL, szentkiralyi_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
@@ -128,9 +136,9 @@ BEGIN
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Személyzet', 38500, 'Személyzet költség - Viki szülinap', 'transfer', '2026-04-18');
 
-  -- Event: Csucsu szülinap (2026-04-18)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'Csucsu szülinap', 'event', '2026-04-18', 'Főzés helye: Szentkirályi')
+  -- Event: Csucsu szülinap (2026-04-18) - Főzés helye: Szentkirályi
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'Csucsu szülinap', 'event', '2026-04-18', NULL, szentkiralyi_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
@@ -143,9 +151,9 @@ BEGIN
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Személyzet', 59500, 'Személyzet költség - Csucsu szülinap', 'transfer', '2026-04-18');
 
-  -- Event: Nyúl Kupa (2026-04-19)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'Nyúl Kupa', 'event', '2026-04-19', 'Főzés helye: Szentkirályi')
+  -- Event: Nyúl Kupa (2026-04-19) - Főzés helye: Szentkirályi
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'Nyúl Kupa', 'event', '2026-04-19', NULL, szentkiralyi_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
@@ -158,9 +166,9 @@ BEGIN
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Logisztika', 3000, 'Logisztika költség - Nyúl Kupa', 'transfer', '2026-04-19');
 
-  -- Event: Colorcon (2026-04-21)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'Colorcon', 'event', '2026-04-21', 'Főzés helye: MÁK')
+  -- Event: Colorcon (2026-04-21) - Főzés helye: Államkincstár (MÁK)
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'Colorcon', 'event', '2026-04-21', NULL, allamkincstar_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
@@ -171,9 +179,9 @@ BEGIN
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Logisztika', 6000, 'Logisztika költség - Colorcon', 'transfer', '2026-04-21');
 
-  -- Event: Shell (2026-04-27)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'Shell', 'event', '2026-04-27', 'Főzés helye: MÁK')
+  -- Event: Shell (2026-04-27) - Főzés helye: Államkincstár (MÁK)
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'Shell', 'event', '2026-04-27', NULL, allamkincstar_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
@@ -184,9 +192,9 @@ BEGIN
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Logisztika', 3000, 'Logisztika költség - Shell', 'transfer', '2026-04-27');
 
-  -- Event: Colorcon (2026-04-28)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'Colorcon', 'event', '2026-04-28', 'Főzés helye: MÁK')
+  -- Event: Colorcon (2026-04-28) - Főzés helye: Államkincstár (MÁK)
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'Colorcon', 'event', '2026-04-28', NULL, allamkincstar_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
@@ -195,9 +203,9 @@ BEGIN
   INSERT INTO event_expenses (event_id, unit_id, supplier_name, amount, item_description, payment_method, invoice_date)
   VALUES (new_event_id, events_unit_id, 'Logisztika', 5000, 'Logisztika költség - Colorcon', 'transfer', '2026-04-28');
 
-  -- Event: Pasek Gabi (2026-04-30)
-  INSERT INTO events (unit_id, name, event_type, event_date, description)
-  VALUES (events_unit_id, 'Pasek Gabi', 'event', '2026-04-30', 'Főzés helye: Knorr105')
+  -- Event: Pasek Gabi (2026-04-30) - Főzés helye: Knorr 105
+  INSERT INTO events (unit_id, name, event_type, event_date, description, cooking_location_id)
+  VALUES (events_unit_id, 'Pasek Gabi', 'event', '2026-04-30', NULL, knorr105_id)
   RETURNING id INTO new_event_id;
 
   INSERT INTO event_revenues (event_id, unit_id, partner_name, net_amount, vat_rate, amount, payment_method, invoice_date, line_items)
