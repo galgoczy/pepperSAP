@@ -12,7 +12,6 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
   const [formData, setFormData] = useState({
     change_amount: DEFAULT_CHANGE_AMOUNT,
     official_other_income: '',
-    official_employment_expenses: '',
     other_extra_income: '',
   });
 
@@ -26,6 +25,7 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
     totalCashRegisterCash,    // Napi forgalom (auto from cash registers)
     totalCashRegisterRevenue, // Pénztárgép összes bevétel
     softwareRevenue,          // Szoftver bevétel
+    wageTypePayments = 0,     // Bér jellegű kifizetések (EFO + wage)
   } = calculatedData;
 
   // Software vs cash register difference (calculated)
@@ -36,14 +36,12 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
       setFormData({
         change_amount: houseCash.change_amount ?? DEFAULT_CHANGE_AMOUNT,
         official_other_income: houseCash.official_other_income || '',
-        official_employment_expenses: houseCash.official_employment_expenses || '',
         other_extra_income: houseCash.other_extra_income || '',
       });
     } else {
       setFormData({
         change_amount: DEFAULT_CHANGE_AMOUNT,
         official_other_income: '',
-        official_employment_expenses: '',
         other_extra_income: '',
       });
     }
@@ -59,10 +57,10 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
     totalCashRegisterCash +
     (parseFloat(formData.official_other_income) || 0);
 
-  // Expenses: készpénzes számlák (auto) + EFO kifizetések
+  // Expenses: készpénzes számlák (auto) + bér jellegű kifizetések (auto)
   const dailyExpenses =
     cashInvoiceExpenses +
-    (parseFloat(formData.official_employment_expenses) || 0);
+    wageTypePayments;
 
   const dailyMovement = dailyIncome - dailyExpenses;
 
@@ -94,6 +92,7 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
         // Store auto-calculated values too
         official_daily_cash: totalCashRegisterCash,
         official_cash_expenses: cashInvoiceExpenses,
+        official_employment_expenses: wageTypePayments,
         other_difference: softwareCashRegisterDiff,
         other_expenses: nonInvoiceExpenses,
         official_total: officialTotal,
@@ -184,7 +183,7 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
           </div>
 
           <Input
-            label="Egyéb hivatalos bevétel (+)"
+            label="Egyéb hivatalos kp bevétel (+)"
             type="number"
             step="0.01"
             value={formData.official_other_income}
@@ -202,15 +201,15 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
             <p className="text-xs text-red-600 mt-1">Számlás kifizetésekből (automatikus)</p>
           </div>
 
-          <Input
-            label="EFO kifizetések (-)"
-            type="number"
-            step="0.01"
-            value={formData.official_employment_expenses}
-            onChange={(e) => handleChange('official_employment_expenses', e.target.value)}
-            suffix="Ft"
-            helper="Egyszerűsített foglalkoztatás kifizetései"
-          />
+          {/* Auto-calculated: Bér jellegű kifizetések */}
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-center gap-2 mb-1">
+              <Calculator className="h-4 w-4 text-red-600" />
+              <span className="text-sm font-medium text-red-700">Bér jellegű kifizetések (-)</span>
+            </div>
+            <p className="text-xl font-bold text-red-800">{formatCurrency(wageTypePayments)}</p>
+            <p className="text-xs text-red-600 mt-1">EFO + heti bér kifizetésekből (automatikus)</p>
+          </div>
         </div>
 
         <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg space-y-2">

@@ -207,6 +207,9 @@ export function useHouseCash(unitId, date) {
     softwareRevenue: 0,          // Szoftver bevétel
     totalDiscrepancies: 0,       // Összes HUF elütés
     adjustedCash: 0,             // Készpénz - elütések (korrigált készpénz)
+    wageTypePayments: 0,         // Bér jellegű kifizetések (EFO + wage összesen)
+    efoPaymentsTotal: 0,         // EFO kifizetések hivatalos összege
+    wagePaymentsTotal: 0,        // Heti bér kifizetések hivatalos összege
   });
   const [discrepancyDetails, setDiscrepancyDetails] = useState([]); // All discrepancy entries
   const [loading, setLoading] = useState(true);
@@ -224,6 +227,9 @@ export function useHouseCash(unitId, date) {
         softwareRevenue: 0,
         totalDiscrepancies: 0,
         adjustedCash: 0,
+        wageTypePayments: 0,
+        efoPaymentsTotal: 0,
+        wagePaymentsTotal: 0,
       });
       setDiscrepancyDetails([]);
       setLoading(false);
@@ -237,7 +243,7 @@ export function useHouseCash(unitId, date) {
       const previousDay = currentDate.toISOString().split('T')[0];
 
       // Fetch all needed data in parallel
-      const [currentResult, previousResult, expensesResult, dailyRevenueResult] = await Promise.all([
+      const [currentResult, previousResult, expensesResult, dailyRevenueResult, efoPaymentsResult, wagePaymentsResult] = await Promise.all([
         supabase
           .from('house_cash')
           .select('*')
@@ -261,6 +267,16 @@ export function useHouseCash(unitId, date) {
           .eq('unit_id', unitId)
           .eq('date', date)
           .maybeSingle(),
+        supabase
+          .from('efo_payments')
+          .select('official_amount')
+          .eq('unit_id', unitId)
+          .eq('payment_date', date),
+        supabase
+          .from('wage_payments')
+          .select('official_amount')
+          .eq('unit_id', unitId)
+          .eq('payment_date', date),
       ]);
 
       if (currentResult.error) throw currentResult.error;
@@ -354,6 +370,15 @@ export function useHouseCash(unitId, date) {
       // Software revenue
       const softwareRevenue = parseFloat(dailyRevenueResult.data?.total_revenue) || 0;
 
+      // Calculate EFO and wage payment totals (official amounts only)
+      const efoPaymentsTotal = (efoPaymentsResult.data || []).reduce(
+        (sum, p) => sum + (parseFloat(p.official_amount) || 0), 0
+      );
+      const wagePaymentsTotal = (wagePaymentsResult.data || []).reduce(
+        (sum, p) => sum + (parseFloat(p.official_amount) || 0), 0
+      );
+      const wageTypePayments = efoPaymentsTotal + wagePaymentsTotal;
+
       setHouseCash(currentResult.data || null);
       setPreviousDayClosing(previousResult.data?.official_total || null);
       setDiscrepancyDetails(allDiscrepancies);
@@ -366,6 +391,9 @@ export function useHouseCash(unitId, date) {
         softwareRevenue,
         totalDiscrepancies,
         adjustedCash,
+        wageTypePayments,
+        efoPaymentsTotal,
+        wagePaymentsTotal,
       });
     } catch (error) {
       console.error('Error fetching house cash:', error);

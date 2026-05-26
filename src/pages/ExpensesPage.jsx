@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Users, Banknote } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Modal, Select } from '../components/common';
 import ExpenseList from '../components/expenses/ExpenseList';
 import ExpenseForm from '../components/expenses/ExpenseForm';
+import EfoPaymentForm from '../components/expenses/EfoPaymentForm';
+import WagePaymentForm from '../components/expenses/WagePaymentForm';
 import { getFirstDayOfMonth, getLastDayOfMonth } from '../lib/utils';
 
 // Get previous month's first and last day
@@ -22,6 +24,8 @@ export default function ExpensesPage() {
   const { isAdmin, unitId } = useAuth();
   const { units } = useUnits();
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isEfoFormOpen, setIsEfoFormOpen] = useState(false);
+  const [isWageFormOpen, setIsWageFormOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [selectedUnit, setSelectedUnit] = useState('all');
   const [startDate, setStartDate] = useState(getFirstDayOfMonth());
@@ -75,10 +79,20 @@ export default function ExpensesPage() {
           </p>
         </div>
 
-        <Button onClick={() => setIsFormOpen(true)}>
-          <Plus className="h-4 w-4" />
-          Új kifizetés
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => setIsFormOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Új kifizetés
+          </Button>
+          <Button variant="secondary" onClick={() => setIsEfoFormOpen(true)}>
+            <Users className="h-4 w-4" />
+            Új EFO kifizetés
+          </Button>
+          <Button variant="secondary" onClick={() => setIsWageFormOpen(true)}>
+            <Banknote className="h-4 w-4" />
+            Új Heti bér
+          </Button>
+        </div>
       </div>
 
       {/* Filters row for admin */}
@@ -140,6 +154,34 @@ export default function ExpensesPage() {
           unitId={isAdmin ? null : unitId}
           onSuccess={handleClose}
           onCancel={handleClose}
+        />
+      </Modal>
+
+      {/* EFO payment form modal */}
+      <Modal
+        isOpen={isEfoFormOpen}
+        onClose={() => setIsEfoFormOpen(false)}
+        title="Új EFO kifizetés"
+        size="lg"
+      >
+        <EfoPaymentForm
+          unitId={isAdmin ? null : unitId}
+          onSuccess={() => setIsEfoFormOpen(false)}
+          onCancel={() => setIsEfoFormOpen(false)}
+        />
+      </Modal>
+
+      {/* Wage payment form modal */}
+      <Modal
+        isOpen={isWageFormOpen}
+        onClose={() => setIsWageFormOpen(false)}
+        title="Új Heti bér fizetés"
+        size="lg"
+      >
+        <WagePaymentForm
+          unitId={isAdmin ? null : unitId}
+          onSuccess={() => setIsWageFormOpen(false)}
+          onCancel={() => setIsWageFormOpen(false)}
         />
       </Modal>
     </div>
