@@ -12,7 +12,11 @@ export function useEvents(unitId) {
         .from('events')
         .select(`
           *,
-          units (
+          units!unit_id (
+            id,
+            name
+          ),
+          cooking_location:units!cooking_location_id (
             id,
             name
           )
@@ -77,7 +81,11 @@ export function useEvents(unitId) {
         .insert([eventData])
         .select(`
           *,
-          units (
+          units!unit_id (
+            id,
+            name
+          ),
+          cooking_location:units!cooking_location_id (
             id,
             name
           )
@@ -122,7 +130,11 @@ export function useEvent(eventId) {
           .from('events')
           .select(`
             *,
-            units (
+            units!unit_id (
+              id,
+              name
+            ),
+            cooking_location:units!cooking_location_id (
               id,
               name
             )
@@ -166,7 +178,11 @@ export function useEvent(eventId) {
         .eq('id', eventId)
         .select(`
           *,
-          units (
+          units!unit_id (
+            id,
+            name
+          ),
+          cooking_location:units!cooking_location_id (
             id,
             name
           )

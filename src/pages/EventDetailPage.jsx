@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useEvent } from '../hooks/useEvents';
-import { useUnits } from '../hooks/useSupabase';
 import {
   Card,
   Button,
@@ -37,7 +36,6 @@ export default function EventDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   useAuth();
-  const { units } = useUnits();
 
   const {
     event,
@@ -90,7 +88,8 @@ export default function EventDetailPage() {
   const totalExpenses = expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
   const profit = totalRevenue - totalExpenses;
 
-  const cookingLocation = units.find((u) => u.id === event?.cooking_location_id);
+  // cooking_location comes from the join in useEvent
+  const cookingLocation = event?.cooking_location;
 
   const handleDelete = async () => {
     await deleteEvent();
