@@ -3,6 +3,15 @@
 -- 13 events, total revenue: 5,591,430 Ft
 -- Updated with line_items breakdown
 
+-- First, delete existing April 2026 event data to avoid duplicates
+DELETE FROM event_expenses WHERE event_id IN (
+  SELECT id FROM events WHERE event_date >= '2026-04-01' AND event_date <= '2026-04-30'
+);
+DELETE FROM event_revenues WHERE event_id IN (
+  SELECT id FROM events WHERE event_date >= '2026-04-01' AND event_date <= '2026-04-30'
+);
+DELETE FROM events WHERE event_date >= '2026-04-01' AND event_date <= '2026-04-30';
+
 DO $$
 DECLARE
   events_unit_id UUID;
