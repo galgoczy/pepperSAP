@@ -41,15 +41,16 @@ export function useProtocolItems(initialDailyRevenueId) {
     fetchItems();
   }, [fetchItems]);
 
-  const createItem = async (itemData) => {
-    if (!dailyRevenueId) {
+  const createItem = async (itemData, overrideRevenueId = null) => {
+    const effectiveId = overrideRevenueId || dailyRevenueId;
+    if (!effectiveId) {
       throw new Error('Daily revenue ID required');
     }
 
     try {
       const { data, error } = await supabase
         .from('protocol_items')
-        .insert([{ ...itemData, daily_revenue_id: dailyRevenueId }])
+        .insert([{ ...itemData, daily_revenue_id: effectiveId }])
         .select()
         .single();
 
@@ -64,10 +65,11 @@ export function useProtocolItems(initialDailyRevenueId) {
         });
       }
 
+      toast.success('Tétel sikeresen mentve!');
       return data;
     } catch (error) {
       console.error('Error creating protocol item:', error);
-      toast.error('Hiba a tétel mentésekor');
+      toast.error('Hiba a tétel mentésekor: ' + (error.message || 'Ismeretlen hiba'));
       throw error;
     }
   };

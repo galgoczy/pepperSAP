@@ -197,7 +197,8 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       }
     }
     if (revenueId) {
-      return createProtocolItem(itemData);
+      // Pass revenueId directly to avoid stale closure issue
+      return createProtocolItem(itemData, revenueId);
     }
   };
 
