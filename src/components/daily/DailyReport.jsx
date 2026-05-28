@@ -41,13 +41,12 @@ export default function DailyReport({ date, unitId }) {
     adjustedCash = 0,
   } = calculatedData || {};
 
-  // Use aggregated cash register totals from the hook
+  // Use aggregated cash register totals from the hook (tips not included)
   const cashRegisterTotal =
     (cashRegisterTotals.vat_0_percent || 0) +
     (cashRegisterTotals.vat_5_percent || 0) +
     (cashRegisterTotals.vat_18_percent || 0) +
-    (cashRegisterTotals.vat_27_percent || 0) +
-    (cashRegisterTotals.tips || 0);
+    (cashRegisterTotals.vat_27_percent || 0);
 
   // Payment methods total (cash + card only, no SZÉP)
   const paymentMethodsTotal = totalCashRegisterCash + totalCashRegisterCard;
@@ -75,13 +74,12 @@ export default function DailyReport({ date, unitId }) {
     0
   );
 
-  // Helper to calculate register total
+  // Helper to calculate register total (tips not included)
   const getRegisterTotal = (cr) =>
     (parseFloat(cr.vat_0_percent) || 0) +
     (parseFloat(cr.vat_5_percent) || 0) +
     (parseFloat(cr.vat_18_percent) || 0) +
-    (parseFloat(cr.vat_27_percent) || 0) +
-    (parseFloat(cr.tips) || 0);
+    (parseFloat(cr.vat_27_percent) || 0);
 
   return (
     <div className="space-y-6 print:space-y-4">

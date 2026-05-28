@@ -246,8 +246,8 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       (parseFloat(data.vat_0_percent) || 0) +
       (parseFloat(data.vat_5_percent) || 0) +
       (parseFloat(data.vat_18_percent) || 0) +
-      (parseFloat(data.vat_27_percent) || 0) +
-      (parseFloat(data.tips) || 0)
+      (parseFloat(data.vat_27_percent) || 0)
+      // tips not included in revenue total
     );
   }, 0);
 
@@ -590,7 +590,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
           value={formData.extra_cash_revenue}
           onChange={(e) => handleChange('extra_cash_revenue', e.target.value)}
           suffix="Ft"
-          helper="Egyéb, pénztárgépen kívüli készpénz bevétel"
+          helper="Egyéb, pénztárgépen kívüli hivatalos készpénz bevétel"
         />
       </Card>
 

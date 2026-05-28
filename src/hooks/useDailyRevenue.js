@@ -327,8 +327,8 @@ export function useHouseCash(unitId, date) {
           (parseFloat(cr.vat_0_percent) || 0) +
           (parseFloat(cr.vat_5_percent) || 0) +
           (parseFloat(cr.vat_18_percent) || 0) +
-          (parseFloat(cr.vat_27_percent) || 0) +
-          (parseFloat(cr.tips) || 0),
+          (parseFloat(cr.vat_27_percent) || 0),
+        // tips not included in revenue total
         0
       );
 

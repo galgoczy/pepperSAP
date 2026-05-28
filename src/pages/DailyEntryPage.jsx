@@ -240,7 +240,7 @@ export default function DailyEntryPage() {
           cashRegisterDetails.forEach((cr) => {
             const registerName = cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Pénztárgép';
             const regTotal = (parseFloat(cr.vat_0_percent) || 0) + (parseFloat(cr.vat_5_percent) || 0) +
-              (parseFloat(cr.vat_18_percent) || 0) + (parseFloat(cr.vat_27_percent) || 0) + (parseFloat(cr.tips) || 0);
+              (parseFloat(cr.vat_18_percent) || 0) + (parseFloat(cr.vat_27_percent) || 0); // tips not in total
 
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(9);
