@@ -187,18 +187,24 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
 
   // Wrapper to ensure daily_revenue exists before creating protocol items
   const handleCreateProtocolItem = async (itemData) => {
+    console.log('handleCreateProtocolItem called, current revenue:', revenue);
     let revenueId = revenue?.id;
     if (!revenueId) {
+      console.log('No revenue ID, creating new daily_revenue...');
       // Create a minimal daily_revenue record first
       const newRevenue = await ensureRevenueExists();
+      console.log('ensureRevenueExists returned:', newRevenue);
       if (newRevenue?.id) {
         revenueId = newRevenue.id;
         setDailyRevenueId(revenueId);
       }
     }
     if (revenueId) {
+      console.log('Calling createProtocolItem with revenueId:', revenueId);
       // Pass revenueId directly to avoid stale closure issue
       return createProtocolItem(itemData, revenueId);
+    } else {
+      console.error('No revenue ID available, cannot create protocol item');
     }
   };
 
