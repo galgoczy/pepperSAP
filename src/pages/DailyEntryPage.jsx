@@ -1379,7 +1379,6 @@ function DailyExpensesList({ unitId, date, onEditExpense }) {
       }
 
       try {
-        const { supabase } = await import('../lib/supabase');
         const { data, error } = await supabase
           .from('expenses')
           .select('*')

@@ -240,7 +240,7 @@ export default function LoginForm() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
-                    placeholder="admin@test.local"
+                    placeholder="nev@pepperhouse.hu"
                     required
                   />
                 </div>

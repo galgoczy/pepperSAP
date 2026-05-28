@@ -1,42 +1,45 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { Layout } from './components/layout';
 import { ProtectedRoute } from './components/auth';
+import { PageLoading } from './components/common';
 
-// Pages
-import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
-import DailyEntryPage from './pages/DailyEntryPage';
-import ExpensesPage from './pages/ExpensesPage';
-import EventsPage from './pages/EventsPage';
-import EventDetailPage from './pages/EventDetailPage';
-import ReportsPage from './pages/ReportsPage';
-import DocumentsPage from './pages/DocumentsPage';
-import ContactsPage from './pages/ContactsPage';
-import SalesPage from './pages/SalesPage';
-import DealsPage from './pages/DealsPage';
-import InventoryPage from './pages/InventoryPage';
-import SettingsPage from './pages/SettingsPage';
-import UnitsPage from './pages/UnitsPage';
-import UsersPage from './pages/UsersPage';
-import MonthlyFinancialDataPage from './pages/MonthlyFinancialDataPage';
-import BudgetPage from './pages/BudgetPage';
-import ControllingPage from './pages/ControllingPage';
-import CashierImportPage from './pages/CashierImportPage';
-import SupportPage from './pages/SupportPage';
-import AuditLogPage from './pages/AuditLogPage';
-import CampaignsPage from './pages/CampaignsPage';
-import ComplaintsPage from './pages/ComplaintsPage';
-import DiscountsPage from './pages/DiscountsPage';
-import WebshopPage from './pages/WebshopPage';
-import WorkspacePage from './pages/WorkspacePage';
-import MicrosoftCallbackPage from './pages/MicrosoftCallbackPage';
-import CashManagementPage from './pages/CashManagementPage';
+// Pages (lazy-loaded so each route ships in its own chunk)
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const DailyEntryPage = lazy(() => import('./pages/DailyEntryPage'));
+const ExpensesPage = lazy(() => import('./pages/ExpensesPage'));
+const EventsPage = lazy(() => import('./pages/EventsPage'));
+const EventDetailPage = lazy(() => import('./pages/EventDetailPage'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
+const DocumentsPage = lazy(() => import('./pages/DocumentsPage'));
+const ContactsPage = lazy(() => import('./pages/ContactsPage'));
+const SalesPage = lazy(() => import('./pages/SalesPage'));
+const DealsPage = lazy(() => import('./pages/DealsPage'));
+const InventoryPage = lazy(() => import('./pages/InventoryPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const UnitsPage = lazy(() => import('./pages/UnitsPage'));
+const UsersPage = lazy(() => import('./pages/UsersPage'));
+const MonthlyFinancialDataPage = lazy(() => import('./pages/MonthlyFinancialDataPage'));
+const BudgetPage = lazy(() => import('./pages/BudgetPage'));
+const ControllingPage = lazy(() => import('./pages/ControllingPage'));
+const CashierImportPage = lazy(() => import('./pages/CashierImportPage'));
+const SupportPage = lazy(() => import('./pages/SupportPage'));
+const AuditLogPage = lazy(() => import('./pages/AuditLogPage'));
+const CampaignsPage = lazy(() => import('./pages/CampaignsPage'));
+const ComplaintsPage = lazy(() => import('./pages/ComplaintsPage'));
+const DiscountsPage = lazy(() => import('./pages/DiscountsPage'));
+const WebshopPage = lazy(() => import('./pages/WebshopPage'));
+const WorkspacePage = lazy(() => import('./pages/WorkspacePage'));
+const MicrosoftCallbackPage = lazy(() => import('./pages/MicrosoftCallbackPage'));
+const CashManagementPage = lazy(() => import('./pages/CashManagementPage'));
 
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <Suspense fallback={<PageLoading />}>
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
@@ -216,6 +219,7 @@ function App() {
           {/* Catch all - redirect to home */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
       </AuthProvider>
     </BrowserRouter>
   );

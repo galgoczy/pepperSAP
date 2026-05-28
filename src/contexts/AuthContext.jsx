@@ -155,9 +155,9 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
-    // DEBUG: Skip auth with ?skip_auth=true URL parameter
+    // DEBUG: Skip auth with ?skip_auth=true URL parameter (development builds only)
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('skip_auth') === 'true') {
+    if (import.meta.env.DEV && urlParams.get('skip_auth') === 'true') {
       console.log('DEBUG: Skipping auth, using mock admin user');
       setUser({ id: 'debug-user', email: 'debug@pepperhouse.hu' });
       setProfile({
@@ -170,11 +170,13 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    console.log('AuthContext: Starting session fetch...');
-    console.log('AuthContext: Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
-    console.log('AuthContext: Anon key set:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
-    console.log('AuthContext: localStorage keys:', Object.keys(localStorage));
-    console.log('AuthContext: Browser:', navigator.userAgent);
+    if (import.meta.env.DEV) {
+      console.log('AuthContext: Starting session fetch...');
+      console.log('AuthContext: Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+      console.log('AuthContext: Anon key set:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+      console.log('AuthContext: localStorage keys:', Object.keys(localStorage));
+      console.log('AuthContext: Browser:', navigator.userAgent);
+    }
 
     // Check if we're in an OAuth callback (code in URL) - handle manually for Safari compatibility
     const authCode = urlParams.get('code');

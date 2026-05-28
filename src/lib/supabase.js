@@ -21,17 +21,19 @@ const hashParams = new URLSearchParams(window.location.hash.substring(1));
 const hasAuthCodeInUrl = urlParams.has('code') || hashParams.has('access_token');
 const hasError = urlParams.has('error') || hashParams.has('error');
 
-console.log('OAuth debug:', {
-  hasCodeVerifier: !!hasCodeVerifier,
-  hasSessionToken: !!hasSessionToken,
-  hasAuthCodeInUrl,
-  hasError,
-  urlCode: urlParams.get('code')?.substring(0, 20) + '...',
-  urlError: urlParams.get('error'),
-  errorDescription: urlParams.get('error_description'),
-  hash: window.location.hash ? 'present' : 'none',
-  fullUrl: window.location.href.substring(0, 100) + '...'
-});
+if (import.meta.env.DEV) {
+  console.log('OAuth debug:', {
+    hasCodeVerifier: !!hasCodeVerifier,
+    hasSessionToken: !!hasSessionToken,
+    hasAuthCodeInUrl,
+    hasError,
+    urlCode: urlParams.get('code')?.substring(0, 20) + '...',
+    urlError: urlParams.get('error'),
+    errorDescription: urlParams.get('error_description'),
+    hash: window.location.hash ? 'present' : 'none',
+    fullUrl: window.location.href.substring(0, 100) + '...'
+  });
+}
 
 if (hasError) {
   console.error('OAuth error detected:', urlParams.get('error'), urlParams.get('error_description'));
@@ -69,7 +71,7 @@ if (hadPreviousTimeout) {
 
 // Custom fetch with timeout for Safari compatibility
 const fetchWithTimeout = (url, options = {}) => {
-  console.log('Supabase fetch:', url);
+  if (import.meta.env.DEV) console.log('Supabase fetch:', url);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
@@ -78,7 +80,7 @@ const fetchWithTimeout = (url, options = {}) => {
     signal: controller.signal,
   })
     .then(response => {
-      console.log('Supabase fetch response:', url, response.status);
+      if (import.meta.env.DEV) console.log('Supabase fetch response:', url, response.status);
       return response;
     })
     .catch(error => {
