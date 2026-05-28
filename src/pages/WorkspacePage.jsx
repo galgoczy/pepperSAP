@@ -45,6 +45,10 @@ export default function WorkspacePage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [subscription, setSubscription] = useState(null);
+  // channelId -> number of unread messages
+  const [unreadCounts, setUnreadCounts] = useState({});
+  // Timestamp of the user's previous visit, used to draw the "new messages" divider
+  const [unreadSince, setUnreadSince] = useState(null);
 
   // Message input state
   const [messageType, setMessageType] = useState('text');
@@ -113,6 +117,41 @@ export default function WorkspacePage() {
     setLoading(false);
   }, [selectedChannel]);
 
+  // Compute unread message counts for every channel the user can see
+  const fetchUnreadCounts = useCallback(async (channelList) => {
+    if (!user || !channelList?.length) return;
+
+    const { data: subs } = await supabase
+      .from('workspace_subscriptions')
+      .select('channel_id, last_read_at')
+      .eq('user_id', user.id);
+
+    const lastReadByChannel = {};
+    (subs || []).forEach((s) => {
+      lastReadByChannel[s.channel_id] = s.last_read_at;
+    });
+
+    const entries = await Promise.all(
+      channelList.map(async (ch) => {
+        let query = supabase
+          .from('workspace_messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('channel_id', ch.id)
+          .neq('author_id', user.id);
+
+        const lastRead = lastReadByChannel[ch.id];
+        if (lastRead) {
+          query = query.gt('created_at', lastRead);
+        }
+
+        const { count } = await query;
+        return [ch.id, count || 0];
+      })
+    );
+
+    setUnreadCounts(Object.fromEntries(entries));
+  }, [user]);
+
   // Fetch user's subscription for current channel
   const fetchSubscription = useCallback(async () => {
     if (!selectedChannel || !user) return;
@@ -126,12 +165,18 @@ export default function WorkspacePage() {
 
     setSubscription(data);
 
-    // Update last_read_at
+    // Remember where the user left off so we can mark the first unseen message,
+    // then advance last_read_at to now.
     if (data) {
+      setUnreadSince(data.last_read_at);
       await supabase
         .from('workspace_subscriptions')
         .update({ last_read_at: new Date().toISOString() })
         .eq('id', data.id);
+      // Clear the unread badge for this channel once it has been opened
+      setUnreadCounts((prev) => ({ ...prev, [selectedChannel.id]: 0 }));
+    } else {
+      setUnreadSince(null);
     }
   }, [selectedChannel, user]);
 
@@ -226,6 +271,13 @@ export default function WorkspacePage() {
     fetchUsers();
   }, [fetchChannels, fetchUsers]);
 
+  // Recompute unread badges whenever the channel list changes
+  useEffect(() => {
+    if (channels.length > 0) {
+      fetchUnreadCounts(channels);
+    }
+  }, [channels, fetchUnreadCounts]);
+
   // Load messages when channel changes
   useEffect(() => {
     if (selectedChannel) {
@@ -245,14 +297,26 @@ export default function WorkspacePage() {
       if (selectedChannel) {
         fetchMessages();
       }
+      if (channels.length > 0) {
+        fetchUnreadCounts(channels);
+      }
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [selectedChannel, fetchMessages]);
+  }, [selectedChannel, fetchMessages, channels, fetchUnreadCounts]);
 
   const getUserName = (userId) => {
     return users[userId]?.full_name || users[userId]?.email || 'Ismeretlen';
   };
+
+  // First message the current user has not seen yet (drives the divider position)
+  const firstUnreadMessageId = unreadSince
+    ? messages.find(
+        (m) =>
+          m.author_id !== user.id &&
+          new Date(m.created_at) > new Date(unreadSince)
+      )?.id
+    : null;
 
   const getChannelIcon = (channel) => {
     if (channel.channel_type === 'leadership') return '👑';
@@ -285,20 +349,34 @@ export default function WorkspacePage() {
             </h2>
           </div>
           <div className="flex-1 overflow-y-auto p-2">
-            {channels.map((channel) => (
-              <button
-                key={channel.id}
-                onClick={() => setSelectedChannel(channel)}
-                className={`w-full text-left px-3 py-2 rounded-lg mb-1 flex items-center gap-2 transition-colors ${
-                  selectedChannel?.id === channel.id
-                    ? 'bg-pepper-red text-white'
-                    : 'hover:bg-gray-100 text-gray-700'
-                }`}
-              >
-                <span>{getChannelIcon(channel)}</span>
-                <span className="truncate">{channel.name}</span>
-              </button>
-            ))}
+            {channels.map((channel) => {
+              const isSelected = selectedChannel?.id === channel.id;
+              const unread = unreadCounts[channel.id] || 0;
+              const hasUnread = unread > 0 && !isSelected;
+              return (
+                <button
+                  key={channel.id}
+                  onClick={() => setSelectedChannel(channel)}
+                  className={`w-full text-left px-3 py-2 rounded-lg mb-1 flex items-center gap-2 transition-colors ${
+                    isSelected
+                      ? 'bg-pepper-red text-white'
+                      : hasUnread
+                        ? 'hover:bg-gray-100 text-gray-900'
+                        : 'hover:bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  <span>{getChannelIcon(channel)}</span>
+                  <span className={`truncate flex-1 ${hasUnread ? 'font-bold' : ''}`}>
+                    {channel.name}
+                  </span>
+                  {hasUnread && (
+                    <span className="ml-auto inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-pepper-red text-white text-xs font-semibold">
+                      {unread > 99 ? '99+' : unread}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -357,15 +435,28 @@ export default function WorkspacePage() {
                     <p className="text-sm mt-1">Írj elsőként!</p>
                   </div>
                 ) : (
-                  messages.map((message) => (
-                    <MessageItem
-                      key={message.id}
-                      message={message}
-                      users={users}
-                      currentUserId={user.id}
-                      onToggleTask={() => toggleTaskCompletion(message)}
-                    />
-                  ))
+                  messages.map((message) => {
+                    const isFirstUnread = message.id === firstUnreadMessageId;
+                    return (
+                      <div key={message.id}>
+                        {isFirstUnread && (
+                          <div className="flex items-center gap-2 my-3" aria-label="Új üzenetek">
+                            <div className="flex-1 border-t-2 border-dashed border-pepper-red" />
+                            <span className="text-xs font-semibold text-pepper-red uppercase tracking-wide">
+                              Új üzenetek
+                            </span>
+                            <div className="flex-1 border-t-2 border-dashed border-pepper-red" />
+                          </div>
+                        )}
+                        <MessageItem
+                          message={message}
+                          users={users}
+                          currentUserId={user.id}
+                          onToggleTask={() => toggleTaskCompletion(message)}
+                        />
+                      </div>
+                    );
+                  })
                 )}
                 <div ref={messagesEndRef} />
               </div>

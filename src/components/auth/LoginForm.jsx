@@ -112,34 +112,6 @@ export default function LoginForm() {
     }
   };
 
-  const handleTestAdminLogin = async () => {
-    setError('');
-    setLoading(true);
-    setLoadingAccount('test-admin');
-
-    try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: 'admin@test.local',
-        password: 'TestAdmin123!',
-      });
-
-      if (signInError) {
-        console.error('Test admin login error:', signInError);
-        setError('Teszt admin bejelentkezés sikertelen');
-        setLoading(false);
-        setLoadingAccount(null);
-        return;
-      }
-
-      // Success - the auth state change will handle redirect
-    } catch (err) {
-      console.error('Login error:', err);
-      setError('Váratlan hiba történt');
-      setLoading(false);
-      setLoadingAccount(null);
-    }
-  };
-
   const handleMicrosoftLogin = async (loginHint = null) => {
     setError('');
     setLoading(true);
@@ -233,26 +205,18 @@ export default function LoginForm() {
             </p>
           </div>
 
-          {/* Test Admin Quick Login */}
+          {/* Test Admin Quick Login - disabled */}
           <div className="mt-6 pt-6 border-t">
             <button
               type="button"
-              onClick={handleTestAdminLogin}
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled
+              aria-disabled="true"
+              title="A teszt admin belépés ki van kapcsolva"
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-300 text-gray-500 font-medium rounded-lg cursor-not-allowed"
             >
-              {loadingAccount === 'test-admin' ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <>
-                  <UserCog className="h-5 w-5" />
-                  TESZT ADMIN belépés
-                </>
-              )}
+              <UserCog className="h-5 w-5" />
+              TESZT ADMIN belépés
             </button>
-            <p className="text-xs text-gray-400 text-center mt-2">
-              admin@test.local / TestAdmin123!
-            </p>
           </div>
 
           {/* Email/Password Login Toggle */}
