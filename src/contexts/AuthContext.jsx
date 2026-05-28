@@ -6,23 +6,9 @@ export const AuthContext = createContext(null);
 
 // Predefined user roles based on email
 const EMAIL_ROLE_MAP = {
-  // Admins
   'gergo@pepperhouse.hu': { role: 'admin', unit_name: null },
   'info@pepperhouse.hu': { role: 'admin', unit_name: null },
-  'penzugy@pepperhouse.hu': { role: 'admin', unit_name: null },
-  'iroda@pepperhouse.hu': { role: 'admin', unit_name: null },
-  'hr@pepperhouse.hu': { role: 'admin', unit_name: null },
-
-  // Unit users
   'szentkiralyi@pepperhouse.hu': { role: 'unit', unit_name: 'Szentkirályi' },
-  'allamkincstar@pepperhouse.hu': { role: 'unit', unit_name: 'Államkincstár' },
-  'knorr69@pepperhouse.hu': { role: 'unit', unit_name: 'Knorr 69' },
-  'knorr86@pepperhouse.hu': { role: 'unit', unit_name: 'Knorr 86' },
-  'knorr105@pepperhouse.hu': { role: 'unit', unit_name: 'Knorr 105' },
-  'kti@pepperhouse.hu': { role: 'unit', unit_name: 'KTI' },
-  'rsr@pepperhouse.hu': { role: 'unit', unit_name: 'RSR' },
-
-  // Events
   'rendezveny@pepperhouse.hu': { role: 'events', unit_name: 'Rendezvény Egység' },
 };
 
@@ -31,8 +17,6 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sessionError, setSessionError] = useState(false);
-  const [viewAsRole, setViewAsRole] = useState(null); // For testing: 'admin', 'unit', 'events', or null
-  const [viewAsUnit, setViewAsUnit] = useState(null); // Simulated unit for testing
   const userRef = useRef(null);
   const isSigningOut = useRef(false);
 
@@ -77,6 +61,7 @@ export function AuthProvider({ children }) {
     // Create new profile
     const newProfile = {
       id: authUser.id,
+      email: email,
       full_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || email.split('@')[0],
       role: roleConfig.role,
       unit_id: unitId,
@@ -193,12 +178,28 @@ export function AuthProvider({ children }) {
 
     // Check if we're in an OAuth callback (code in URL) - handle manually for Safari compatibility
     const authCode = urlParams.get('code');
+    const authError = urlParams.get('error');
+    const authErrorDesc = urlParams.get('error_description');
+
+    if (authError) {
+      console.error('AuthContext: OAuth error in URL:', authError, authErrorDesc);
+      window.history.replaceState({}, '', window.location.pathname);
+      setLoading(false);
+      return () => { mounted = false; };
+    }
+
     if (authCode) {
-      console.log('AuthContext: OAuth callback detected, manually exchanging code...');
+      console.log('AuthContext: OAuth callback detected, code length:', authCode.length);
+      console.log('AuthContext: Current URL:', window.location.href);
 
       supabase.auth.exchangeCodeForSession(authCode)
         .then(({ data, error }) => {
-          console.log('AuthContext: exchangeCodeForSession result:', { hasSession: !!data?.session, error });
+          console.log('AuthContext: exchangeCodeForSession result:', {
+            hasSession: !!data?.session,
+            hasUser: !!data?.session?.user,
+            userEmail: data?.session?.user?.email,
+            error: error?.message || error
+          });
 
           // Clear the URL params regardless of result
           window.history.replaceState({}, '', window.location.pathname);
@@ -212,7 +213,7 @@ export function AuthProvider({ children }) {
           }
 
           if (data?.session) {
-            console.log('AuthContext: Session established via manual exchange');
+            console.log('AuthContext: Session established via manual exchange, user:', data.session.user.email);
             setUser(data.session.user);
             fetchProfile(data.session.user.id, data.session.user);
           } else {
@@ -221,7 +222,7 @@ export function AuthProvider({ children }) {
           }
         })
         .catch(err => {
-          console.error('AuthContext: exchangeCodeForSession error:', err);
+          console.error('AuthContext: exchangeCodeForSession exception:', err);
           window.history.replaceState({}, '', window.location.pathname);
           if (mounted) setLoading(false);
         });
@@ -421,27 +422,6 @@ export function AuthProvider({ children }) {
     supabase.auth.signOut().catch(() => {});
   }, []);
 
-  // Determine effective role (actual or simulated)
-  const isTestAdmin = profile?.role === 'admin' &&
-    (user?.email === 'gergo@pepperhouse.hu' ||
-     user?.email === 'info@pepperhouse.hu' ||
-     user?.email === 'admin@test.local');
-  const effectiveRole = viewAsRole || profile?.role;
-  const effectiveUnitId = viewAsRole ? viewAsUnit : profile?.unit_id;
-
-  // Function to set view mode (only for test admin)
-  const setViewMode = (role, unitId = null) => {
-    if (!isTestAdmin) return;
-    setViewAsRole(role);
-    setViewAsUnit(unitId);
-  };
-
-  // Function to reset to admin view
-  const resetViewMode = () => {
-    setViewAsRole(null);
-    setViewAsUnit(null);
-  };
-
   const value = {
     user,
     profile,
@@ -451,23 +431,14 @@ export function AuthProvider({ children }) {
     signOut,
     forceLogout,
     isAuthenticated: !!user,
-    // Role checks use effective role when viewing as another role
-    isAdmin: effectiveRole === 'admin',
-    isUnit: effectiveRole === 'unit',
-    isEvents: effectiveRole === 'events',
-    isAccountant: effectiveRole === 'accountant',
-    canEdit: effectiveRole !== 'accountant',
-    canViewAllUnits: effectiveRole === 'admin' || effectiveRole === 'accountant',
-    unitId: effectiveUnitId,
-    role: effectiveRole,
-    // Keep original role available
-    actualRole: profile?.role,
-    actualIsAdmin: profile?.role === 'admin',
-    // View mode functions (only work for test admin)
-    isTestAdmin,
-    viewAsRole,
-    setViewMode,
-    resetViewMode,
+    isAdmin: profile?.role === 'admin',
+    isUnit: profile?.role === 'unit',
+    isEvents: profile?.role === 'events',
+    isAccountant: profile?.role === 'accountant',
+    canEdit: profile?.role !== 'accountant',
+    canViewAllUnits: profile?.role === 'admin' || profile?.role === 'accountant',
+    unitId: profile?.unit_id,
+    role: profile?.role,
     refetchProfile: () => user && fetchProfile(user.id),
   };
 
