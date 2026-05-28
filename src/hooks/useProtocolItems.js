@@ -2,9 +2,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
-export function useProtocolItems(dailyRevenueId) {
+export function useProtocolItems(initialDailyRevenueId) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dailyRevenueId, setDailyRevenueId] = useState(initialDailyRevenueId);
+
+  // Update internal state when prop changes
+  useEffect(() => {
+    if (initialDailyRevenueId && initialDailyRevenueId !== dailyRevenueId) {
+      setDailyRevenueId(initialDailyRevenueId);
+    }
+  }, [initialDailyRevenueId]);
 
   const fetchItems = useCallback(async () => {
     if (!dailyRevenueId) {
@@ -33,20 +41,23 @@ export function useProtocolItems(dailyRevenueId) {
     fetchItems();
   }, [fetchItems]);
 
-  const createItem = async (itemData) => {
-    if (!dailyRevenueId) {
+  const createItem = async (itemData, overrideRevenueId = null) => {
+    const effectiveId = overrideRevenueId || dailyRevenueId;
+    if (!effectiveId) {
       throw new Error('Daily revenue ID required');
     }
 
     try {
+      console.log('Creating protocol item with revenueId:', effectiveId, 'data:', itemData);
       const { data, error } = await supabase
         .from('protocol_items')
-        .insert([{ ...itemData, daily_revenue_id: dailyRevenueId }])
+        .insert([{ ...itemData, daily_revenue_id: effectiveId }])
         .select()
         .single();
 
       if (error) throw error;
 
+      console.log('Protocol item created:', data);
       setItems((prev) => [...prev, data]);
 
       // Update project number usage if provided
@@ -56,10 +67,11 @@ export function useProtocolItems(dailyRevenueId) {
         });
       }
 
+      toast.success('Tétel sikeresen mentve!');
       return data;
     } catch (error) {
       console.error('Error creating protocol item:', error);
-      toast.error('Hiba a tétel mentésekor');
+      toast.error('Hiba a tétel mentésekor: ' + (error.message || 'Ismeretlen hiba'));
       throw error;
     }
   };
@@ -119,6 +131,7 @@ export function useProtocolItems(dailyRevenueId) {
     updateItem,
     deleteItem,
     refetch: fetchItems,
+    setDailyRevenueId,
   };
 }
 

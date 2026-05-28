@@ -29,11 +29,11 @@ const MARK_COLORS = [
 ];
 
 export default function DailyRevenueForm({ date, unitId, unitName }) {
-  const { revenue, loading: revenueLoading, saveRevenue } = useDailyRevenue(unitId, date);
+  const { revenue, loading: revenueLoading, saveRevenue, ensureRevenueExists } = useDailyRevenue(unitId, date);
   const { cashRegisters, loading: registersLoading } = useActiveCashRegisters(unitId);
   const { revenues: cashRegisterRevenues, saveAllRevenues } = useAllCashRegisterRevenue(revenue?.id);
   const { settings: revenueSettings, loading: settingsLoading } = useUnitRevenueSettings(unitId);
-  const { items: protocolItems, totalAmount: protocolItemsTotal, createItem: createProtocolItem, updateItem: updateProtocolItem, deleteItem: deleteProtocolItem } = useProtocolItems(revenue?.id);
+  const { items: protocolItems, totalAmount: protocolItemsTotal, createItem: createProtocolItem, updateItem: updateProtocolItem, deleteItem: deleteProtocolItem, setDailyRevenueId } = useProtocolItems(revenue?.id);
   const { validationResult: eventValidation, validateEventRevenue } = useEventRevenueValidation(unitId, date);
 
   const [saving, setSaving] = useState(false);
@@ -184,6 +184,28 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
   const mckinseyHandlers = createVatHandlers('mckinsey');
   const orditHandlers = createVatHandlers('ordit');
   const eventRevenueHandlers = createVatHandlers('event_revenue');
+
+  // Wrapper to ensure daily_revenue exists before creating protocol items
+  const handleCreateProtocolItem = async (itemData) => {
+    console.log('handleCreateProtocolItem called, current revenue:', revenue);
+    let revenueId = revenue?.id;
+    if (!revenueId) {
+      console.log('No revenue ID, creating new daily_revenue...');
+      const newRevenue = await ensureRevenueExists();
+      console.log('ensureRevenueExists returned:', newRevenue);
+      if (newRevenue?.id) {
+        revenueId = newRevenue.id;
+        setDailyRevenueId(revenueId);
+      }
+    }
+    if (revenueId) {
+      console.log('Calling createProtocolItem with revenueId:', revenueId);
+      return createProtocolItem(itemData, revenueId);
+    } else {
+      console.error('No revenue ID available, cannot create protocol item');
+      throw new Error('Nem sikerült a napi adatot létrehozni');
+    }
+  };
 
   // Validate event revenue when it changes
   useEffect(() => {
@@ -395,7 +417,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
           <ProtocolItemsSection
             items={protocolItems}
             totalAmount={protocolItemsTotal}
-            onCreateItem={createProtocolItem}
+            onCreateItem={handleCreateProtocolItem}
             onUpdateItem={updateProtocolItem}
             onDeleteItem={deleteProtocolItem}
             protocolNet={formData.protocol_net}

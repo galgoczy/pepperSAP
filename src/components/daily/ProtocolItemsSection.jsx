@@ -376,23 +376,37 @@ export default function ProtocolItemsSection({
   const hasItems = items.length > 0;
 
   const handleSaveBekeszites = async (data) => {
-    if (editingItem) {
-      await onUpdateItem(editingItem.id, data);
-    } else {
-      await onCreateItem(data);
+    console.log('handleSaveBekeszites called with:', data);
+    try {
+      if (editingItem) {
+        await onUpdateItem(editingItem.id, data);
+      } else {
+        console.log('Calling onCreateItem for bekeszites...');
+        const result = await onCreateItem(data);
+        console.log('onCreateItem result:', result);
+      }
+      setShowBekeszitesModal(false);
+      setEditingItem(null);
+    } catch (error) {
+      console.error('Error in handleSaveBekeszites:', error);
     }
-    setShowBekeszitesModal(false);
-    setEditingItem(null);
   };
 
   const handleSaveEttermi = async (data) => {
-    if (editingItem) {
-      await onUpdateItem(editingItem.id, data);
-    } else {
-      await onCreateItem(data);
+    console.log('handleSaveEttermi called with:', data);
+    try {
+      if (editingItem) {
+        await onUpdateItem(editingItem.id, data);
+      } else {
+        console.log('Calling onCreateItem for ettermi...');
+        const result = await onCreateItem(data);
+        console.log('onCreateItem result:', result);
+      }
+      setShowEttermiModal(false);
+      setEditingItem(null);
+    } catch (error) {
+      console.error('Error in handleSaveEttermi:', error);
     }
-    setShowEttermiModal(false);
-    setEditingItem(null);
   };
 
   const handleEdit = (item) => {
