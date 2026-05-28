@@ -112,6 +112,51 @@ export default function DailyReport({ date, unitId }) {
               </div>
             </div>
 
+            {/* Additional revenue types */}
+            {(revenue.protocol_gross || revenue.mckinsey_gross || revenue.ordit_gross || revenue.event_revenue_gross) && (
+              <div>
+                <h4 className="font-medium text-gray-700 mb-2">Egyéb bevételek</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                  {revenue.protocol_gross > 0 && (
+                    <div className="p-3 bg-blue-50 rounded-lg">
+                      <div className="text-blue-600 text-xs">Protokoll</div>
+                      <div className="font-bold text-blue-800">{formatCurrency(revenue.protocol_gross)}</div>
+                      {revenue.protocol_net > 0 && (
+                        <div className="text-xs text-blue-500">nettó: {formatCurrency(revenue.protocol_net)}</div>
+                      )}
+                    </div>
+                  )}
+                  {revenue.mckinsey_gross > 0 && (
+                    <div className="p-3 bg-emerald-50 rounded-lg">
+                      <div className="text-emerald-600 text-xs">McKinsey</div>
+                      <div className="font-bold text-emerald-800">{formatCurrency(revenue.mckinsey_gross)}</div>
+                      {revenue.mckinsey_net > 0 && (
+                        <div className="text-xs text-emerald-500">nettó: {formatCurrency(revenue.mckinsey_net)}</div>
+                      )}
+                    </div>
+                  )}
+                  {revenue.ordit_gross > 0 && (
+                    <div className="p-3 bg-orange-50 rounded-lg">
+                      <div className="text-orange-600 text-xs">Ordit</div>
+                      <div className="font-bold text-orange-800">{formatCurrency(revenue.ordit_gross)}</div>
+                      {revenue.ordit_net > 0 && (
+                        <div className="text-xs text-orange-500">nettó: {formatCurrency(revenue.ordit_net)}</div>
+                      )}
+                    </div>
+                  )}
+                  {revenue.event_revenue_gross > 0 && (
+                    <div className="p-3 bg-purple-50 rounded-lg">
+                      <div className="text-purple-600 text-xs">Rendezvény</div>
+                      <div className="font-bold text-purple-800">{formatCurrency(revenue.event_revenue_gross)}</div>
+                      {revenue.event_revenue_net > 0 && (
+                        <div className="text-xs text-purple-500">nettó: {formatCurrency(revenue.event_revenue_net)}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Per-register cash register data */}
             {cashRegisterDetails.length > 0 && (
               <div>

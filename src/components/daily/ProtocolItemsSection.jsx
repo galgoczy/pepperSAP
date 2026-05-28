@@ -40,8 +40,24 @@ function BekeszitesForm({ item, onSave, onCancel }) {
   });
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  const formatTimeInput = (value) => {
+    // Remove any non-digit characters
+    const digits = value.replace(/\D/g, '');
+    // Auto-format: 1430 -> 14:30
+    if (digits.length >= 3 && !value.includes(':')) {
+      const hours = digits.slice(0, 2);
+      const minutes = digits.slice(2, 4);
+      return `${hours}:${minutes}`;
+    }
+    return value;
+  };
+
   const handleChange = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    let processedValue = value;
+    if (['start_time', 'end_time'].includes(field)) {
+      processedValue = formatTimeInput(value);
+    }
+    setFormData((prev) => ({ ...prev, [field]: processedValue }));
     if (field === 'project_number') {
       fetchSuggestions(value);
       setShowSuggestions(true);
@@ -224,8 +240,22 @@ function EttermiForm({ item, onSave, onCancel }) {
     vat_rate: item?.vat_rate ?? 27,
   });
 
+  const formatTimeInput = (value) => {
+    const digits = value.replace(/\D/g, '');
+    if (digits.length >= 3 && !value.includes(':')) {
+      const hours = digits.slice(0, 2);
+      const minutes = digits.slice(2, 4);
+      return `${hours}:${minutes}`;
+    }
+    return value;
+  };
+
   const handleChange = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    let processedValue = value;
+    if (field === 'consumption_time') {
+      processedValue = formatTimeInput(value);
+    }
+    setFormData((prev) => ({ ...prev, [field]: processedValue }));
   };
 
   const handleSave = () => {

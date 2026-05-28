@@ -306,6 +306,39 @@ export default function DailyEntryPage() {
         doc.text(sanitizeForPdf('Bankkártya (terminál):'), 25, y);
         doc.text(formatPdfCurrency(totalCashRegisterCard), 80, y);
         y += 8;
+
+        // Additional revenue types (Protocol, McKinsey, Ordit, Event)
+        const hasAdditionalRevenue = (revenue.protocol_gross > 0) || (revenue.mckinsey_gross > 0) ||
+          (revenue.ordit_gross > 0) || (revenue.event_revenue_gross > 0);
+
+        if (hasAdditionalRevenue) {
+          doc.setFont('helvetica', 'bold');
+          doc.text(sanitizeForPdf('Egyéb bevételek:'), 20, y);
+          y += 6;
+          doc.setFont('helvetica', 'normal');
+
+          if (revenue.protocol_gross > 0) {
+            doc.text(sanitizeForPdf('Protokoll:'), 25, y);
+            doc.text(formatPdfCurrency(revenue.protocol_gross), rightMargin, y, { align: 'right' });
+            y += 5;
+          }
+          if (revenue.mckinsey_gross > 0) {
+            doc.text(sanitizeForPdf('McKinsey:'), 25, y);
+            doc.text(formatPdfCurrency(revenue.mckinsey_gross), rightMargin, y, { align: 'right' });
+            y += 5;
+          }
+          if (revenue.ordit_gross > 0) {
+            doc.text(sanitizeForPdf('Ordit:'), 25, y);
+            doc.text(formatPdfCurrency(revenue.ordit_gross), rightMargin, y, { align: 'right' });
+            y += 5;
+          }
+          if (revenue.event_revenue_gross > 0) {
+            doc.text(sanitizeForPdf('Rendezvény:'), 25, y);
+            doc.text(formatPdfCurrency(revenue.event_revenue_gross), rightMargin, y, { align: 'right' });
+            y += 5;
+          }
+          y += 3;
+        }
       } else {
         doc.setFontSize(10);
         doc.text(sanitizeForPdf('Nincs rögzített forgalmi adat'), 20, y);
