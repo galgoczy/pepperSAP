@@ -111,13 +111,17 @@ function BekeszitesForm({ item, onSave, onCancel }) {
         />
         <Input
           label="Kezdés"
-          type="time"
+          type="text"
+          placeholder="HH:MM"
+          pattern="[0-2][0-9]:[0-5][0-9]"
           value={formData.start_time}
           onChange={(e) => handleChange('start_time', e.target.value)}
         />
         <Input
           label="Vége"
-          type="time"
+          type="text"
+          placeholder="HH:MM"
+          pattern="[0-2][0-9]:[0-5][0-9]"
           value={formData.end_time}
           onChange={(e) => handleChange('end_time', e.target.value)}
         />
@@ -253,7 +257,9 @@ function EttermiForm({ item, onSave, onCancel }) {
         />
         <Input
           label="Időpont"
-          type="time"
+          type="text"
+          placeholder="HH:MM"
+          pattern="[0-2][0-9]:[0-5][0-9]"
           value={formData.consumption_time}
           onChange={(e) => handleChange('consumption_time', e.target.value)}
         />
