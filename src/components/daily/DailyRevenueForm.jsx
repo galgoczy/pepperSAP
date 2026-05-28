@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark, Banknote } from 'lucide-react';
+import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark, Banknote, Radio, PartyPopper, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useDailyRevenue } from '../../hooks/useDailyRevenue';
 import { useActiveCashRegisters, useAllCashRegisterRevenue } from '../../hooks/useCashRegisterRevenue';
+import { useProtocolItems } from '../../hooks/useProtocolItems';
+import { useUnitRevenueSettings } from '../../hooks/useUnitRevenueSettings';
+import { useEventRevenueValidation } from '../../hooks/useEventRevenueValidation';
 import { Card, Button, Input, LoadingSpinner } from '../common';
 import CashRegisterSection from './CashRegisterSection';
 import EfoPayments from './EfoPayments';
+import ProtocolItemsSection from './ProtocolItemsSection';
 import { formatCurrency } from '../../lib/utils';
 import toast from 'react-hot-toast';
 
@@ -15,7 +19,6 @@ const VAT_RATES = [
   { value: 0, label: '0%' },
 ];
 
-// Color options for marking entries
 const MARK_COLORS = [
   { value: null, label: 'Nincs', className: 'bg-gray-100 border-gray-300' },
   { value: 'red', label: 'Piros', className: 'bg-red-500 border-red-600' },
@@ -29,6 +32,9 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
   const { revenue, loading: revenueLoading, saveRevenue } = useDailyRevenue(unitId, date);
   const { cashRegisters, loading: registersLoading } = useActiveCashRegisters(unitId);
   const { revenues: cashRegisterRevenues, saveAllRevenues } = useAllCashRegisterRevenue(revenue?.id);
+  const { settings: revenueSettings, loading: settingsLoading } = useUnitRevenueSettings(unitId);
+  const { items: protocolItems, totalAmount: protocolItemsTotal, createItem: createProtocolItem, updateItem: updateProtocolItem, deleteItem: deleteProtocolItem } = useProtocolItems(revenue?.id);
+  const { validationResult: eventValidation, validateEventRevenue } = useEventRevenueValidation(unitId, date);
 
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
@@ -36,39 +42,41 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     guest_count: '',
     mark_color: null,
     software_revenue_manual_override: false,
-    // VIP fields (info only)
+    // VIP fields
     vip_loading: '',
     vip_revenue: '',
-    // Protocol revenue
+    // Protocol revenue (simple mode)
     protocol_net: '',
     protocol_gross: '',
     protocol_vat_rate: 27,
-    // McKinsey revenue (Államkincstár only)
+    // McKinsey revenue
     mckinsey_net: '',
     mckinsey_gross: '',
     mckinsey_vat_rate: 27,
     // Extra cash revenue
     extra_cash_revenue: '',
+    // Ordit revenue (new)
+    ordit_net: '',
+    ordit_gross: '',
+    ordit_vat_rate: 27,
+    // Event revenue (new)
+    event_revenue_net: '',
+    event_revenue_gross: '',
+    event_revenue_vat_rate: 27,
   });
   const [expandedRegisters, setExpandedRegisters] = useState({});
   const cashRegisterDataRef = useRef({});
   const [perRegisterSoftwareSum, setPerRegisterSoftwareSum] = useState(0);
 
-  // Initialize expanded state for all registers
   useEffect(() => {
     if (cashRegisters.length > 0) {
       const expanded = {};
       cashRegisters.forEach((r, index) => {
-        // Expand first register by default, or all if only a few
         expanded[r.id] = index === 0 || cashRegisters.length <= 2;
       });
       setExpandedRegisters(expanded);
     }
   }, [cashRegisters]);
-
-  // Check if this is the Államkincstár unit
-  const isAllamkincstar = unitName?.toLowerCase().includes('államkincstár') ||
-                          unitName?.toLowerCase().includes('allamkincstar');
 
   useEffect(() => {
     if (revenue) {
@@ -77,19 +85,21 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         guest_count: revenue.guest_count || '',
         mark_color: revenue.mark_color || null,
         software_revenue_manual_override: revenue.software_revenue_manual_override || false,
-        // VIP fields
         vip_loading: revenue.vip_loading || '',
         vip_revenue: revenue.vip_revenue || '',
-        // Protocol revenue
         protocol_net: revenue.protocol_net || '',
         protocol_gross: revenue.protocol_gross || '',
         protocol_vat_rate: revenue.protocol_vat_rate ?? 27,
-        // McKinsey revenue
         mckinsey_net: revenue.mckinsey_net || '',
         mckinsey_gross: revenue.mckinsey_gross || '',
         mckinsey_vat_rate: revenue.mckinsey_vat_rate ?? 27,
-        // Extra cash revenue
         extra_cash_revenue: revenue.extra_cash_revenue || '',
+        ordit_net: revenue.ordit_net || '',
+        ordit_gross: revenue.ordit_gross || '',
+        ordit_vat_rate: revenue.ordit_vat_rate ?? 27,
+        event_revenue_net: revenue.event_revenue_net || '',
+        event_revenue_gross: revenue.event_revenue_gross || '',
+        event_revenue_vat_rate: revenue.event_revenue_vat_rate ?? 27,
       });
     } else {
       setFormData({
@@ -106,11 +116,16 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         mckinsey_gross: '',
         mckinsey_vat_rate: 27,
         extra_cash_revenue: '',
+        ordit_net: '',
+        ordit_gross: '',
+        ordit_vat_rate: 27,
+        event_revenue_net: '',
+        event_revenue_gross: '',
+        event_revenue_vat_rate: 27,
       });
     }
   }, [revenue, date]);
 
-  // Build a map of existing cash register revenue data
   const existingDataByRegister = useCallback(() => {
     const map = {};
     cashRegisterRevenues.forEach((r) => {
@@ -119,7 +134,6 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     return map;
   }, [cashRegisterRevenues]);
 
-  // Initialize perRegisterSoftwareSum from existing data
   useEffect(() => {
     const sum = cashRegisterRevenues.reduce(
       (total, r) => total + (parseFloat(r.software_revenue) || 0),
@@ -132,85 +146,59 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Auto-calculate gross from net (or vice versa) for Protocol
-  const handleProtocolNetChange = (value) => {
-    const net = parseFloat(value) || 0;
-    const vatRate = formData.protocol_vat_rate / 100;
-    const gross = Math.round(net * (1 + vatRate));
-    setFormData((prev) => ({
-      ...prev,
-      protocol_net: value,
-      protocol_gross: gross > 0 ? gross.toString() : '',
-    }));
-  };
+  // Generic net/gross/vat handler factory
+  const createVatHandlers = (prefix) => ({
+    handleNetChange: (value) => {
+      const net = parseFloat(value) || 0;
+      const vatRate = formData[`${prefix}_vat_rate`] / 100;
+      const gross = Math.round(net * (1 + vatRate));
+      setFormData((prev) => ({
+        ...prev,
+        [`${prefix}_net`]: value,
+        [`${prefix}_gross`]: gross > 0 ? gross.toString() : '',
+      }));
+    },
+    handleGrossChange: (value) => {
+      const gross = parseFloat(value) || 0;
+      const vatRate = formData[`${prefix}_vat_rate`] / 100;
+      const net = Math.round(gross / (1 + vatRate));
+      setFormData((prev) => ({
+        ...prev,
+        [`${prefix}_gross`]: value,
+        [`${prefix}_net`]: net > 0 ? net.toString() : '',
+      }));
+    },
+    handleVatChange: (value) => {
+      const vatRate = parseFloat(value) / 100;
+      const net = parseFloat(formData[`${prefix}_net`]) || 0;
+      const gross = Math.round(net * (1 + vatRate));
+      setFormData((prev) => ({
+        ...prev,
+        [`${prefix}_vat_rate`]: parseFloat(value),
+        [`${prefix}_gross`]: gross > 0 ? gross.toString() : '',
+      }));
+    },
+  });
 
-  const handleProtocolGrossChange = (value) => {
-    const gross = parseFloat(value) || 0;
-    const vatRate = formData.protocol_vat_rate / 100;
-    const net = Math.round(gross / (1 + vatRate));
-    setFormData((prev) => ({
-      ...prev,
-      protocol_gross: value,
-      protocol_net: net > 0 ? net.toString() : '',
-    }));
-  };
+  const protocolHandlers = createVatHandlers('protocol');
+  const mckinseyHandlers = createVatHandlers('mckinsey');
+  const orditHandlers = createVatHandlers('ordit');
+  const eventRevenueHandlers = createVatHandlers('event_revenue');
 
-  const handleProtocolVatChange = (value) => {
-    const vatRate = parseFloat(value) / 100;
-    const net = parseFloat(formData.protocol_net) || 0;
-    const gross = Math.round(net * (1 + vatRate));
-    setFormData((prev) => ({
-      ...prev,
-      protocol_vat_rate: parseFloat(value),
-      protocol_gross: gross > 0 ? gross.toString() : '',
-    }));
-  };
-
-  // Auto-calculate gross from net for McKinsey
-  const handleMcKinseyNetChange = (value) => {
-    const net = parseFloat(value) || 0;
-    const vatRate = formData.mckinsey_vat_rate / 100;
-    const gross = Math.round(net * (1 + vatRate));
-    setFormData((prev) => ({
-      ...prev,
-      mckinsey_net: value,
-      mckinsey_gross: gross > 0 ? gross.toString() : '',
-    }));
-  };
-
-  const handleMcKinseyGrossChange = (value) => {
-    const gross = parseFloat(value) || 0;
-    const vatRate = formData.mckinsey_vat_rate / 100;
-    const net = Math.round(gross / (1 + vatRate));
-    setFormData((prev) => ({
-      ...prev,
-      mckinsey_gross: value,
-      mckinsey_net: net > 0 ? net.toString() : '',
-    }));
-  };
-
-  const handleMcKinseyVatChange = (value) => {
-    const vatRate = parseFloat(value) / 100;
-    const net = parseFloat(formData.mckinsey_net) || 0;
-    const gross = Math.round(net * (1 + vatRate));
-    setFormData((prev) => ({
-      ...prev,
-      mckinsey_vat_rate: parseFloat(value),
-      mckinsey_gross: gross > 0 ? gross.toString() : '',
-    }));
-  };
+  // Validate event revenue when it changes
+  useEffect(() => {
+    if (formData.event_revenue_gross && revenueSettings?.show_event_revenue) {
+      validateEventRevenue(formData.event_revenue_gross);
+    }
+  }, [formData.event_revenue_gross, validateEventRevenue, revenueSettings?.show_event_revenue]);
 
   const handleCashRegisterChange = (registerId, data) => {
     cashRegisterDataRef.current[registerId] = data;
-
-    // Calculate sum of per-register software revenues
     const sum = Object.values(cashRegisterDataRef.current).reduce(
       (total, regData) => total + (parseFloat(regData?.software_revenue) || 0),
       0
     );
     setPerRegisterSoftwareSum(sum);
-
-    // Auto-update total if not in manual override mode and there's a sum
     if (!formData.software_revenue_manual_override && sum > 0) {
       setFormData(prev => ({ ...prev, total_revenue: sum.toString() }));
     }
@@ -229,11 +217,16 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
 
     setSaving(true);
     try {
-      // First save the main daily revenue
-      const savedRevenue = await saveRevenue(formData);
+      // If protocol items exist, override protocol_gross with items total
+      const protocolGrossToSave = protocolItems.length > 0
+        ? protocolItemsTotal.toString()
+        : formData.protocol_gross;
 
-      // Then save all cash register revenues if there are any
-      // Pass the savedRevenue.id to handle new entries where revenue?.id was null
+      const savedRevenue = await saveRevenue({
+        ...formData,
+        protocol_gross: protocolGrossToSave,
+      });
+
       if (cashRegisters.length > 0 && savedRevenue?.id) {
         await saveAllRevenues(cashRegisterDataRef.current, savedRevenue.id);
       }
@@ -246,7 +239,6 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     }
   };
 
-  // Calculate total from all cash registers
   const totalCashRegisterRevenue = cashRegisters.reduce((sum, register) => {
     const data = cashRegisterDataRef.current[register.id] || existingDataByRegister()[register.id] || {};
     return (
@@ -259,7 +251,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     );
   }, 0);
 
-  const loading = revenueLoading || registersLoading;
+  const loading = revenueLoading || registersLoading || settingsLoading;
 
   if (!unitId) {
     return (
@@ -278,6 +270,13 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       </div>
     );
   }
+
+  // Determine which sections to show based on settings
+  const showVip = revenueSettings?.show_vip ?? true;
+  const showProtocol = revenueSettings?.show_protocol ?? true;
+  const showMcKinsey = revenueSettings?.show_mckinsey ?? false;
+  const showOrdit = revenueSettings?.show_ordit ?? false;
+  const showEventRevenue = revenueSettings?.show_event_revenue ?? false;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -299,7 +298,6 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
                       setFormData(prev => ({
                         ...prev,
                         software_revenue_manual_override: isManual,
-                        // If switching to auto mode, use the sum
                         total_revenue: isManual ? prev.total_revenue : perRegisterSoftwareSum.toString(),
                       }));
                     }}
@@ -315,7 +313,6 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
               value={formData.total_revenue}
               onChange={(e) => {
                 handleChange('total_revenue', e.target.value);
-                // If user manually edits and there's a sum, switch to manual mode
                 if (perRegisterSoftwareSum > 0) {
                   handleChange('software_revenue_manual_override', true);
                 }
@@ -346,63 +343,96 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         </div>
       </Card>
 
-      {/* VIP Section - info only */}
-      <Card
-        title={
-          <div className="flex items-center gap-2">
-            <Star className="h-5 w-5 text-amber-500" />
-            VIP
+      {/* VIP Section */}
+      {showVip && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <Star className="h-5 w-5 text-amber-500" />
+              VIP
+            </div>
+          }
+        >
+          <p className="text-sm text-gray-500 mb-4">
+            VIP adatok - csak tájékoztató jellegű, nem számít bele a forgalomba
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input
+              label="VIP töltés"
+              type="number"
+              step="0.01"
+              value={formData.vip_loading}
+              onChange={(e) => handleChange('vip_loading', e.target.value)}
+              suffix="Ft"
+            />
+            <Input
+              label="VIP forgalom"
+              type="number"
+              step="0.01"
+              value={formData.vip_revenue}
+              onChange={(e) => handleChange('vip_revenue', e.target.value)}
+              suffix="Ft"
+            />
           </div>
-        }
-      >
-        <p className="text-sm text-gray-500 mb-4">
-          VIP adatok - csak tájékoztató jellegű, nem számít bele a forgalomba
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input
-            label="VIP töltés"
-            type="number"
-            step="0.01"
-            value={formData.vip_loading}
-            onChange={(e) => handleChange('vip_loading', e.target.value)}
-            suffix="Ft"
-          />
-          <Input
-            label="VIP forgalom"
-            type="number"
-            step="0.01"
-            value={formData.vip_revenue}
-            onChange={(e) => handleChange('vip_revenue', e.target.value)}
-            suffix="Ft"
-          />
-        </div>
-      </Card>
+        </Card>
+      )}
 
       {/* Protocol Revenue Section */}
-      <Card
-        title={
-          <div className="flex items-center gap-2">
-            <Building className="h-5 w-5 text-blue-500" />
-            Protokoll bevétel
-          </div>
-        }
-      >
-        <div className="space-y-4">
+      {showProtocol && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <Building className="h-5 w-5 text-blue-500" />
+              Protokoll bevétel
+              {protocolItems.length > 0 && (
+                <span className="text-sm font-normal text-gray-500">
+                  ({protocolItems.length} tétel)
+                </span>
+              )}
+            </div>
+          }
+        >
+          <ProtocolItemsSection
+            items={protocolItems}
+            totalAmount={protocolItemsTotal}
+            onCreateItem={createProtocolItem}
+            onUpdateItem={updateProtocolItem}
+            onDeleteItem={deleteProtocolItem}
+            protocolNet={formData.protocol_net}
+            protocolGross={formData.protocol_gross}
+            protocolVatRate={formData.protocol_vat_rate}
+            onProtocolNetChange={protocolHandlers.handleNetChange}
+            onProtocolGrossChange={protocolHandlers.handleGrossChange}
+            onProtocolVatChange={protocolHandlers.handleVatChange}
+          />
+        </Card>
+      )}
+
+      {/* McKinsey Revenue Section */}
+      {showMcKinsey && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <Landmark className="h-5 w-5 text-emerald-600" />
+              McKinsey bevétel
+            </div>
+          }
+        >
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Input
               label="Nettó összeg"
               type="number"
               step="0.01"
-              value={formData.protocol_net}
-              onChange={(e) => handleProtocolNetChange(e.target.value)}
+              value={formData.mckinsey_net}
+              onChange={(e) => mckinseyHandlers.handleNetChange(e.target.value)}
               suffix="Ft"
             />
             <Input
               label="Bruttó összeg"
               type="number"
               step="0.01"
-              value={formData.protocol_gross}
-              onChange={(e) => handleProtocolGrossChange(e.target.value)}
+              value={formData.mckinsey_gross}
+              onChange={(e) => mckinseyHandlers.handleGrossChange(e.target.value)}
               suffix="Ft"
             />
             <div>
@@ -410,8 +440,8 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
                 ÁFA kulcs
               </label>
               <select
-                value={formData.protocol_vat_rate}
-                onChange={(e) => handleProtocolVatChange(e.target.value)}
+                value={formData.mckinsey_vat_rate}
+                onChange={(e) => mckinseyHandlers.handleVatChange(e.target.value)}
                 className="w-full rounded-lg border-gray-300 shadow-sm focus:border-pepper-red focus:ring-pepper-red"
               >
                 {VAT_RATES.map((rate) => (
@@ -422,38 +452,82 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
               </select>
             </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      )}
 
-      {/* McKinsey Revenue Section - only for Államkincstár */}
-      {isAllamkincstar && (
+      {/* Ordit Revenue Section */}
+      {showOrdit && (
         <Card
           title={
             <div className="flex items-center gap-2">
-              <Landmark className="h-5 w-5 text-emerald-600" />
-              McKinsey bevétel
+              <Radio className="h-5 w-5 text-orange-500" />
+              Ordit bevétel
             </div>
           }
         >
-          <p className="text-sm text-gray-500 mb-4">
-            Államkincstár specifikus bevétel
-          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Input
+              label="Nettó összeg"
+              type="number"
+              step="0.01"
+              value={formData.ordit_net}
+              onChange={(e) => orditHandlers.handleNetChange(e.target.value)}
+              suffix="Ft"
+            />
+            <Input
+              label="Bruttó összeg"
+              type="number"
+              step="0.01"
+              value={formData.ordit_gross}
+              onChange={(e) => orditHandlers.handleGrossChange(e.target.value)}
+              suffix="Ft"
+            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                ÁFA kulcs
+              </label>
+              <select
+                value={formData.ordit_vat_rate}
+                onChange={(e) => orditHandlers.handleVatChange(e.target.value)}
+                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-pepper-red focus:ring-pepper-red"
+              >
+                {VAT_RATES.map((rate) => (
+                  <option key={rate.value} value={rate.value}>
+                    {rate.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Event Revenue Section */}
+      {showEventRevenue && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <PartyPopper className="h-5 w-5 text-purple-500" />
+              Rendezvény bevétel
+            </div>
+          }
+        >
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Input
                 label="Nettó összeg"
                 type="number"
                 step="0.01"
-                value={formData.mckinsey_net}
-                onChange={(e) => handleMcKinseyNetChange(e.target.value)}
+                value={formData.event_revenue_net}
+                onChange={(e) => eventRevenueHandlers.handleNetChange(e.target.value)}
                 suffix="Ft"
               />
               <Input
                 label="Bruttó összeg"
                 type="number"
                 step="0.01"
-                value={formData.mckinsey_gross}
-                onChange={(e) => handleMcKinseyGrossChange(e.target.value)}
+                value={formData.event_revenue_gross}
+                onChange={(e) => eventRevenueHandlers.handleGrossChange(e.target.value)}
                 suffix="Ft"
               />
               <div>
@@ -461,8 +535,8 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
                   ÁFA kulcs
                 </label>
                 <select
-                  value={formData.mckinsey_vat_rate}
-                  onChange={(e) => handleMcKinseyVatChange(e.target.value)}
+                  value={formData.event_revenue_vat_rate}
+                  onChange={(e) => eventRevenueHandlers.handleVatChange(e.target.value)}
                   className="w-full rounded-lg border-gray-300 shadow-sm focus:border-pepper-red focus:ring-pepper-red"
                 >
                   {VAT_RATES.map((rate) => (
@@ -473,6 +547,29 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
                 </select>
               </div>
             </div>
+
+            {/* Event validation feedback */}
+            {eventValidation && formData.event_revenue_gross && (
+              <div className={`flex items-start gap-2 p-3 rounded-lg ${
+                eventValidation.matches
+                  ? 'bg-green-50 text-green-800'
+                  : 'bg-amber-50 text-amber-800'
+              }`}>
+                {eventValidation.matches ? (
+                  <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                )}
+                <div className="text-sm">
+                  <p>{eventValidation.message}</p>
+                  {eventValidation.hasEvents && eventValidation.events && (
+                    <p className="text-xs mt-1 opacity-75">
+                      Rendezvények: {eventValidation.events.join(', ')}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </Card>
       )}

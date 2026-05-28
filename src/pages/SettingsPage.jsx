@@ -1,12 +1,22 @@
 import { useState } from 'react';
-import { User, Lock, Bell, Shield } from 'lucide-react';
+import { User, Lock, Bell, Shield, Settings2, Star, Building, Landmark, Radio, PartyPopper } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { Card, Button, Input } from '../components/common';
+import { useAllUnitRevenueSettings } from '../hooks/useUnitRevenueSettings';
+import { Card, Button, Input, LoadingSpinner } from '../components/common';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 
+const REVENUE_TYPES = [
+  { key: 'show_vip', label: 'VIP', icon: Star, color: 'text-amber-500' },
+  { key: 'show_protocol', label: 'Protokoll', icon: Building, color: 'text-blue-500' },
+  { key: 'show_mckinsey', label: 'McKinsey', icon: Landmark, color: 'text-emerald-600' },
+  { key: 'show_ordit', label: 'Ordit', icon: Radio, color: 'text-orange-500' },
+  { key: 'show_event_revenue', label: 'Rendezvény', icon: PartyPopper, color: 'text-purple-500' },
+];
+
 export default function SettingsPage() {
-  const { user, profile, refetchProfile } = useAuth();
+  const { user, profile, refetchProfile, isAdmin } = useAuth();
+  const { allSettings, loading: settingsLoading, updateSettings } = useAllUnitRevenueSettings();
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [newPassword, setNewPassword] = useState('');
@@ -68,7 +78,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-3xl">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Beállítások</h1>
@@ -154,6 +164,67 @@ export default function SettingsPage() {
           </div>
         </form>
       </Card>
+
+      {/* Unit Revenue Settings - Admin only */}
+      {isAdmin && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <Settings2 className="h-5 w-5 text-gray-400" />
+              Bevétel típusok megjelenítése
+            </div>
+          }
+        >
+          <p className="text-sm text-gray-500 mb-4">
+            Állítsd be, mely bevétel típusok jelenjenek meg az egyes egységek napi jelentésében.
+          </p>
+
+          {settingsLoading ? (
+            <div className="flex justify-center py-4">
+              <LoadingSpinner />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {allSettings.map((unit) => (
+                <div key={unit.id} className="border rounded-lg p-4">
+                  <h4 className="font-medium text-gray-900 mb-3">{unit.name}</h4>
+                  <div className="flex flex-wrap gap-3">
+                    {REVENUE_TYPES.map((type) => {
+                      const Icon = type.icon;
+                      const isChecked = unit.settings[type.key] ?? false;
+                      return (
+                        <label
+                          key={type.key}
+                          className={`
+                            flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all
+                            ${isChecked
+                              ? 'bg-gray-50 border-gray-300'
+                              : 'bg-white border-gray-200 opacity-60'
+                            }
+                          `}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              updateSettings(unit.id, {
+                                [type.key]: e.target.checked,
+                              });
+                            }}
+                            className="h-4 w-4 text-pepper-red rounded border-gray-300 focus:ring-pepper-red"
+                          />
+                          <Icon className={`h-4 w-4 ${type.color}`} />
+                          <span className="text-sm text-gray-700">{type.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Notifications Section (Future) */}
       <Card
