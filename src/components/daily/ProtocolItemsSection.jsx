@@ -48,13 +48,15 @@ function BekeszitesForm({ item, onSave, onCancel }) {
     }
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSave = () => {
+    if (!formData.amount) {
+      return;
+    }
     onSave(formData);
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <Input
           label="Rendelési szám"
@@ -201,11 +203,11 @@ function BekeszitesForm({ item, onSave, onCancel }) {
         <Button type="button" variant="secondary" onClick={onCancel}>
           Mégse
         </Button>
-        <Button type="submit">
+        <Button type="button" onClick={handleSave} disabled={!formData.amount}>
           {item ? 'Mentés' : 'Hozzáadás'}
         </Button>
       </div>
-    </form>
+    </div>
   );
 }
 
@@ -226,13 +228,15 @@ function EttermiForm({ item, onSave, onCancel }) {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSave = () => {
+    if (!formData.amount) {
+      return;
+    }
     onSave(formData);
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <Input
           label="DUKA szám"
@@ -301,11 +305,11 @@ function EttermiForm({ item, onSave, onCancel }) {
         <Button type="button" variant="secondary" onClick={onCancel}>
           Mégse
         </Button>
-        <Button type="submit">
+        <Button type="button" onClick={handleSave} disabled={!formData.amount}>
           {item ? 'Mentés' : 'Hozzáadás'}
         </Button>
       </div>
-    </form>
+    </div>
   );
 }
 
