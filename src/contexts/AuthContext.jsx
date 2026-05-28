@@ -178,12 +178,28 @@ export function AuthProvider({ children }) {
 
     // Check if we're in an OAuth callback (code in URL) - handle manually for Safari compatibility
     const authCode = urlParams.get('code');
+    const authError = urlParams.get('error');
+    const authErrorDesc = urlParams.get('error_description');
+
+    if (authError) {
+      console.error('AuthContext: OAuth error in URL:', authError, authErrorDesc);
+      window.history.replaceState({}, '', window.location.pathname);
+      setLoading(false);
+      return () => { mounted = false; };
+    }
+
     if (authCode) {
-      console.log('AuthContext: OAuth callback detected, manually exchanging code...');
+      console.log('AuthContext: OAuth callback detected, code length:', authCode.length);
+      console.log('AuthContext: Current URL:', window.location.href);
 
       supabase.auth.exchangeCodeForSession(authCode)
         .then(({ data, error }) => {
-          console.log('AuthContext: exchangeCodeForSession result:', { hasSession: !!data?.session, error });
+          console.log('AuthContext: exchangeCodeForSession result:', {
+            hasSession: !!data?.session,
+            hasUser: !!data?.session?.user,
+            userEmail: data?.session?.user?.email,
+            error: error?.message || error
+          });
 
           // Clear the URL params regardless of result
           window.history.replaceState({}, '', window.location.pathname);
@@ -197,7 +213,7 @@ export function AuthProvider({ children }) {
           }
 
           if (data?.session) {
-            console.log('AuthContext: Session established via manual exchange');
+            console.log('AuthContext: Session established via manual exchange, user:', data.session.user.email);
             setUser(data.session.user);
             fetchProfile(data.session.user.id, data.session.user);
           } else {
@@ -206,7 +222,7 @@ export function AuthProvider({ children }) {
           }
         })
         .catch(err => {
-          console.error('AuthContext: exchangeCodeForSession error:', err);
+          console.error('AuthContext: exchangeCodeForSession exception:', err);
           window.history.replaceState({}, '', window.location.pathname);
           if (mounted) setLoading(false);
         });
