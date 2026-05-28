@@ -2,9 +2,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
-export function useProtocolItems(dailyRevenueId) {
+export function useProtocolItems(initialDailyRevenueId) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dailyRevenueId, setDailyRevenueId] = useState(initialDailyRevenueId);
+
+  // Update internal state when prop changes
+  useEffect(() => {
+    if (initialDailyRevenueId && initialDailyRevenueId !== dailyRevenueId) {
+      setDailyRevenueId(initialDailyRevenueId);
+    }
+  }, [initialDailyRevenueId]);
 
   const fetchItems = useCallback(async () => {
     if (!dailyRevenueId) {
@@ -119,6 +127,7 @@ export function useProtocolItems(dailyRevenueId) {
     updateItem,
     deleteItem,
     refetch: fetchItems,
+    setDailyRevenueId,
   };
 }
 

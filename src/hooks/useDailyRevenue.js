@@ -187,6 +187,33 @@ export function useDailyRevenue(unitId, date) {
     }
   };
 
+  // Create a minimal daily_revenue record if needed (for protocol items)
+  const ensureRevenueExists = async () => {
+    if (revenue?.id) {
+      return revenue;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('daily_revenue')
+        .insert([{
+          unit_id: unitId,
+          date: date,
+          total_revenue: 0,
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      setRevenue(data);
+      return data;
+    } catch (error) {
+      console.error('Error creating daily revenue:', error);
+      toast.error('Hiba a napi adat létrehozásakor');
+      throw error;
+    }
+  };
+
   return {
     revenue,
     cashRegisterTotals,
@@ -194,6 +221,7 @@ export function useDailyRevenue(unitId, date) {
     loading,
     refetch: fetchRevenue,
     saveRevenue,
+    ensureRevenueExists,
   };
 }
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Trash2, Edit2, ChevronDown, ChevronUp, Package, Utensils } from 'lucide-react';
+import { Plus, Trash2, Edit2, Package, Utensils } from 'lucide-react';
 import { Button, Input, Modal } from '../common';
 import { formatCurrency, formatDate } from '../../lib/utils';
 import { useProjectNumberSuggestions } from '../../hooks/useProtocolItems';
@@ -363,7 +363,6 @@ export default function ProtocolItemsSection({
   onProtocolGrossChange,
   onProtocolVatChange,
 }) {
-  const [isExpanded, setIsExpanded] = useState(items.length > 0);
   const [showBekeszitesModal, setShowBekeszitesModal] = useState(false);
   const [showEttermiModal, setShowEttermiModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -407,20 +406,36 @@ export default function ProtocolItemsSection({
 
   return (
     <div className="space-y-4">
-      {/* Toggle between simple and detailed mode */}
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
-        >
-          {isExpanded ? (
-            <ChevronUp className="h-4 w-4" />
-          ) : (
-            <ChevronDown className="h-4 w-4" />
-          )}
-          {hasItems ? `${items.length} tétel` : 'Részletezés'}
-        </button>
+      {/* Add buttons - always visible at top */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setEditingItem(null);
+              setShowBekeszitesModal(true);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            <Package className="h-4 w-4" />
+            Bekészítés
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setEditingItem(null);
+              setShowEttermiModal(true);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            <Utensils className="h-4 w-4" />
+            Éttermi fogyasztás
+          </Button>
+        </div>
 
         {hasItems && (
           <div className="text-right">
@@ -432,48 +447,9 @@ export default function ProtocolItemsSection({
         )}
       </div>
 
-      {/* Simple mode: just net/gross/vat inputs */}
-      {!hasItems && !isExpanded && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Input
-            label="Nettó összeg"
-            type="number"
-            step="0.01"
-            value={protocolNet}
-            onChange={(e) => onProtocolNetChange(e.target.value)}
-            suffix="Ft"
-          />
-          <Input
-            label="Bruttó összeg"
-            type="number"
-            step="0.01"
-            value={protocolGross}
-            onChange={(e) => onProtocolGrossChange(e.target.value)}
-            suffix="Ft"
-          />
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              ÁFA kulcs
-            </label>
-            <select
-              value={protocolVatRate}
-              onChange={(e) => onProtocolVatChange(e.target.value)}
-              className="w-full rounded-lg border-gray-300 shadow-sm focus:border-pepper-red focus:ring-pepper-red"
-            >
-              {VAT_RATES.map((rate) => (
-                <option key={rate.value} value={rate.value}>
-                  {rate.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      )}
-
-      {/* Detailed mode: items list + add buttons */}
-      {isExpanded && (
-        <div className="space-y-3">
-          {/* Items list */}
+      {/* Items list */}
+      {hasItems && (
+        <div className="space-y-2">
           {items.map((item) => (
             <ItemSummaryRow
               key={item.id}
@@ -482,79 +458,49 @@ export default function ProtocolItemsSection({
               onDelete={handleDelete}
             />
           ))}
+        </div>
+      )}
 
-          {/* Add buttons */}
-          <div className="flex flex-wrap gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setEditingItem(null);
-                setShowBekeszitesModal(true);
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              <Package className="h-4 w-4" />
-              Bekészítés
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setEditingItem(null);
-                setShowEttermiModal(true);
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              <Utensils className="h-4 w-4" />
-              Éttermi fogyasztás
-            </Button>
-          </div>
-
-          {/* Simple input when expanded but no items */}
-          {!hasItems && (
-            <div className="pt-4 border-t">
-              <p className="text-sm text-gray-500 mb-3">
-                Vagy adj meg egyösszegű bevételt:
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Input
-                  label="Nettó összeg"
-                  type="number"
-                  step="0.01"
-                  value={protocolNet}
-                  onChange={(e) => onProtocolNetChange(e.target.value)}
-                  suffix="Ft"
-                />
-                <Input
-                  label="Bruttó összeg"
-                  type="number"
-                  step="0.01"
-                  value={protocolGross}
-                  onChange={(e) => onProtocolGrossChange(e.target.value)}
-                  suffix="Ft"
-                />
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    ÁFA kulcs
-                  </label>
-                  <select
-                    value={protocolVatRate}
-                    onChange={(e) => onProtocolVatChange(e.target.value)}
-                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-pepper-red focus:ring-pepper-red"
-                  >
-                    {VAT_RATES.map((rate) => (
-                      <option key={rate.value} value={rate.value}>
-                        {rate.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+      {/* Simple net/gross/vat inputs when no items */}
+      {!hasItems && (
+        <div className="pt-2 border-t">
+          <p className="text-sm text-gray-500 mb-3">
+            Vagy adj meg egyösszegű bevételt:
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Input
+              label="Nettó összeg"
+              type="number"
+              step="0.01"
+              value={protocolNet}
+              onChange={(e) => onProtocolNetChange(e.target.value)}
+              suffix="Ft"
+            />
+            <Input
+              label="Bruttó összeg"
+              type="number"
+              step="0.01"
+              value={protocolGross}
+              onChange={(e) => onProtocolGrossChange(e.target.value)}
+              suffix="Ft"
+            />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                ÁFA kulcs
+              </label>
+              <select
+                value={protocolVatRate}
+                onChange={(e) => onProtocolVatChange(e.target.value)}
+                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-pepper-red focus:ring-pepper-red"
+              >
+                {VAT_RATES.map((rate) => (
+                  <option key={rate.value} value={rate.value}>
+                    {rate.label}
+                  </option>
+                ))}
+              </select>
             </div>
-          )}
+          </div>
         </div>
       )}
 
