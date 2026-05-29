@@ -4,6 +4,11 @@ import { supabase, onAuthError } from '../lib/supabase';
 // eslint-disable-next-line react-refresh/only-export-components
 export const AuthContext = createContext(null);
 
+// Ensures a given single-use OAuth `code` is only exchanged once, even if the
+// effect runs twice within the same page load (e.g. React StrictMode). A code
+// that has already been consumed fails on the second exchange attempt.
+let handledOAuthCode = null;
+
 // Predefined user roles based on email
 const EMAIL_ROLE_MAP = {
   'gergo@pepperhouse.hu': { role: 'admin', unit_name: null },
@@ -191,41 +196,61 @@ export function AuthProvider({ children }) {
     }
 
     if (authCode) {
-      console.log('AuthContext: OAuth callback detected, code length:', authCode.length);
-      console.log('AuthContext: Current URL:', window.location.href);
+      // Guard against exchanging the same single-use code twice (StrictMode
+      // double-invoke, remounts) - a consumed code fails on the second attempt.
+      if (handledOAuthCode === authCode) {
+        return () => { mounted = false; };
+      }
+      handledOAuthCode = authCode;
+
+      console.log('AuthContext: OAuth callback detected, completing exchange...');
+
+      // Remove the code from the URL up front so a reload/remount can't reuse it.
+      window.history.replaceState({}, '', window.location.pathname);
+
+      const clearPkceState = () => {
+        try {
+          localStorage.removeItem('supabase.auth.token-code-verifier');
+        } catch {
+          /* ignore storage errors */
+        }
+      };
+
+      // Safety timeout: never let a stalled exchange leave the user on an
+      // infinite spinner. Falls back to the login screen and clears the stale
+      // PKCE verifier so the next attempt starts from a clean state.
+      const exchangeTimeout = setTimeout(() => {
+        if (mounted) {
+          console.error('AuthContext: OAuth exchange timed out - showing login');
+          clearPkceState();
+          setLoading(false);
+        }
+      }, 12000);
 
       supabase.auth.exchangeCodeForSession(authCode)
         .then(({ data, error }) => {
-          console.log('AuthContext: exchangeCodeForSession result:', {
-            hasSession: !!data?.session,
-            hasUser: !!data?.session?.user,
-            userEmail: data?.session?.user?.email,
-            error: error?.message || error
-          });
-
-          // Clear the URL params regardless of result
-          window.history.replaceState({}, '', window.location.pathname);
-
+          clearTimeout(exchangeTimeout);
           if (!mounted) return;
 
           if (error) {
-            console.error('AuthContext: Code exchange failed:', error);
+            console.error('AuthContext: Code exchange failed:', error.message || error);
+            clearPkceState();
             setLoading(false);
             return;
           }
 
           if (data?.session) {
-            console.log('AuthContext: Session established via manual exchange, user:', data.session.user.email);
             setUser(data.session.user);
             fetchProfile(data.session.user.id, data.session.user);
           } else {
-            console.log('AuthContext: No session after exchange');
+            console.warn('AuthContext: No session after code exchange');
             setLoading(false);
           }
         })
         .catch(err => {
-          console.error('AuthContext: exchangeCodeForSession exception:', err);
-          window.history.replaceState({}, '', window.location.pathname);
+          clearTimeout(exchangeTimeout);
+          console.error('AuthContext: exchangeCodeForSession exception:', err?.message || err);
+          clearPkceState();
           if (mounted) setLoading(false);
         });
 
@@ -259,7 +284,7 @@ export function AuthProvider({ children }) {
           knownDatabases.forEach(dbName => {
             try {
               indexedDB.deleteDatabase(dbName);
-            } catch (e) {
+            } catch {
               // Ignore individual deletion errors
             }
           });

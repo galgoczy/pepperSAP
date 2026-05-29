@@ -46,28 +46,43 @@ if (hasCodeVerifier && !hasSessionToken && !hasAuthCodeInUrl && !hasError) {
   console.log('PKCE code verifier found with OAuth callback in URL - completing auth flow...');
 }
 
-// Check if we had a previous timeout (set by AuthContext)
-const hadPreviousTimeout = localStorage.getItem('supabase_session_timeout') === 'true';
-if (hadPreviousTimeout) {
-  console.log('Previous session timeout detected, clearing all auth data...');
-  // Clear all Supabase-related data
-  const keysToRemove = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && (key.includes('supabase') || key.includes('sb-'))) {
-      keysToRemove.push(key);
-    }
+// Bounded auth lock.
+//
+// supabase-js serializes auth operations (getSession, exchangeCodeForSession,
+// token refresh) behind a Web Locks (navigator.locks) lock and, by default,
+// waits indefinitely to acquire it. If a previous lock holder never released
+// it (crashed/closed tab, interrupted OAuth flow), the next call hangs forever
+// with no error or result - which is exactly the symptom where
+// exchangeCodeForSession stalls and never logs a result.
+//
+// This replacement waits at most `acquireTimeout` (default 5s) for the lock
+// and then proceeds WITHOUT it rather than hanging the whole login.
+const authLock = async (name, acquireTimeout, fn) => {
+  if (typeof navigator === 'undefined' || !navigator.locks?.request) {
+    return await fn();
   }
-  keysToRemove.forEach(key => localStorage.removeItem(key));
-  // Also try to clear IndexedDB
+  const controller = new AbortController();
+  const timeoutMs = acquireTimeout > 0 ? acquireTimeout : 5000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    indexedDB.deleteDatabase('supabase-auth');
-  } catch (e) {
-    console.log('Could not clear IndexedDB:', e);
+    return await navigator.locks.request(
+      name,
+      { mode: 'exclusive', signal: controller.signal },
+      async () => {
+        // Lock acquired - stop the acquisition timeout from aborting mid-work.
+        clearTimeout(timer);
+        return await fn();
+      }
+    );
+  } catch (err) {
+    // Could not acquire the lock in time (likely a stale/abandoned lock).
+    // Run without it instead of leaving the user stuck on an infinite spinner.
+    console.warn('Auth lock not acquired, proceeding without it:', err?.name || err);
+    return await fn();
+  } finally {
+    clearTimeout(timer);
   }
-  // Clear the flag
-  localStorage.removeItem('supabase_session_timeout');
-}
+};
 
 // Custom fetch with timeout for Safari compatibility
 const fetchWithTimeout = (url, options = {}) => {
@@ -92,12 +107,13 @@ const fetchWithTimeout = (url, options = {}) => {
 
 export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder', {
   auth: {
-    autoRefreshToken: !hadPreviousTimeout, // Disable auto refresh if we had timeout
-    persistSession: !hadPreviousTimeout,   // Disable persistence if we had timeout
-    detectSessionInUrl: false, // Disable automatic - we handle OAuth callback manually in AuthContext for Safari compatibility
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false, // We complete the OAuth (PKCE) callback manually in AuthContext.
     flowType: 'pkce', // Explicit PKCE flow for better cross-browser compatibility
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
     storageKey: 'supabase.auth.token',
+    lock: authLock, // Bounded lock (see above) to avoid indefinite hangs.
   },
   global: {
     headers: {
