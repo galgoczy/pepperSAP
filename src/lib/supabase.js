@@ -46,43 +46,24 @@ if (hasCodeVerifier && !hasSessionToken && !hasAuthCodeInUrl && !hasError) {
   console.log('PKCE code verifier found with OAuth callback in URL - completing auth flow...');
 }
 
-// Bounded auth lock.
+// Pass-through auth lock.
 //
 // supabase-js serializes auth operations (getSession, exchangeCodeForSession,
-// token refresh) behind a Web Locks (navigator.locks) lock and, by default,
-// waits indefinitely to acquire it. If a previous lock holder never released
-// it (crashed/closed tab, interrupted OAuth flow), the next call hangs forever
-// with no error or result - which is exactly the symptom where
-// exchangeCodeForSession stalls and never logs a result.
+// token refresh) behind a Web Locks (navigator.locks) lock and waits
+// indefinitely to acquire it. In this app that lock was the cause of login
+// hangs: a contended/stale lock made the OAuth exchange stall, and even after
+// we bypassed it on a timeout, every auth operation still burned several
+// seconds waiting for the lock first (the repeated "Auth lock not acquired"
+// warnings) - which added up to the ~minute-long login delay.
 //
-// This replacement waits at most `acquireTimeout` (default 5s) for the lock
-// and then proceeds WITHOUT it rather than hanging the whole login.
-const authLock = async (name, acquireTimeout, fn) => {
-  if (typeof navigator === 'undefined' || !navigator.locks?.request) {
-    return await fn();
-  }
-  const controller = new AbortController();
-  const timeoutMs = acquireTimeout > 0 ? acquireTimeout : 5000;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await navigator.locks.request(
-      name,
-      { mode: 'exclusive', signal: controller.signal },
-      async () => {
-        // Lock acquired - stop the acquisition timeout from aborting mid-work.
-        clearTimeout(timer);
-        return await fn();
-      }
-    );
-  } catch (err) {
-    // Could not acquire the lock in time (likely a stale/abandoned lock).
-    // Run without it instead of leaving the user stuck on an infinite spinner.
-    console.warn('Auth lock not acquired, proceeding without it:', err?.name || err);
-    return await fn();
-  } finally {
-    clearTimeout(timer);
-  }
-};
+// This app is effectively single-tab, so we skip the cross-tab lock entirely
+// and run auth operations directly. Each underlying request still has its own
+// 10s fetch timeout, so this cannot hang indefinitely.
+//
+// NOTE: the trade-off is that two browser tabs refreshing the token at the
+// exact same moment are no longer serialized. If multi-tab token-refresh races
+// ever surface, reintroduce a bounded lock here.
+const authLock = async (_name, _acquireTimeout, fn) => fn();
 
 // Custom fetch with timeout for Safari compatibility
 const fetchWithTimeout = (url, options = {}) => {
