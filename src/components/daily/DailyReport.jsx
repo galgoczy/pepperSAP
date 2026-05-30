@@ -1,13 +1,16 @@
+import { useState } from 'react';
 import { FileText } from 'lucide-react';
 import { useDailyRevenue, useHouseCash } from '../../hooks/useDailyRevenue';
 import { usePaymentItems, PAYMENT_KIND_META } from '../../hooks/usePaymentItems';
 import { Card, LoadingSpinner, Badge } from '../common';
+import PaymentEditModal from '../expenses/PaymentEditModal';
 import { formatCurrency, formatDate, PAYMENT_METHODS } from '../../lib/utils';
 
 export default function DailyReport({ date, unitId }) {
   const { revenue, cashRegisterTotals, cashRegisterDetails, loading: revenueLoading } = useDailyRevenue(unitId, date);
   const { houseCash, calculatedData, discrepancyDetails, loading: cashLoading } = useHouseCash(unitId, date);
-  const { items: paymentItems, loading: paymentsLoading } = usePaymentItems(unitId, date, date);
+  const { items: paymentItems, loading: paymentsLoading, refetch: refetchPayments } = usePaymentItems(unitId, date, date);
+  const [editingItem, setEditingItem] = useState(null);
 
   const loading = revenueLoading || cashLoading || paymentsLoading;
 
@@ -394,7 +397,8 @@ export default function DailyReport({ date, unitId }) {
               return (
                 <div
                   key={item.id}
-                  className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0"
+                  onClick={() => setEditingItem(item)}
+                  className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0 -mx-2 px-2 rounded cursor-pointer hover:bg-gray-50 print:hover:bg-transparent print:cursor-auto"
                 >
                   <div className="flex items-start gap-2">
                     {isOfficialExpense && (
@@ -436,6 +440,16 @@ export default function DailyReport({ date, unitId }) {
       <div className="text-center text-sm text-gray-500 pt-4 border-t print:pt-2">
         <p>Pepper House Pénzügyi Nyilvántartó Rendszer</p>
         <p>Nyomtatva: {new Date().toLocaleString('hu-HU')}</p>
+      </div>
+
+      {/* Edit modal for any payment kind (hidden when printing) */}
+      <div className="print:hidden">
+        <PaymentEditModal
+          item={editingItem}
+          unitId={unitId}
+          onClose={() => setEditingItem(null)}
+          onSaved={refetchPayments}
+        />
       </div>
     </div>
   );

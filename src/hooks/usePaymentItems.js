@@ -44,7 +44,7 @@ function normalizeEfo(p) {
     date: p.payment_date,
     created_at: p.created_at,
     units: p.units || null,
-    editable: false,
+    editable: true,
     raw: p,
   };
 }
@@ -64,7 +64,7 @@ function normalizeWage(p) {
     date: p.payment_date,
     created_at: p.created_at,
     units: p.units || null,
-    editable: false,
+    editable: true,
     raw: p,
   };
 }

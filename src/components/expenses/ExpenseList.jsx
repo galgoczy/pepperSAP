@@ -167,8 +167,8 @@ export default function ExpenseList({
               return (
                 <TableRow
                   key={item.id}
-                  className={item.editable ? 'cursor-pointer hover:bg-gray-50' : ''}
-                  onClick={item.editable ? () => onEdit(item.raw) : undefined}
+                  className="cursor-pointer hover:bg-gray-50"
+                  onClick={() => onEdit(item)}
                 >
                   <TableCell>
                     <Badge variant={kindMeta.variant} size="sm">

@@ -11,6 +11,7 @@ import DailyReport from '../components/daily/DailyReport';
 import ExpenseForm from '../components/expenses/ExpenseForm';
 import EfoPaymentForm from '../components/expenses/EfoPaymentForm';
 import WagePaymentForm from '../components/expenses/WagePaymentForm';
+import PaymentEditModal from '../components/expenses/PaymentEditModal';
 import { getToday, formatCurrency, formatDate, PAYMENT_METHODS } from '../lib/utils';
 import { supabase } from '../lib/supabase';
 import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote } from 'lucide-react';
@@ -49,7 +50,7 @@ export default function DailyEntryPage() {
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showEfoForm, setShowEfoForm] = useState(false);
   const [showWageForm, setShowWageForm] = useState(false);
-  const [editingExpense, setEditingExpense] = useState(null);
+  const [editingItem, setEditingItem] = useState(null);
   const [expenseRefreshKey, setExpenseRefreshKey] = useState(0);
 
   // Get restaurant units only
@@ -658,7 +659,7 @@ export default function DailyEntryPage() {
                 key={expenseRefreshKey}
                 unitId={effectiveUnitId}
                 date={selectedDate}
-                onEditExpense={(expense) => setEditingExpense(expense)}
+                onEditItem={(item) => setEditingItem(item)}
               />
 
               {/* EFO payment modal for "Minden adat" tab */}
@@ -750,7 +751,7 @@ export default function DailyEntryPage() {
               key={expenseRefreshKey}
               unitId={effectiveUnitId}
               date={selectedDate}
-              onEditExpense={(expense) => setEditingExpense(expense)}
+              onEditItem={(item) => setEditingItem(item)}
             />
 
             {/* EFO payment modal */}
@@ -819,27 +820,13 @@ export default function DailyEntryPage() {
         )}
       </div>
 
-      {/* Expense edit modal */}
-      <Modal
-        isOpen={!!editingExpense}
-        onClose={() => setEditingExpense(null)}
-        title="Kifizetés szerkesztése"
-        size="lg"
-      >
-        <ExpenseForm
-          expense={editingExpense}
-          unitId={effectiveUnitId}
-          onSuccess={() => {
-            setEditingExpense(null);
-            setExpenseRefreshKey(k => k + 1);
-          }}
-          onCancel={() => setEditingExpense(null)}
-          onDelete={() => {
-            setEditingExpense(null);
-            setExpenseRefreshKey(k => k + 1);
-          }}
-        />
-      </Modal>
+      {/* Edit modal for any payment kind */}
+      <PaymentEditModal
+        item={editingItem}
+        unitId={effectiveUnitId}
+        onClose={() => setEditingItem(null)}
+        onSaved={() => setExpenseRefreshKey(k => k + 1)}
+      />
     </div>
   );
 }
@@ -1367,7 +1354,7 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
 }
 
 // Component to show daily expenses
-function DailyExpensesList({ unitId, date, onEditExpense }) {
+function DailyExpensesList({ unitId, date, onEditItem }) {
   const { items, loading } = usePaymentItems(unitId, date, date);
 
   const formatHuf = (amount, currency = 'HUF') =>
@@ -1405,8 +1392,8 @@ function DailyExpensesList({ unitId, date, onEditExpense }) {
           return (
             <div
               key={item.id}
-              onClick={item.editable ? () => onEditExpense?.(item.raw) : undefined}
-              className={`flex items-center justify-between py-3 px-3 -mx-3 border-b border-gray-100 last:border-0 rounded-lg transition-colors ${item.editable ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+              onClick={() => onEditItem?.(item)}
+              className="flex items-center justify-between py-3 px-3 -mx-3 border-b border-gray-100 last:border-0 rounded-lg transition-colors cursor-pointer hover:bg-gray-50"
             >
               <div className="flex items-start gap-2">
                 <Badge variant={kindMeta.variant} size="sm">

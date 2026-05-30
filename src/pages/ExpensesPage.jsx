@@ -7,6 +7,7 @@ import ExpenseList from '../components/expenses/ExpenseList';
 import ExpenseForm from '../components/expenses/ExpenseForm';
 import EfoPaymentForm from '../components/expenses/EfoPaymentForm';
 import WagePaymentForm from '../components/expenses/WagePaymentForm';
+import PaymentEditModal from '../components/expenses/PaymentEditModal';
 import { getFirstDayOfMonth, getLastDayOfMonth } from '../lib/utils';
 
 // Get previous month's first and last day
@@ -26,10 +27,13 @@ export default function ExpensesPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isEfoFormOpen, setIsEfoFormOpen] = useState(false);
   const [isWageFormOpen, setIsWageFormOpen] = useState(false);
-  const [editingExpense, setEditingExpense] = useState(null);
+  const [editingItem, setEditingItem] = useState(null);
   const [selectedUnit, setSelectedUnit] = useState('all');
   const [startDate, setStartDate] = useState(getFirstDayOfMonth());
   const [endDate, setEndDate] = useState(getLastDayOfMonth());
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const refreshList = () => setRefreshKey((k) => k + 1);
 
   // Unit options for admin filter
   const unitOptions = [
@@ -45,14 +49,12 @@ export default function ExpensesPage() {
     ? (selectedUnit === 'all' ? null : selectedUnit)
     : unitId;
 
-  const handleEdit = (expense) => {
-    setEditingExpense(expense);
-    setIsFormOpen(true);
+  const handleEdit = (item) => {
+    setEditingItem(item);
   };
 
   const handleClose = () => {
     setIsFormOpen(false);
-    setEditingExpense(null);
   };
 
   const isCurrentMonth = startDate === getFirstDayOfMonth() && endDate === getLastDayOfMonth();
@@ -130,6 +132,7 @@ export default function ExpensesPage() {
       {/* Expense list */}
       <Card>
         <ExpenseList
+          key={refreshKey}
           unitId={filterUnitId}
           onEdit={handleEdit}
           isAdmin={isAdmin}
@@ -142,17 +145,19 @@ export default function ExpensesPage() {
         />
       </Card>
 
-      {/* Expense form modal */}
+      {/* New expense form modal */}
       <Modal
         isOpen={isFormOpen}
         onClose={handleClose}
-        title={editingExpense ? 'Kifizetés szerkesztése' : 'Új kifizetés'}
+        title="Új kifizetés"
         size="lg"
       >
         <ExpenseForm
-          expense={editingExpense}
           unitId={isAdmin ? null : unitId}
-          onSuccess={handleClose}
+          onSuccess={() => {
+            handleClose();
+            refreshList();
+          }}
           onCancel={handleClose}
         />
       </Modal>
@@ -166,7 +171,10 @@ export default function ExpensesPage() {
       >
         <EfoPaymentForm
           unitId={isAdmin ? null : unitId}
-          onSuccess={() => setIsEfoFormOpen(false)}
+          onSuccess={() => {
+            setIsEfoFormOpen(false);
+            refreshList();
+          }}
           onCancel={() => setIsEfoFormOpen(false)}
         />
       </Modal>
@@ -180,10 +188,21 @@ export default function ExpensesPage() {
       >
         <WagePaymentForm
           unitId={isAdmin ? null : unitId}
-          onSuccess={() => setIsWageFormOpen(false)}
+          onSuccess={() => {
+            setIsWageFormOpen(false);
+            refreshList();
+          }}
           onCancel={() => setIsWageFormOpen(false)}
         />
       </Modal>
+
+      {/* Edit modal for any payment kind */}
+      <PaymentEditModal
+        item={editingItem}
+        unitId={isAdmin ? null : unitId}
+        onClose={() => setEditingItem(null)}
+        onSaved={refreshList}
+      />
     </div>
   );
 }
