@@ -13,6 +13,7 @@ const DEFAULT_DISCREPANCY = { amount: '', currency: 'HUF', note: '' };
 
 const DEFAULT_FORM_DATA = {
   software_revenue: '',
+  guest_count: '',
   vat_0_percent: '',
   vat_5_percent: '',
   vat_18_percent: '',
@@ -42,6 +43,7 @@ function computeFormData(existingData) {
 
   return {
     software_revenue: existingData.software_revenue || '',
+    guest_count: existingData.guest_count ?? '',
     vat_0_percent: existingData.vat_0_percent || '',
     vat_5_percent: existingData.vat_5_percent || '',
     vat_18_percent: existingData.vat_18_percent || '',
@@ -287,6 +289,17 @@ export default function CashRegisterSection({
               suffix="Ft"
               placeholder="Ha kitöltöd, a teljes forgalom automatikusan összegződik"
             />
+            <div className="mt-3">
+              <Input
+                label="Napi fogyasztói létszám"
+                type="number"
+                step="1"
+                min="0"
+                value={formData.guest_count}
+                onChange={(e) => handleChange('guest_count', e.target.value)}
+                suffix="fő"
+              />
+            </div>
           </div>
 
           {/* VAT breakdown */}

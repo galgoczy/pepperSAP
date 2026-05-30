@@ -7,7 +7,6 @@ import { useUnitRevenueSettings } from '../../hooks/useUnitRevenueSettings';
 import { useEventRevenueValidation } from '../../hooks/useEventRevenueValidation';
 import { Card, Button, Input, LoadingSpinner } from '../common';
 import CashRegisterSection from './CashRegisterSection';
-import EfoPayments from './EfoPayments';
 import ProtocolItemsSection from './ProtocolItemsSection';
 import { formatCurrency } from '../../lib/utils';
 import toast from 'react-hot-toast';
@@ -67,6 +66,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
   const [expandedRegisters, setExpandedRegisters] = useState({});
   const cashRegisterDataRef = useRef({});
   const [perRegisterSoftwareSum, setPerRegisterSoftwareSum] = useState(0);
+  const [perRegisterGuestSum, setPerRegisterGuestSum] = useState(0);
 
   useEffect(() => {
     if (cashRegisters.length > 0) {
@@ -140,6 +140,11 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       0
     );
     setPerRegisterSoftwareSum(sum);
+    const guestSum = cashRegisterRevenues.reduce(
+      (total, r) => total + (parseInt(r.guest_count, 10) || 0),
+      0
+    );
+    setPerRegisterGuestSum(guestSum);
   }, [cashRegisterRevenues]);
 
   const handleChange = (field, value) => {
@@ -221,6 +226,13 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       0
     );
     setPerRegisterSoftwareSum(sum);
+    // Sum the per-register guest counts (merging edited values with any
+    // existing, not-yet-touched registers).
+    const guestSum = cashRegisters.reduce((total, register) => {
+      const regData = cashRegisterDataRef.current[register.id] || existingDataByRegister()[register.id] || {};
+      return total + (parseInt(regData.guest_count, 10) || 0);
+    }, 0);
+    setPerRegisterGuestSum(guestSum);
     if (!formData.software_revenue_manual_override && sum > 0) {
       setFormData(prev => ({ ...prev, total_revenue: sum.toString() }));
     }
@@ -247,6 +259,8 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       const savedRevenue = await saveRevenue({
         ...formData,
         protocol_gross: protocolGrossToSave,
+        // Guest count is summed from the per-cash-register values.
+        guest_count: perRegisterGuestSum,
       });
 
       if (cashRegisters.length > 0 && savedRevenue?.id) {
@@ -353,17 +367,62 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
               </p>
             )}
           </div>
-          <Input
-            label="Napi fogyasztói létszám"
-            type="number"
-            step="1"
-            min="0"
-            value={formData.guest_count}
-            onChange={(e) => handleChange('guest_count', e.target.value)}
-            suffix="fő"
-          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Napi fogyasztói létszám (összesen)
+            </label>
+            <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-gray-900">
+              {perRegisterGuestSum} fő
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              A pénztárgépeknél megadott létszámok összege
+            </p>
+          </div>
         </div>
       </Card>
+
+      {/* Cash registers section (entry) */}
+      {cashRegisters.length === 0 ? (
+        <Card className="border-2 border-dashed border-gray-300">
+          <div className="text-center py-6">
+            <AlertCircle className="h-12 w-12 mx-auto text-gray-300 mb-3" />
+            <h3 className="text-lg font-medium text-gray-600">
+              Nincsenek aktív pénztárgépek
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Először vegyél fel pénztárgépeket az Egységek menüben
+            </p>
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-pepper-red" />
+              Pénztárgépek ({cashRegisters.length})
+            </h2>
+            <div className="text-right">
+              <div className="text-sm text-gray-500">Összes forgalom</div>
+              <div className="text-lg font-bold text-gray-900">
+                {formatCurrency(totalCashRegisterRevenue)}
+              </div>
+            </div>
+          </div>
+
+          {cashRegisters.map((register) => (
+            <CashRegisterSection
+              key={register.id}
+              register={register}
+              existingData={existingDataByRegister()[register.id]}
+              onChange={handleCashRegisterChange}
+              expanded={expandedRegisters[register.id]}
+              onToggleExpand={() => toggleExpand(register.id)}
+              unitName={unitName}
+              date={date}
+            />
+          ))}
+        </div>
+      )}
 
       {/* VIP Section */}
       {showVip && (
@@ -615,52 +674,6 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
           helper="Egyéb, pénztárgépen kívüli hivatalos készpénz bevétel"
         />
       </Card>
-
-      {/* Cash registers section */}
-      {cashRegisters.length === 0 ? (
-        <Card className="border-2 border-dashed border-gray-300">
-          <div className="text-center py-6">
-            <AlertCircle className="h-12 w-12 mx-auto text-gray-300 mb-3" />
-            <h3 className="text-lg font-medium text-gray-600">
-              Nincsenek aktív pénztárgépek
-            </h3>
-            <p className="text-sm text-gray-500 mt-1">
-              Először vegyél fel pénztárgépeket az Egységek menüben
-            </p>
-          </div>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <Calculator className="h-5 w-5 text-pepper-red" />
-              Pénztárgépek ({cashRegisters.length})
-            </h2>
-            <div className="text-right">
-              <div className="text-sm text-gray-500">Összes forgalom</div>
-              <div className="text-lg font-bold text-gray-900">
-                {formatCurrency(totalCashRegisterRevenue)}
-              </div>
-            </div>
-          </div>
-
-          {cashRegisters.map((register) => (
-            <CashRegisterSection
-              key={register.id}
-              register={register}
-              existingData={existingDataByRegister()[register.id]}
-              onChange={handleCashRegisterChange}
-              expanded={expandedRegisters[register.id]}
-              onToggleExpand={() => toggleExpand(register.id)}
-              unitName={unitName}
-              date={date}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* EFO Payments */}
-      <EfoPayments unitId={unitId} date={date} />
 
       {/* Color marking */}
       <Card

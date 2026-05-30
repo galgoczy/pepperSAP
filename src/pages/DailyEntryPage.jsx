@@ -1383,9 +1383,21 @@ function DailyExpensesList({ unitId, date, onEditItem }) {
 
   const total = items.reduce((sum, item) => sum + (item.amount || 0), 0);
 
+  // Per-kind subtotals for the summary at the bottom.
+  const kindSummary = [
+    { kind: 'efo', label: 'EFO' },
+    { kind: 'wage', label: 'Bér' },
+    { kind: 'expense', label: 'Egyéb kifizetések' },
+  ]
+    .map(({ kind, label }) => ({
+      label,
+      amount: items.filter((i) => i.kind === kind).reduce((s, i) => s + (i.amount || 0), 0),
+    }))
+    .filter((row) => row.amount > 0);
+
   return (
     <Card>
-      <p className="text-xs text-gray-500 mb-3">Kattints egy számla sorra a szerkesztéshez</p>
+      <p className="text-xs text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez</p>
       <div className="space-y-3">
         {items.map((item) => {
           const kindMeta = PAYMENT_KIND_META[item.kind];
@@ -1414,11 +1426,19 @@ function DailyExpensesList({ unitId, date, onEditItem }) {
           );
         })}
 
-        <div className="flex items-center justify-between pt-3 border-t border-gray-200">
-          <p className="font-semibold text-gray-700">Összesen:</p>
-          <p className="font-bold text-red-600 text-lg">
-            -{formatHuf(total)}
-          </p>
+        <div className="pt-3 border-t border-gray-200 space-y-1">
+          {kindSummary.map((row) => (
+            <div key={row.label} className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">{row.label}:</span>
+              <span className="font-medium text-red-600">-{formatHuf(row.amount)}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <p className="font-semibold text-gray-700">Összesen:</p>
+            <p className="font-bold text-red-600 text-lg">
+              -{formatHuf(total)}
+            </p>
+          </div>
         </div>
       </div>
     </Card>

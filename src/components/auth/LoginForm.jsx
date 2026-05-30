@@ -32,7 +32,7 @@ const clearAllStoredData = async () => {
   for (const dbName of knownDatabases) {
     try {
       indexedDB.deleteDatabase(dbName);
-    } catch (e) {
+    } catch {
       // Ignore
     }
   }
@@ -44,7 +44,7 @@ const clearAllStoredData = async () => {
       for (const db of dbs) {
         if (db.name) indexedDB.deleteDatabase(db.name);
       }
-    } catch (e) {
+    } catch {
       // Ignore
     }
   }
@@ -66,7 +66,7 @@ const TEST_ACCOUNTS = [
     role: 'Étterem',
     icon: Store,
     color: 'bg-blue-600 hover:bg-blue-700',
-    disabled: false,
+    disabled: true,
   },
   {
     email: 'rendezveny@pepperhouse.hu',
@@ -74,7 +74,7 @@ const TEST_ACCOUNTS = [
     role: 'Events',
     icon: PartyPopper,
     color: 'bg-purple-600 hover:bg-purple-700',
-    disabled: false,
+    disabled: true,
   },
 ];
 
@@ -154,7 +154,7 @@ export default function LoginForm() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-neutral-light px-4">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-lg">
         {/* Logo */}
         <div className="text-center mb-8">
           <img
@@ -194,7 +194,7 @@ export default function LoginForm() {
                   <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
                   <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
                 </svg>
-                Bejelentkezés Microsoft 365-tel
+                <span className="whitespace-nowrap">Bejelentkezés Microsoft 365-tel</span>
               </>
             )}
           </Button>
