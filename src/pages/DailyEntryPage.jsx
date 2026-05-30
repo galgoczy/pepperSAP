@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
-import { Card, Button, Select, LoadingSpinner, Modal } from '../components/common';
+import { Card, Button, Select, LoadingSpinner, Modal, Badge } from '../components/common';
+import { usePaymentItems, PAYMENT_KIND_META } from '../hooks/usePaymentItems';
 import DailyRevenueForm from '../components/daily/DailyRevenueForm';
 import HouseCashForm from '../components/daily/HouseCashForm';
 import DailyReport from '../components/daily/DailyReport';
@@ -1367,36 +1368,10 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
 
 // Component to show daily expenses
 function DailyExpensesList({ unitId, date, onEditExpense }) {
-  const [expenses, setExpenses] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { items, loading } = usePaymentItems(unitId, date, date);
 
-  useEffect(() => {
-    async function fetchExpenses() {
-      if (!unitId || !date) {
-        setExpenses([]);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const { data, error } = await supabase
-          .from('expenses')
-          .select('*')
-          .eq('unit_id', unitId)
-          .eq('invoice_date', date)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        setExpenses(data || []);
-      } catch (error) {
-        console.error('Error fetching expenses:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchExpenses();
-  }, [unitId, date]);
+  const formatHuf = (amount, currency = 'HUF') =>
+    new Intl.NumberFormat('hu-HU', { style: 'currency', currency: currency || 'HUF', minimumFractionDigits: 0 }).format(amount);
 
   if (loading) {
     return (
@@ -1408,7 +1383,7 @@ function DailyExpensesList({ unitId, date, onEditExpense }) {
     );
   }
 
-  if (expenses.length === 0) {
+  if (items.length === 0) {
     return (
       <Card>
         <div className="text-center py-8 text-gray-500">
@@ -1419,34 +1394,43 @@ function DailyExpensesList({ unitId, date, onEditExpense }) {
     );
   }
 
-  const total = expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+  const total = items.reduce((sum, item) => sum + (item.amount || 0), 0);
 
   return (
     <Card>
-      <p className="text-xs text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez</p>
+      <p className="text-xs text-gray-500 mb-3">Kattints egy számla sorra a szerkesztéshez</p>
       <div className="space-y-3">
-        {expenses.map((expense) => (
-          <div
-            key={expense.id}
-            onClick={() => onEditExpense?.(expense)}
-            className="flex items-center justify-between py-3 px-3 -mx-3 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50 rounded-lg transition-colors"
-          >
-            <div>
-              <p className="font-medium text-gray-900">{expense.supplier_name}</p>
-              <p className="text-sm text-gray-500">
-                {expense.item_description || 'Nincs leírás'} • {expense.payment_method}
+        {items.map((item) => {
+          const kindMeta = PAYMENT_KIND_META[item.kind];
+          return (
+            <div
+              key={item.id}
+              onClick={item.editable ? () => onEditExpense?.(item.raw) : undefined}
+              className={`flex items-center justify-between py-3 px-3 -mx-3 border-b border-gray-100 last:border-0 rounded-lg transition-colors ${item.editable ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+            >
+              <div className="flex items-start gap-2">
+                <Badge variant={kindMeta.variant} size="sm">
+                  {kindMeta.label}
+                </Badge>
+                <div>
+                  <p className="font-medium text-gray-900">{item.name}</p>
+                  <p className="text-sm text-gray-500">
+                    {item.description || 'Nincs leírás'}
+                    {item.payment_method && ` • ${PAYMENT_METHODS[item.payment_method] || item.payment_method}`}
+                  </p>
+                </div>
+              </div>
+              <p className="font-semibold text-red-600">
+                -{formatHuf(item.amount, item.currency)}
               </p>
             </div>
-            <p className="font-semibold text-red-600">
-              -{new Intl.NumberFormat('hu-HU', { style: 'currency', currency: expense.currency || 'HUF', minimumFractionDigits: 0 }).format(expense.amount)}
-            </p>
-          </div>
-        ))}
+          );
+        })}
 
         <div className="flex items-center justify-between pt-3 border-t border-gray-200">
           <p className="font-semibold text-gray-700">Összesen:</p>
           <p className="font-bold text-red-600 text-lg">
-            -{new Intl.NumberFormat('hu-HU', { style: 'currency', currency: 'HUF', minimumFractionDigits: 0 }).format(total)}
+            -{formatHuf(total)}
           </p>
         </div>
       </div>

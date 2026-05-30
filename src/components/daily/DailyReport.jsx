@@ -1,15 +1,15 @@
 import { FileText } from 'lucide-react';
 import { useDailyRevenue, useHouseCash } from '../../hooks/useDailyRevenue';
-import { useExpenses } from '../../hooks/useExpenses';
+import { usePaymentItems, PAYMENT_KIND_META } from '../../hooks/usePaymentItems';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { formatCurrency, formatDate, PAYMENT_METHODS } from '../../lib/utils';
 
 export default function DailyReport({ date, unitId }) {
   const { revenue, cashRegisterTotals, cashRegisterDetails, loading: revenueLoading } = useDailyRevenue(unitId, date);
   const { houseCash, calculatedData, discrepancyDetails, loading: cashLoading } = useHouseCash(unitId, date);
-  const { expenses, loading: expensesLoading } = useExpenses(unitId, date, date);
+  const { items: paymentItems, loading: paymentsLoading } = usePaymentItems(unitId, date, date);
 
-  const loading = revenueLoading || cashLoading || expensesLoading;
+  const loading = revenueLoading || cashLoading || paymentsLoading;
 
   if (!unitId) {
     return (
@@ -63,14 +63,9 @@ export default function DailyReport({ date, unitId }) {
   const revenueDifference = softwareRevenue - totalCashRegisterRevenue;
   const reserveTotal = revenueDifference + extraIncome - nonOfficialExpenses;
 
-  // Sort expenses: official first, then non-official
-  const sortedExpenses = [...expenses].sort((a, b) => {
-    if (a.is_official === b.is_official) return 0;
-    return a.is_official ? -1 : 1;
-  });
-
-  const totalExpenses = expenses.reduce(
-    (sum, e) => sum + (parseFloat(e.amount) || 0),
+  // All payments for the day (invoices + EFO + weekly wage), already sorted.
+  const totalExpenses = paymentItems.reduce(
+    (sum, item) => sum + (item.amount || 0),
     0
   );
 
@@ -387,39 +382,46 @@ export default function DailyReport({ date, unitId }) {
 
       {/* Expenses section */}
       <Card title="Napi kifizetések" className="print:shadow-none print:border">
-        {expenses.length === 0 ? (
+        {paymentItems.length === 0 ? (
           <p className="text-gray-500 text-center py-4">
             Nincs rögzített kifizetés erre a napra
           </p>
         ) : (
           <div className="space-y-2">
-            {sortedExpenses.map((expense) => (
-              <div
-                key={expense.id}
-                className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0"
-              >
-                <div className="flex items-start gap-2">
-                  {expense.is_official && (
-                    <FileText className="h-4 w-4 text-blue-500 mt-1 flex-shrink-0" />
-                  )}
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      {expense.supplier_name}
-                      {expense.is_official && (
-                        <span className="text-xs text-blue-600 ml-2">(számlás)</span>
-                      )}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      {expense.item_description || 'Nincs leírás'} •{' '}
-                      {PAYMENT_METHODS[expense.payment_method]}
-                    </p>
+            {paymentItems.map((item) => {
+              const kindMeta = PAYMENT_KIND_META[item.kind];
+              const isOfficialExpense = item.kind === 'expense' && item.is_official;
+              return (
+                <div
+                  key={item.id}
+                  className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0"
+                >
+                  <div className="flex items-start gap-2">
+                    {isOfficialExpense && (
+                      <FileText className="h-4 w-4 text-blue-500 mt-1 flex-shrink-0" />
+                    )}
+                    <div>
+                      <p className="font-medium text-gray-900 flex items-center gap-2">
+                        <Badge variant={kindMeta.variant} size="sm">
+                          {kindMeta.label}
+                        </Badge>
+                        {item.name}
+                        {isOfficialExpense && (
+                          <span className="text-xs text-blue-600">(számlás)</span>
+                        )}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {item.description || 'Nincs leírás'}
+                        {item.payment_method && ` • ${PAYMENT_METHODS[item.payment_method] || item.payment_method}`}
+                      </p>
+                    </div>
                   </div>
+                  <span className="font-semibold text-red-600">
+                    -{formatCurrency(item.amount, item.currency)}
+                  </span>
                 </div>
-                <span className="font-semibold text-red-600">
-                  -{formatCurrency(expense.amount, expense.currency)}
-                </span>
-              </div>
-            ))}
+              );
+            })}
             <div className="flex justify-between items-center pt-3 border-t border-gray-200">
               <span className="font-bold text-gray-700">Kifizetések összesen:</span>
               <span className="font-bold text-red-600">

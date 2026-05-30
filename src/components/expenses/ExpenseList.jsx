@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Receipt, Filter } from 'lucide-react';
-import { useExpenses } from '../../hooks/useExpenses';
+import { usePaymentItems, PAYMENT_KIND_META } from '../../hooks/usePaymentItems';
 import {
   Table,
   TableHead,
@@ -28,6 +28,7 @@ export default function ExpenseList({
   const [localStartDate, setLocalStartDate] = useState(getFirstDayOfMonth());
   const [localEndDate, setLocalEndDate] = useState(getLastDayOfMonth());
   const [paymentFilter, setPaymentFilter] = useState('');
+  const [kindFilter, setKindFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
   // Use props if provided, otherwise use local state
@@ -50,19 +51,22 @@ export default function ExpenseList({
     }
   };
 
-  const { expenses, loading } = useExpenses(unitId, startDate, endDate);
+  const { items, loading } = usePaymentItems(unitId, startDate, endDate);
 
-  // Filter expenses
-  const filteredExpenses = expenses.filter((expense) => {
-    if (paymentFilter && expense.payment_method !== paymentFilter) {
+  // Filter payment items
+  const filteredItems = items.filter((item) => {
+    if (kindFilter && item.kind !== kindFilter) {
+      return false;
+    }
+    if (paymentFilter && item.payment_method !== paymentFilter) {
       return false;
     }
     return true;
   });
 
   // Calculate totals
-  const totalAmount = filteredExpenses.reduce(
-    (sum, e) => sum + (parseFloat(e.amount) || 0),
+  const totalAmount = filteredItems.reduce(
+    (sum, item) => sum + (item.amount || 0),
     0
   );
 
@@ -103,6 +107,18 @@ export default function ExpenseList({
             </div>
 
             <Select
+              value={kindFilter}
+              onChange={(e) => setKindFilter(e.target.value)}
+              options={[
+                { value: '', label: 'Minden fajta' },
+                { value: 'expense', label: PAYMENT_KIND_META.expense.label },
+                { value: 'efo', label: PAYMENT_KIND_META.efo.label },
+                { value: 'wage', label: PAYMENT_KIND_META.wage.label },
+              ]}
+              className="w-40"
+            />
+
+            <Select
               value={paymentFilter}
               onChange={(e) => setPaymentFilter(e.target.value)}
               options={[
@@ -120,12 +136,12 @@ export default function ExpenseList({
 
         <div className="ml-auto text-sm text-gray-500">
           Összesen: <span className="font-semibold text-gray-900">{formatCurrency(totalAmount)}</span>
-          <span className="ml-2">({filteredExpenses.length} tétel)</span>
+          <span className="ml-2">({filteredItems.length} tétel)</span>
         </div>
       </div>
 
       {/* Table */}
-      {filteredExpenses.length === 0 ? (
+      {filteredItems.length === 0 ? (
         <EmptyState
           icon={Receipt}
           title="Nincsenek kifizetések"
@@ -135,59 +151,76 @@ export default function ExpenseList({
         <Table>
           <TableHead>
             <TableRow>
-              <TableHeader>Szállító</TableHeader>
+              <TableHeader>Fajta</TableHeader>
+              <TableHeader>Név</TableHeader>
               <TableHeader>Tétel</TableHeader>
               {isAdmin && <TableHeader>Egység</TableHeader>}
               <TableHeader>Dátum</TableHeader>
               <TableHeader>Fizetés</TableHeader>
-              <TableHeader>Típus</TableHeader>
+              <TableHeader>Számlás</TableHeader>
               <TableHeader align="right">Összeg</TableHeader>
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredExpenses.map((expense) => (
-              <TableRow
-                key={expense.id}
-                className="cursor-pointer hover:bg-gray-50"
-                onClick={() => onEdit(expense)}
-              >
-                <TableCell>
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      {expense.supplier_name}
-                    </p>
-                    {expense.invoice_number && (
-                      <p className="text-xs text-gray-500">
-                        {expense.invoice_number}
+            {filteredItems.map((item) => {
+              const kindMeta = PAYMENT_KIND_META[item.kind];
+              return (
+                <TableRow
+                  key={item.id}
+                  className={item.editable ? 'cursor-pointer hover:bg-gray-50' : ''}
+                  onClick={item.editable ? () => onEdit(item.raw) : undefined}
+                >
+                  <TableCell>
+                    <Badge variant={kindMeta.variant} size="sm">
+                      {kindMeta.label}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {item.name}
                       </p>
+                      {item.reference && (
+                        <p className="text-xs text-gray-500">
+                          {item.reference}
+                        </p>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="max-w-xs truncate">
+                    {item.description || '-'}
+                  </TableCell>
+                  {isAdmin && (
+                    <TableCell>{item.units?.name || '-'}</TableCell>
+                  )}
+                  <TableCell>{formatDate(item.date)}</TableCell>
+                  <TableCell>
+                    {item.payment_method ? (
+                      <Badge variant="info" size="sm">
+                        {PAYMENT_METHODS[item.payment_method] || item.payment_method}
+                      </Badge>
+                    ) : (
+                      <span className="text-gray-400">-</span>
                     )}
-                  </div>
-                </TableCell>
-                <TableCell className="max-w-xs truncate">
-                  {expense.item_description || '-'}
-                </TableCell>
-                {isAdmin && (
-                  <TableCell>{expense.units?.name || '-'}</TableCell>
-                )}
-                <TableCell>{formatDate(expense.invoice_date)}</TableCell>
-                <TableCell>
-                  <Badge variant="info" size="sm">
-                    {PAYMENT_METHODS[expense.payment_method]}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant={expense.is_official ? 'success' : 'warning'}
-                    size="sm"
-                  >
-                    {expense.is_official ? 'Hivatalos' : 'Egyéb'}
-                  </Badge>
-                </TableCell>
-                <TableCell align="right" className="font-semibold text-red-600">
-                  -{formatCurrency(expense.amount, expense.currency)}
-                </TableCell>
-              </TableRow>
-            ))}
+                  </TableCell>
+                  <TableCell>
+                    {item.kind === 'expense' ? (
+                      <Badge
+                        variant={item.is_official ? 'success' : 'warning'}
+                        size="sm"
+                      >
+                        {item.is_official ? 'Hivatalos' : 'Egyéb'}
+                      </Badge>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell align="right" className="font-semibold text-red-600">
+                    -{formatCurrency(item.amount, item.currency)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       )}
