@@ -14,6 +14,34 @@ const MARK_COLORS = {
   purple: 'bg-purple-50 border-l-4 border-l-purple-500',
 };
 
+// Build a continuous daily series across [startDate, endDate], so charts also
+// show days that have no data (0 revenue) instead of skipping them. Existing
+// days are matched by their `date` field; missing days get the provided zero
+// values. Falls back to the rows' own date span if a range isn't supplied.
+function fillDailySeries(rows, startDate, endDate, zeroFields) {
+  const byDate = {};
+  (rows || []).forEach((r) => { byDate[r.date] = r; });
+
+  const dates = (rows || []).map((r) => r.date).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  const from = startDate || dates[0];
+  const to = endDate || dates[dates.length - 1];
+  if (!from || !to) return rows || [];
+
+  const result = [];
+  // Iterate calendar days from `from` to `to` (inclusive) in local time.
+  const cursor = new Date(`${from}T00:00:00`);
+  const last = new Date(`${to}T00:00:00`);
+  while (cursor <= last) {
+    const y = cursor.getFullYear();
+    const m = String(cursor.getMonth() + 1).padStart(2, '0');
+    const d = String(cursor.getDate()).padStart(2, '0');
+    const key = `${y}-${m}-${d}`;
+    result.push(byDate[key] || { date: key, ...zeroFields });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return result;
+}
+
 export default function MonthlyReport({ startDate, endDate, reportType, unitId }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
@@ -133,7 +161,7 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
 
   // Render based on report type
   if (reportType === 'full_monthly') {
-    return <FullMonthlyReport data={data} totals={totals} unitName={unitName} />;
+    return <FullMonthlyReport data={data} totals={totals} unitName={unitName} startDate={startDate} endDate={endDate} />;
   }
   if (reportType === 'cash_revenue') {
     return <CashRevenueReport data={data} totals={totals} unitName={unitName} />;
@@ -1064,9 +1092,18 @@ async function fetchEventsAllUnits(startDate, endDate) {
 // REPORT COMPONENTS
 // ============================================
 
-function FullMonthlyReport({ data, totals, unitName }) {
+function FullMonthlyReport({ data, totals, unitName, startDate, endDate }) {
   const navigate = useNavigate();
   const [expandedDays, setExpandedDays] = useState({});
+
+  // Include every day of the selected range on the chart, even days with no
+  // revenue (shown as 0), so gaps are visible rather than skipped.
+  const chartData = fillDailySeries(data, startDate, endDate, {
+    totalSoftware: 0,
+    cashRegisterCash: 0,
+    cashRegisterCard: 0,
+    reserveRevenue: 0,
+  });
 
   const toggleDay = (date) => {
     setExpandedDays((prev) => ({ ...prev, [date]: !prev[date] }));
