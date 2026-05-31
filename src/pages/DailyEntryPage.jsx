@@ -151,7 +151,7 @@ export default function DailyEntryPage() {
           .order('created_at', { ascending: true }),
         supabase
           .from('house_cash')
-          .select('official_total')
+          .select('official_total, other_total')
           .eq('unit_id', effectiveUnitId)
           .eq('date', previousDayStr)
           .maybeSingle(),
@@ -163,6 +163,7 @@ export default function DailyEntryPage() {
       const efoPaymentsList = efoResult.data || [];
       const wagePaymentsList = wageResult.data || [];
       const openingBalance = parseFloat(previousResult.data?.official_total) || 0;
+      const reserveOpening = parseFloat(previousResult.data?.other_total) || 0;
 
       // Sort expenses: official first
       const sortedExpenses = [...expenses].sort((a, b) => {
@@ -176,6 +177,10 @@ export default function DailyEntryPage() {
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
       const nonOfficialExpenses = expenses
         .filter(e => e.is_official === false)
+        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      // Cash-only official expenses (for the Pénztár zárás on the cash report)
+      const officialCashExpenses = expenses
+        .filter(e => e.is_official === true && e.payment_method === 'cash')
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
 
       // Fetch cash register data with register info if revenue exists
@@ -244,6 +249,9 @@ export default function DailyEntryPage() {
       const officialTotal = adjustedCash - officialExpenses - efoPayments;
       const revenueDifference = softwareRevenue - totalCashRegisterRevenue;
       const reserveTotal = revenueDifference + extraIncome - nonOfficialExpenses;
+      // Closings (opening + daily movement) for the report/PDF
+      const cashClosing = openingBalance + officialTotal;
+      const reserveClosing = reserveOpening + reserveTotal;
 
       // Create PDF
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -467,6 +475,15 @@ export default function DailyEntryPage() {
       }
       doc.text(formatPdfCurrency(officialTotal), rightMargin, y, { align: 'right' });
       doc.setTextColor(0, 0, 0);
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.text(sanitizeForPdf('Nyitó egyenleg:'), 25, y);
+      doc.text(formatPdfCurrency(openingBalance), rightMargin, y, { align: 'right' });
+      y += 5;
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Házipénztár zárás:'), 25, y);
+      doc.text(formatPdfCurrency(cashClosing), rightMargin, y, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
       y += 8;
 
       // Tartalék
@@ -500,6 +517,15 @@ export default function DailyEntryPage() {
       }
       doc.text(formatPdfCurrency(reserveTotal), rightMargin, y, { align: 'right' });
       doc.setTextColor(0, 0, 0);
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.text(sanitizeForPdf('Tartalék nyitó:'), 25, y);
+      doc.text(formatPdfCurrency(reserveOpening), rightMargin, y, { align: 'right' });
+      y += 5;
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Tartalék zárás:'), 25, y);
+      doc.text(formatPdfCurrency(reserveClosing), rightMargin, y, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
       y += 10;
 
       // Expenses section
@@ -648,10 +674,10 @@ export default function DailyEntryPage() {
       doc.text(formatPdfCurrency(totalCashRegisterCash + totalCashRegisterCard), rightMargin, y, { align: 'right' });
       y += 10;
 
-      // Házipénztár - csak Pénztár zseb (Tartalék NEM kell)
+      // Házipénztár - csak Pénztár (Tartalék NEM kell)
       doc.setFontSize(14);
       doc.setFont('helvetica', 'bold');
-      doc.text(sanitizeForPdf('Házipénztár - Pénztár zseb'), 15, y);
+      doc.text(sanitizeForPdf('Házipénztár - Pénztár'), 15, y);
       y += 8;
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
@@ -671,33 +697,29 @@ export default function DailyEntryPage() {
       if (officialTotal >= 0) { doc.setTextColor(0, 128, 0); } else { doc.setTextColor(180, 0, 0); }
       doc.text(formatPdfCurrency(officialTotal), rightMargin, y, { align: 'right' });
       doc.setTextColor(0, 0, 0);
-      y += 10;
-
-      // Pénztár zárás = nyitó + pénztárgép kp bevétel - hivatalos kp költségek
-      doc.setFontSize(14);
-      doc.setFont('helvetica', 'bold');
-      doc.text(sanitizeForPdf('Pénztár zárás'), 15, y);
       y += 8;
-      doc.setFontSize(10);
+
+      // Pénztár zárás = nyitó + pénztárgép kp bevétel - hivatalos KP költségek
+      // (only cash-paid official expenses are relevant here)
       doc.setFont('helvetica', 'normal');
-      doc.text(sanitizeForPdf('Nyitó egyenleg:'), 20, y);
+      doc.text(sanitizeForPdf('Nyitó egyenleg:'), 25, y);
       doc.text(formatPdfCurrency(openingBalance), rightMargin, y, { align: 'right' });
       y += 5;
-      doc.text(sanitizeForPdf('Pénztárgép készpénz bevétel:'), 20, y);
+      doc.text(sanitizeForPdf('Pénztárgép készpénz bevétel:'), 25, y);
       doc.text('+' + formatPdfCurrency(totalCashRegisterCash), rightMargin, y, { align: 'right' });
       y += 5;
       doc.setTextColor(180, 0, 0);
-      doc.text(sanitizeForPdf('Hivatalos kp költségek:'), 20, y);
-      doc.text('-' + formatPdfCurrency(officialExpenses), rightMargin, y, { align: 'right' });
+      doc.text(sanitizeForPdf('Hivatalos kp költségek:'), 25, y);
+      doc.text('-' + formatPdfCurrency(officialCashExpenses), rightMargin, y, { align: 'right' });
       doc.setTextColor(0, 0, 0);
       y += 6;
-      const cashClosing = openingBalance + totalCashRegisterCash - officialExpenses;
+      const pocketCashClosing = openingBalance + totalCashRegisterCash - officialCashExpenses;
       doc.setDrawColor(200, 200, 200);
       doc.line(15, y - 2, rightMargin, y - 2);
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       doc.text(sanitizeForPdf('Pénztár zárás:'), 20, y + 4);
-      doc.text(formatPdfCurrency(cashClosing), rightMargin, y + 4, { align: 'right' });
+      doc.text(formatPdfCurrency(pocketCashClosing), rightMargin, y + 4, { align: 'right' });
 
       // ===== Finalize: signature (bottom-right) + footer on every page =====
       const totalPages = doc.getNumberOfPages();
