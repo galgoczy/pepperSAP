@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Save, Wallet, Banknote, ArrowRight, TrendingUp, Calculator } from 'lucide-react';
 import { useHouseCash } from '../../hooks/useDailyRevenue';
 import { useActiveCashRegisters } from '../../hooks/useCashRegisterRevenue';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import { Card, Button, Input, LoadingSpinner } from '../common';
 import OpeningBalanceRevision from './OpeningBalanceRevision';
 import { formatCurrency } from '../../lib/utils';
@@ -11,6 +12,8 @@ const DEFAULT_CHANGE_AMOUNT = 30000;
 export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
   const { houseCash, previousDayClosing, previousDayReserveClosing, calculatedData, loading, saveHouseCash } = useHouseCash(unitId, date);
   const { cashRegisters } = useActiveCashRegisters(unitId);
+  const { settings } = useAppSettings();
+  const showReserve = settings.showReserve;
   const [saving, setSaving] = useState(false);
 
   // Default change amount = sum of the unit's registers' configured defaults,
@@ -297,7 +300,8 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
         </div>
       </Card>
 
-      {/* Other pocket */}
+      {/* Other pocket (hidden when reserve display is disabled) */}
+      {showReserve && (
       <Card
         title={
           <div className="flex items-center gap-2">
@@ -385,6 +389,7 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
           />
         </div>
       </Card>
+      )}
 
       {/* Grand total with váltópénz */}
       <Card className="bg-gradient-to-br from-gray-50 to-gray-100">
@@ -393,10 +398,12 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
             <span>Záró egyenleg:</span>
             <span>{formatCurrency(closingBalance)}</span>
           </div>
-          <div className="flex justify-between items-center text-sm text-gray-600">
-            <span>Tartalék:</span>
-            <span>{formatCurrency(otherTotal)}</span>
-          </div>
+          {showReserve && (
+            <div className="flex justify-between items-center text-sm text-gray-600">
+              <span>Tartalék:</span>
+              <span>{formatCurrency(otherTotal)}</span>
+            </div>
+          )}
           <div className="flex justify-between items-center text-sm text-gray-600">
             <span>Váltópénz (a kasszában):</span>
             <span>{formatCurrency(parseFloat(formData.change_amount) || 0)}</span>
@@ -406,7 +413,7 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
               Kassza teljes készpénz:
             </span>
             <span className="text-2xl font-bold text-gray-900">
-              {formatCurrency(closingBalance + otherTotal + (parseFloat(formData.change_amount) || 0))}
+              {formatCurrency(closingBalance + (showReserve ? otherTotal : 0) + (parseFloat(formData.change_amount) || 0))}
             </span>
           </div>
         </div>

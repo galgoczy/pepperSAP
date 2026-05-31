@@ -2,11 +2,14 @@ import { useState } from 'react';
 import { FileText } from 'lucide-react';
 import { useDailyRevenue, useHouseCash } from '../../hooks/useDailyRevenue';
 import { usePaymentItems, PAYMENT_KIND_META } from '../../hooks/usePaymentItems';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import { Card, LoadingSpinner, Badge } from '../common';
 import PaymentEditModal from '../expenses/PaymentEditModal';
 import { formatCurrency, formatDate, PAYMENT_METHODS } from '../../lib/utils';
 
 export default function DailyReport({ date, unitId }) {
+  const { settings } = useAppSettings();
+  const showReserve = settings.showReserve;
   const { revenue, cashRegisterTotals, cashRegisterDetails, loading: revenueLoading } = useDailyRevenue(unitId, date);
   const { houseCash, calculatedData, discrepancyDetails, previousDayClosing, previousDayReserveClosing, loading: cashLoading } = useHouseCash(unitId, date);
   const { items: paymentItems, loading: paymentsLoading, refetch: refetchPayments } = usePaymentItems(unitId, date, date);
@@ -374,6 +377,7 @@ export default function DailyReport({ date, unitId }) {
             </div>
           </div>
 
+          {showReserve && (
           <div>
             <h4 className="font-medium text-blue-700 mb-2">Tartalék</h4>
             <div className="space-y-1 text-sm">
@@ -407,6 +411,7 @@ export default function DailyReport({ date, unitId }) {
               </div>
             </div>
           </div>
+          )}
         </div>
       </Card>
 

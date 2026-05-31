@@ -109,6 +109,7 @@ export default function DailyEntryPage() {
   // Generate Daily Report PDF
   const generateDailyReportPdf = async () => {
     try {
+      const showReserve = settings.showReserve;
       // Load the header logo (embedded into the PDF)
       const logoDataUrl = await loadImageDataUrl(PDF_LOGO_URL);
 
@@ -483,47 +484,49 @@ export default function DailyEntryPage() {
       doc.setFont('helvetica', 'normal');
       y += 8;
 
-      // Tartalék
-      doc.setFont('helvetica', 'bold');
-      doc.text(sanitizeForPdf('Tartalék:'), 20, y);
-      y += 5;
-      doc.setFont('helvetica', 'normal');
-      doc.text(sanitizeForPdf('Szoftver-pénztárgép különbség:'), 25, y);
-      if (revenueDifference >= 0) {
-        doc.text(formatPdfCurrency(revenueDifference), rightMargin, y, { align: 'right' });
-      } else {
+      // Tartalék (omitted when reserve display is disabled)
+      if (showReserve) {
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf('Tartalék:'), 20, y);
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.text(sanitizeForPdf('Szoftver-pénztárgép különbség:'), 25, y);
+        if (revenueDifference >= 0) {
+          doc.text(formatPdfCurrency(revenueDifference), rightMargin, y, { align: 'right' });
+        } else {
+          doc.setTextColor(180, 0, 0);
+          doc.text(formatPdfCurrency(revenueDifference), rightMargin, y, { align: 'right' });
+          doc.setTextColor(0, 0, 0);
+        }
+        y += 5;
+        doc.text(sanitizeForPdf('Extra bevétel:'), 25, y);
+        doc.text(formatPdfCurrency(extraIncome), rightMargin, y, { align: 'right' });
+        y += 5;
         doc.setTextColor(180, 0, 0);
-        doc.text(formatPdfCurrency(revenueDifference), rightMargin, y, { align: 'right' });
+        doc.text(sanitizeForPdf('Nem számlás kifizetések:'), 25, y);
+        doc.text('-' + formatPdfCurrency(nonOfficialExpenses), rightMargin, y, { align: 'right' });
         doc.setTextColor(0, 0, 0);
+        y += 5;
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf('Összesen:'), 25, y);
+        if (reserveTotal >= 0) {
+          doc.setTextColor(0, 0, 180);
+        } else {
+          doc.setTextColor(180, 0, 0);
+        }
+        doc.text(formatPdfCurrency(reserveTotal), rightMargin, y, { align: 'right' });
+        doc.setTextColor(0, 0, 0);
+        y += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.text(sanitizeForPdf('Tartalék nyitó:'), 25, y);
+        doc.text(formatPdfCurrency(reserveOpening), rightMargin, y, { align: 'right' });
+        y += 5;
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf('Tartalék zárás:'), 25, y);
+        doc.text(formatPdfCurrency(reserveClosing), rightMargin, y, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        y += 10;
       }
-      y += 5;
-      doc.text(sanitizeForPdf('Extra bevétel:'), 25, y);
-      doc.text(formatPdfCurrency(extraIncome), rightMargin, y, { align: 'right' });
-      y += 5;
-      doc.setTextColor(180, 0, 0);
-      doc.text(sanitizeForPdf('Nem számlás kifizetések:'), 25, y);
-      doc.text('-' + formatPdfCurrency(nonOfficialExpenses), rightMargin, y, { align: 'right' });
-      doc.setTextColor(0, 0, 0);
-      y += 5;
-      doc.setFont('helvetica', 'bold');
-      doc.text(sanitizeForPdf('Összesen:'), 25, y);
-      if (reserveTotal >= 0) {
-        doc.setTextColor(0, 0, 180);
-      } else {
-        doc.setTextColor(180, 0, 0);
-      }
-      doc.text(formatPdfCurrency(reserveTotal), rightMargin, y, { align: 'right' });
-      doc.setTextColor(0, 0, 0);
-      y += 5;
-      doc.setFont('helvetica', 'normal');
-      doc.text(sanitizeForPdf('Tartalék nyitó:'), 25, y);
-      doc.text(formatPdfCurrency(reserveOpening), rightMargin, y, { align: 'right' });
-      y += 5;
-      doc.setFont('helvetica', 'bold');
-      doc.text(sanitizeForPdf('Tartalék zárás:'), 25, y);
-      doc.text(formatPdfCurrency(reserveClosing), rightMargin, y, { align: 'right' });
-      doc.setFont('helvetica', 'normal');
-      y += 10;
 
       // Expenses section
       doc.setFontSize(14);
