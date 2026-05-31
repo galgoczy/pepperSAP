@@ -109,11 +109,6 @@ export default function DailyEntryPage() {
   // Generate Daily Report PDF
   const generateDailyReportPdf = async () => {
     try {
-      // Previous day (for opening balance on the cash report page)
-      const prevDate = new Date(selectedDate);
-      prevDate.setDate(prevDate.getDate() - 1);
-      const previousDayStr = prevDate.toISOString().split('T')[0];
-
       // Load the header logo (embedded into the PDF)
       const logoDataUrl = await loadImageDataUrl(PDF_LOGO_URL);
 
@@ -153,7 +148,9 @@ export default function DailyEntryPage() {
           .from('house_cash')
           .select('official_total, other_total')
           .eq('unit_id', effectiveUnitId)
-          .eq('date', previousDayStr)
+          .lt('date', selectedDate)
+          .order('date', { ascending: false })
+          .limit(1)
           .maybeSingle(),
       ]);
 

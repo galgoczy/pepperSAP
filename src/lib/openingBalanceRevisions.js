@@ -15,17 +15,32 @@ export async function approveOpeningBalanceRevision(revision, reviewerId) {
     .eq('id', revision.id);
   if (error) throw error;
 
-  const previousDay = new Date(revision.target_date);
-  previousDay.setDate(previousDay.getDate() - 1);
-  const previousDayStr = previousDay.toISOString().split('T')[0];
-
   const column = revision.pocket === 'reserve' ? 'other_total' : 'official_total';
+
+  // The opening balance is the closing of the most recent house_cash entry
+  // BEFORE the target date (not necessarily the day before). Update that row.
+  const { data: prevRow, error: prevError } = await supabase
+    .from('house_cash')
+    .select('id')
+    .eq('unit_id', revision.unit_id)
+    .lt('date', revision.target_date)
+    .order('date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (prevError) {
+    console.error('Error finding previous house_cash for approved revision:', prevError);
+    return;
+  }
+  if (!prevRow) {
+    console.warn('No previous house_cash entry to apply the revised opening balance to.');
+    return;
+  }
 
   const { error: updateError } = await supabase
     .from('house_cash')
     .update({ [column]: revision.proposed_opening_balance })
-    .eq('unit_id', revision.unit_id)
-    .eq('date', previousDayStr);
+    .eq('id', prevRow.id);
 
   if (updateError) {
     console.error('Error updating house_cash for approved revision:', updateError);

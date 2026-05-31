@@ -273,10 +273,8 @@ export function useHouseCash(unitId, date) {
     }
 
     try {
-      // Calculate previous day
-      const currentDate = new Date(date);
-      currentDate.setDate(currentDate.getDate() - 1);
-      const previousDay = currentDate.toISOString().split('T')[0];
+      // The opening balance is the closing of the most recent previous house_cash
+      // entry - NOT necessarily yesterday (there can be gaps with no entry).
 
       // Fetch all needed data in parallel
       const [currentResult, previousResult, expensesResult, dailyRevenueResult, efoPaymentsResult, wagePaymentsResult] = await Promise.all([
@@ -290,7 +288,9 @@ export function useHouseCash(unitId, date) {
           .from('house_cash')
           .select('official_total, other_total')
           .eq('unit_id', unitId)
-          .eq('date', previousDay)
+          .lt('date', date)
+          .order('date', { ascending: false })
+          .limit(1)
           .maybeSingle(),
         supabase
           .from('expenses')
