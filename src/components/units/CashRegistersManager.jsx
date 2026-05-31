@@ -49,13 +49,14 @@ export default function CashRegistersManager({ unitId, unitName }) {
     terminal_number: '',
     name: '',
     notes: '',
+    default_change_amount: '',
   });
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState('');
 
   const handleOpenCreate = () => {
     setEditingRegister(null);
-    setFormData({ ap_number: '', terminal_number: '', name: '', notes: '' });
+    setFormData({ ap_number: '', terminal_number: '', name: '', notes: '', default_change_amount: '' });
     setFormError('');
     setIsFormOpen(true);
   };
@@ -67,6 +68,7 @@ export default function CashRegistersManager({ unitId, unitName }) {
       terminal_number: register.terminal_number || '',
       name: register.name || '',
       notes: register.notes || '',
+      default_change_amount: register.default_change_amount ?? '',
     });
     setFormError('');
     setIsFormOpen(true);
@@ -91,11 +93,16 @@ export default function CashRegistersManager({ unitId, unitName }) {
     setFormLoading(true);
 
     try {
+      const payload = {
+        ...formData,
+        default_change_amount:
+          formData.default_change_amount === '' ? null : parseFloat(formData.default_change_amount),
+      };
       if (editingRegister) {
-        await updateCashRegister(editingRegister.id, formData);
+        await updateCashRegister(editingRegister.id, payload);
         toast.success('Pénztárgép sikeresen frissítve!');
       } else {
-        await createCashRegister(formData);
+        await createCashRegister(payload);
         toast.success('Pénztárgép sikeresen létrehozva!');
       }
       setIsFormOpen(false);
@@ -344,6 +351,18 @@ export default function CashRegistersManager({ unitId, unitName }) {
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             placeholder="pl. Főkassza, Terasz kassza"
+          />
+
+          <Input
+            label="Alapértelmezett váltópénz (opcionális)"
+            type="number"
+            step="1"
+            min="0"
+            value={formData.default_change_amount}
+            onChange={(e) => setFormData({ ...formData, default_change_amount: e.target.value })}
+            suffix="Ft"
+            placeholder="pl. 30000"
+            helper="A napi jelentésben ebből összegződik a váltópénz alapértéke"
           />
 
           <div className="space-y-1">

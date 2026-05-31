@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Save, Wallet, Banknote, ArrowRight, TrendingUp, Calculator } from 'lucide-react';
 import { useHouseCash } from '../../hooks/useDailyRevenue';
+import { useActiveCashRegisters } from '../../hooks/useCashRegisterRevenue';
 import { Card, Button, Input, LoadingSpinner } from '../common';
 import OpeningBalanceRevision from './OpeningBalanceRevision';
 import { formatCurrency } from '../../lib/utils';
@@ -9,7 +10,16 @@ const DEFAULT_CHANGE_AMOUNT = 30000;
 
 export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
   const { houseCash, previousDayClosing, previousDayReserveClosing, calculatedData, loading, saveHouseCash } = useHouseCash(unitId, date);
+  const { cashRegisters } = useActiveCashRegisters(unitId);
   const [saving, setSaving] = useState(false);
+
+  // Default change amount = sum of the unit's registers' configured defaults,
+  // falling back to the constant when none are set.
+  const registersChangeDefault = cashRegisters.reduce(
+    (sum, r) => sum + (parseFloat(r.default_change_amount) || 0),
+    0
+  );
+  const defaultChangeAmount = registersChangeDefault > 0 ? registersChangeDefault : DEFAULT_CHANGE_AMOUNT;
   const [formData, setFormData] = useState({
     change_amount: DEFAULT_CHANGE_AMOUNT,
     official_other_income: '',
@@ -38,18 +48,18 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
   useEffect(() => {
     if (houseCash) {
       setFormData({
-        change_amount: houseCash.change_amount ?? DEFAULT_CHANGE_AMOUNT,
+        change_amount: houseCash.change_amount ?? defaultChangeAmount,
         official_other_income: houseCash.official_other_income || '',
         other_extra_income: houseCash.other_extra_income || '',
       });
     } else {
       setFormData({
-        change_amount: DEFAULT_CHANGE_AMOUNT,
+        change_amount: defaultChangeAmount,
         official_other_income: '',
         other_extra_income: '',
       });
     }
-  }, [houseCash, date]);
+  }, [houseCash, date, defaultChangeAmount]);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -175,7 +185,8 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
           helper="Állandó váltópénz a kasszában - nem része a napi forgalomnak"
         />
         <p className="text-xs text-gray-500 mt-2">
-          Alapértelmezett: {formatCurrency(DEFAULT_CHANGE_AMOUNT)}
+          Alapértelmezett: {formatCurrency(defaultChangeAmount)}
+          {registersChangeDefault > 0 && ' (pénztárgépek beállításaiból)'}
         </p>
       </Card>
 
