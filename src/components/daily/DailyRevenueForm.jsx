@@ -699,7 +699,6 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
             value={formData.actual_tips}
             onChange={(e) => handleChange('actual_tips', e.target.value)}
             suffix="Ft"
-            helper="Csak feljegyzés céljából - sehol nem számolunk vele"
           />
         </div>
       </Card>
