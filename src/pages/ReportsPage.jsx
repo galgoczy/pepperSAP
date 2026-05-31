@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, ChevronLeft, ChevronRight, FileSpreadsheet, Calendar } from 'lucide-react';
+import { Download, ChevronLeft, FileSpreadsheet, Calendar } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
@@ -264,7 +264,17 @@ export default function ReportsPage() {
                 <label className="block text-sm font-medium text-gray-700">
                   Gyors választás
                 </label>
-                {startDate === getFirstDayOfMonth() && endDate === getLastDayOfMonth() ? (
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setStartDate(getFirstDayOfMonth());
+                      setEndDate(getToday());
+                    }}
+                    className="flex-1"
+                  >
+                    Aktuális hónap
+                  </Button>
                   <Button
                     variant="secondary"
                     onClick={() => {
@@ -272,24 +282,12 @@ export default function ReportsPage() {
                       setStartDate(prev.start);
                       setEndDate(prev.end);
                     }}
-                    className="w-full"
+                    className="flex-1"
                   >
                     <ChevronLeft className="h-4 w-4" />
                     Előző hónap
                   </Button>
-                ) : (
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setStartDate(getFirstDayOfMonth());
-                      setEndDate(getLastDayOfMonth());
-                    }}
-                    className="w-full"
-                  >
-                    Aktuális hónap
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                )}
+                </div>
               </div>
             </>
           )}
