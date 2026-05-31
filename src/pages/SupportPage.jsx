@@ -76,13 +76,12 @@ export default function SupportPage() {
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
+      // Note: support_tickets.user_id / assigned_to reference auth.users, not
+      // user_profiles, so we can't embed user_profiles here. The reporter's
+      // name is stored directly on the ticket (reporter_name).
       let query = supabase
         .from('support_tickets')
-        .select(`
-          *,
-          reporter:user_profiles!support_tickets_user_id_fkey(id, full_name),
-          assignee:user_profiles!support_tickets_assigned_to_fkey(id, full_name)
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       // Non-admin users only see their own tickets
@@ -369,10 +368,10 @@ export default function SupportPage() {
                             <Calendar className="h-3 w-3" />
                             {formatDate(ticket.created_at)}
                           </span>
-                          {isAdmin && ticket.reporter && (
+                          {isAdmin && ticket.reporter_name && (
                             <span className="flex items-center gap-1">
                               <User className="h-3 w-3" />
-                              {ticket.reporter.full_name}
+                              {ticket.reporter_name}
                             </span>
                           )}
                           <span className="flex items-center gap-1">
