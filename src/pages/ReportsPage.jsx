@@ -70,12 +70,6 @@ function getMonthlyTableMonthOptions() {
   return options;
 }
 
-// Parse yearMonth to get display text
-function formatYearMonth(yearMonth) {
-  const [year, month] = yearMonth.split('-').map(Number);
-  return `${year}. ${MONTH_NAMES[month - 1]}`;
-}
-
 export default function ReportsPage() {
   const { isAdmin, isEvents, isAccountant, canViewAllUnits, unitId } = useAuth();
   const { units } = useUnits();
