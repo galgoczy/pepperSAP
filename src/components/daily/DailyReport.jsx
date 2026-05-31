@@ -72,6 +72,9 @@ export default function DailyReport({ date, unitId }) {
     0
   );
 
+  // Napi eredmény = éttermi szoftver forgalom - kifizetések összesen
+  const dailyResult = softwareRevenue - totalExpenses;
+
   // Helper to calculate register total (tips not included)
   const getRegisterTotal = (cr) =>
     (parseFloat(cr.vat_0_percent) || 0) +
@@ -434,6 +437,19 @@ export default function DailyReport({ date, unitId }) {
             </div>
           </div>
         )}
+      </Card>
+
+      {/* Daily result */}
+      <Card className="print:shadow-none print:border">
+        <div className="flex justify-between items-center">
+          <div>
+            <p className="font-semibold text-gray-700">Napi eredmény</p>
+            <p className="text-xs text-gray-500">Éttermi szoftver forgalom - kifizetések összesen</p>
+          </div>
+          <span className={`text-xl font-bold ${dailyResult >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+            {formatCurrency(dailyResult)}
+          </span>
+        </div>
       </Card>
 
       {/* Print footer */}

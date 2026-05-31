@@ -21,12 +21,13 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
 
   // Auto-calculated values from hook (with defaults to prevent NaN)
   const {
-    cashInvoiceExpenses = 0,      // Készpénzes számlák (auto from expenses)
-    nonInvoiceExpenses = 0,       // Nem számlás kifizetések (auto from expenses)
+    officialExpenses: cashInvoiceExpenses = 0,   // Készpénzes (számlás) kifizetések
+    nonOfficialExpenses: nonInvoiceExpenses = 0,  // Nem számlás kifizetések
     totalCashRegisterCash = 0,    // Napi forgalom (auto from cash registers)
     totalCashRegisterRevenue = 0, // Pénztárgép összes bevétel
     softwareRevenue = 0,          // Szoftver bevétel
-    wageTypePayments = 0,         // Bér jellegű kifizetések (EFO + wage)
+    wageTypePayments = 0,         // Bér jellegű kifizetések hivatalos része (EFO + wage)
+    wageTypeExtra = 0,            // Bér jellegű kifizetések nem hivatalos része
   } = calculatedData || {};
 
   // Software vs cash register difference (calculated)
@@ -74,10 +75,12 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
   // Tartalék (separate tracking)
   // other_difference is now auto-calculated (softwareCashRegisterDiff)
   // other_expenses is now auto-calculated (nonInvoiceExpenses)
+  // Also subtract the non-official (extra) part of EFO + wage payments.
   const otherTotal =
     softwareCashRegisterDiff +
     (parseFloat(formData.other_extra_income) || 0) -
-    nonInvoiceExpenses;
+    nonInvoiceExpenses -
+    wageTypeExtra;
 
   // For saving: official_total is the closing balance
   const officialTotal = closingBalance;
@@ -293,6 +296,16 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
             </div>
             <p className="text-xl font-bold text-red-800">{formatCurrency(nonInvoiceExpenses)}</p>
             <p className="text-xs text-red-600 mt-1">Kifizetésekből (automatikus)</p>
+          </div>
+
+          {/* Auto-calculated: Bér jellegű kifizetések (nem hivatalos rész) */}
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-center gap-2 mb-1">
+              <Calculator className="h-4 w-4 text-red-600" />
+              <span className="text-sm font-medium text-red-700">Bér jellegű kifizetések, nem hivatalos (-)</span>
+            </div>
+            <p className="text-xl font-bold text-red-800">{formatCurrency(wageTypeExtra)}</p>
+            <p className="text-xs text-red-600 mt-1">EFO + heti bér tartalék része (automatikus)</p>
           </div>
         </div>
 

@@ -83,7 +83,7 @@ export default function DailyEntryPage() {
   const generateDailyReportPdf = async () => {
     try {
       // Fetch data
-      const [revenueResult, houseCashResult, expensesResult] = await Promise.all([
+      const [revenueResult, houseCashResult, expensesResult, efoResult, wageResult] = await Promise.all([
         supabase
           .from('daily_revenue')
           .select('*')
@@ -102,11 +102,25 @@ export default function DailyEntryPage() {
           .eq('unit_id', effectiveUnitId)
           .eq('invoice_date', selectedDate)
           .order('created_at', { ascending: true }),
+        supabase
+          .from('efo_payments')
+          .select('employee_name, total_amount, payment_method, notes')
+          .eq('unit_id', effectiveUnitId)
+          .eq('payment_date', selectedDate)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('wage_payments')
+          .select('worker_name, total_amount, notes')
+          .eq('unit_id', effectiveUnitId)
+          .eq('payment_date', selectedDate)
+          .order('created_at', { ascending: true }),
       ]);
 
       const revenue = revenueResult.data;
       const houseCash = houseCashResult.data;
       const expenses = expensesResult.data || [];
+      const efoPaymentsList = efoResult.data || [];
+      const wagePaymentsList = wageResult.data || [];
 
       // Sort expenses: official first
       const sortedExpenses = [...expenses].sort((a, b) => {
@@ -441,48 +455,106 @@ export default function DailyEntryPage() {
       doc.text(sanitizeForPdf('Napi kifizetések'), 15, y);
       y += 8;
 
-      if (sortedExpenses.length > 0) {
+      // Helper to render a single payment line (name + amount + sub-line)
+      const renderPaymentLine = (name, amount, subText) => {
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
+        doc.text(sanitizeForPdf(name), 20, y);
+        doc.setTextColor(180, 0, 0);
+        doc.text('-' + formatPdfCurrency(amount), rightMargin, y, { align: 'right' });
+        doc.setTextColor(0, 0, 0);
+        y += 4;
+        if (subText) {
+          doc.setFontSize(8);
+          doc.setTextColor(100, 100, 100);
+          doc.text(sanitizeForPdf(subText), 25, y);
+          doc.setTextColor(0, 0, 0);
+          doc.setFontSize(10);
+        }
+        y += 6;
+      };
 
-        let totalExpenses = 0;
+      // All payments: invoices + EFO + weekly wage
+      const expensesTotal = sortedExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+      const efoTotal = efoPaymentsList.reduce((s, p) => s + (parseFloat(p.total_amount) || 0), 0);
+      const wageTotal = wagePaymentsList.reduce((s, p) => s + (parseFloat(p.total_amount) || 0), 0);
+      const totalPayments = expensesTotal + efoTotal + wageTotal;
+      const hasAnyPayment = sortedExpenses.length > 0 || efoPaymentsList.length > 0 || wagePaymentsList.length > 0;
+
+      if (hasAnyPayment) {
         sortedExpenses.forEach((expense) => {
-          if (y > 270) {
-            doc.addPage();
-            y = 20;
-          }
-          totalExpenses += parseFloat(expense.amount) || 0;
-
-          // Supplier name with "(számlás)" indicator for official expenses
           const supplierText = expense.is_official
             ? expense.supplier_name + ' (számlás)'
             : expense.supplier_name;
-          doc.text(sanitizeForPdf(supplierText), 20, y);
-          doc.setTextColor(180, 0, 0);
-          doc.text('-' + formatPdfCurrency(expense.amount), rightMargin, y, { align: 'right' });
-          doc.setTextColor(0, 0, 0);
-          y += 4;
-          doc.setFontSize(8);
-          doc.setTextColor(100, 100, 100);
           const paymentMethod = PAYMENT_METHODS[expense.payment_method] || expense.payment_method;
-          doc.text(sanitizeForPdf((expense.item_description || 'Nincs leírás') + ' - ' + paymentMethod), 25, y);
-          doc.setTextColor(0, 0, 0);
-          doc.setFontSize(10);
-          y += 6;
+          renderPaymentLine(supplierText, expense.amount, (expense.item_description || 'Nincs leírás') + ' - ' + paymentMethod);
+        });
+        efoPaymentsList.forEach((p) => {
+          const method = p.payment_method ? ' - ' + (PAYMENT_METHODS[p.payment_method] || p.payment_method) : '';
+          renderPaymentLine(p.employee_name + ' (EFO)', p.total_amount, (p.notes || 'EFO kifizetés') + method);
+        });
+        wagePaymentsList.forEach((p) => {
+          renderPaymentLine(p.worker_name + ' (Heti bér)', p.total_amount, p.notes || 'Heti bér kifizetés');
         });
 
         doc.setFont('helvetica', 'bold');
         doc.text(sanitizeForPdf('Kifizetések összesen:'), 20, y);
         doc.setTextColor(180, 0, 0);
-        doc.text('-' + formatPdfCurrency(totalExpenses), rightMargin, y, { align: 'right' });
+        doc.text('-' + formatPdfCurrency(totalPayments), rightMargin, y, { align: 'right' });
         doc.setTextColor(0, 0, 0);
-        y += 10;
+        y += 8;
       } else {
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
         doc.text(sanitizeForPdf('Nincs rögzített kifizetés'), 20, y);
-        y += 10;
+        y += 8;
       }
+
+      // Napi eredmény = éttermi szoftver forgalom - kifizetések összesen
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
+      const dailyResult = softwareRevenue - totalPayments;
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, y - 2, rightMargin, y - 2);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Napi eredmény:'), 20, y + 4);
+      if (dailyResult >= 0) {
+        doc.setTextColor(0, 128, 0);
+      } else {
+        doc.setTextColor(180, 0, 0);
+      }
+      doc.text(formatPdfCurrency(dailyResult), rightMargin, y + 4, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 100, 100);
+      doc.text(sanitizeForPdf('Éttermi szoftver forgalom - kifizetések összesen'), 20, y + 9);
+      doc.setTextColor(0, 0, 0);
+      y += 18;
+
+      // Date + signature area at the bottom
+      if (y > 250) {
+        doc.addPage();
+        y = 30;
+      } else {
+        y = Math.max(y + 10, 255);
+      }
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(sanitizeForPdf('Kelt: ' + formatDate(selectedDate)), 20, y);
+      doc.setDrawColor(0, 0, 0);
+      doc.line(120, y, 190, y);
+      doc.setFontSize(8);
+      doc.setTextColor(120, 120, 120);
+      doc.text(sanitizeForPdf('Készítette (aláírás)'), 155, y + 4, { align: 'center' });
+      doc.setTextColor(0, 0, 0);
 
       // Footer
       doc.setFontSize(8);

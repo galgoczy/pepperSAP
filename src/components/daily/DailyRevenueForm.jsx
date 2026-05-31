@@ -259,8 +259,9 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       const savedRevenue = await saveRevenue({
         ...formData,
         protocol_gross: protocolGrossToSave,
-        // Guest count is summed from the per-cash-register values.
-        guest_count: perRegisterGuestSum,
+        // Guest count: sum of the per-cash-register values when present,
+        // otherwise the manually entered value.
+        guest_count: perRegisterGuestSum > 0 ? perRegisterGuestSum : formData.guest_count,
       });
 
       if (cashRegisters.length > 0 && savedRevenue?.id) {
@@ -367,17 +368,30 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
               </p>
             )}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Napi fogyasztói létszám (összesen)
-            </label>
-            <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-gray-900">
-              {perRegisterGuestSum} fő
+          {perRegisterGuestSum > 0 ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Napi fogyasztói létszám (összesen)
+              </label>
+              <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-gray-900">
+                {perRegisterGuestSum} fő
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                A pénztárgépeknél megadott létszámok összege
+              </p>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              A pénztárgépeknél megadott létszámok összege
-            </p>
-          </div>
+          ) : (
+            <Input
+              label="Napi fogyasztói létszám"
+              type="number"
+              step="1"
+              min="0"
+              value={formData.guest_count}
+              onChange={(e) => handleChange('guest_count', e.target.value)}
+              suffix="fő"
+              helper="Add meg kézzel, vagy töltsd ki a pénztárgépeknél (akkor automatikusan összegződik)"
+            />
+          )}
         </div>
       </Card>
 

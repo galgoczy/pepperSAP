@@ -239,9 +239,10 @@ export function useHouseCash(unitId, date) {
     softwareRevenue: 0,          // Szoftver bevétel
     totalDiscrepancies: 0,       // Összes HUF elütés
     adjustedCash: 0,             // Készpénz - elütések (korrigált készpénz)
-    wageTypePayments: 0,         // Bér jellegű kifizetések (EFO + wage összesen)
+    wageTypePayments: 0,         // Bér jellegű kifizetések hivatalos része (EFO + wage)
     efoPaymentsTotal: 0,         // EFO kifizetések hivatalos összege
     wagePaymentsTotal: 0,        // Heti bér kifizetések hivatalos összege
+    wageTypeExtra: 0,            // Bér jellegű kifizetések nem hivatalos része
   });
   const [discrepancyDetails, setDiscrepancyDetails] = useState([]); // All discrepancy entries
   const [loading, setLoading] = useState(true);
@@ -262,6 +263,7 @@ export function useHouseCash(unitId, date) {
         wageTypePayments: 0,
         efoPaymentsTotal: 0,
         wagePaymentsTotal: 0,
+        wageTypeExtra: 0,
       });
       setDiscrepancyDetails([]);
       setLoading(false);
@@ -301,12 +303,12 @@ export function useHouseCash(unitId, date) {
           .maybeSingle(),
         supabase
           .from('efo_payments')
-          .select('official_amount')
+          .select('official_amount, extra_amount')
           .eq('unit_id', unitId)
           .eq('payment_date', date),
         supabase
           .from('wage_payments')
-          .select('official_amount')
+          .select('official_amount, extra_amount')
           .eq('unit_id', unitId)
           .eq('payment_date', date),
       ]);
@@ -411,6 +413,15 @@ export function useHouseCash(unitId, date) {
       );
       const wageTypePayments = efoPaymentsTotal + wagePaymentsTotal;
 
+      // Non-official (extra) part of EFO and wage payments - goes to Tartalék
+      const efoExtraTotal = (efoPaymentsResult.data || []).reduce(
+        (sum, p) => sum + (parseFloat(p.extra_amount) || 0), 0
+      );
+      const wageExtraTotal = (wagePaymentsResult.data || []).reduce(
+        (sum, p) => sum + (parseFloat(p.extra_amount) || 0), 0
+      );
+      const wageTypeExtra = efoExtraTotal + wageExtraTotal;
+
       setHouseCash(currentResult.data || null);
       setPreviousDayClosing(previousResult.data?.official_total || null);
       setDiscrepancyDetails(allDiscrepancies);
@@ -426,6 +437,7 @@ export function useHouseCash(unitId, date) {
         wageTypePayments,
         efoPaymentsTotal,
         wagePaymentsTotal,
+        wageTypeExtra,
       });
     } catch (error) {
       console.error('Error fetching house cash:', error);
