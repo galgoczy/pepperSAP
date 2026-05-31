@@ -128,7 +128,7 @@ export function useDailyRevenue(unitId, date) {
       'vip_loading', 'vip_revenue',
       'protocol_net', 'protocol_gross', 'protocol_vat_rate',
       'mckinsey_net', 'mckinsey_gross', 'mckinsey_vat_rate',
-      'extra_cash_revenue',
+      'extra_cash_revenue', 'actual_tips',
       'ordit_net', 'ordit_gross', 'ordit_vat_rate',
       'event_revenue_net', 'event_revenue_gross', 'event_revenue_vat_rate'
     ];

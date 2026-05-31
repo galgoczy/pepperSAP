@@ -54,6 +54,8 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     mckinsey_vat_rate: 27,
     // Extra cash revenue
     extra_cash_revenue: '',
+    // Actual tips (recorded only, not used in any calculation)
+    actual_tips: '',
     // Ordit revenue (new)
     ordit_net: '',
     ordit_gross: '',
@@ -94,6 +96,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         mckinsey_gross: revenue.mckinsey_gross || '',
         mckinsey_vat_rate: revenue.mckinsey_vat_rate ?? 27,
         extra_cash_revenue: revenue.extra_cash_revenue || '',
+        actual_tips: revenue.actual_tips || '',
         ordit_net: revenue.ordit_net || '',
         ordit_gross: revenue.ordit_gross || '',
         ordit_vat_rate: revenue.ordit_vat_rate ?? 27,
@@ -116,6 +119,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         mckinsey_gross: '',
         mckinsey_vat_rate: 27,
         extra_cash_revenue: '',
+        actual_tips: '',
         ordit_net: '',
         ordit_gross: '',
         ordit_vat_rate: 27,
@@ -687,6 +691,17 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
           suffix="Ft"
           helper="Egyéb, pénztárgépen kívüli hivatalos készpénz bevétel"
         />
+        <div className="mt-4">
+          <Input
+            label="Borravaló (minden fajta tényleges borravaló)"
+            type="number"
+            step="0.01"
+            value={formData.actual_tips}
+            onChange={(e) => handleChange('actual_tips', e.target.value)}
+            suffix="Ft"
+            helper="Csak feljegyzés céljából - sehol nem számolunk vele"
+          />
+        </div>
       </Card>
 
       {/* Color marking */}

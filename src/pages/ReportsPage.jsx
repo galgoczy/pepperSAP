@@ -8,7 +8,7 @@ import { Card, Button, Select } from '../components/common';
 import MonthlyReport from '../components/reports/MonthlyReport';
 import MonthlyTableReport from '../components/reports/MonthlyTableReport';
 import ExportModal from '../components/reports/ExportModal';
-import { getFirstDayOfMonth, getLastDayOfMonth } from '../lib/utils';
+import { getFirstDayOfMonth, getToday } from '../lib/utils';
 
 // Hungarian month names
 const MONTH_NAMES = [
@@ -75,7 +75,7 @@ export default function ReportsPage() {
   const { units } = useUnits();
   const { settings, updateSetting } = useAppSettings();
   const [startDate, setStartDate] = useState(getFirstDayOfMonth());
-  const [endDate, setEndDate] = useState(getLastDayOfMonth());
+  const [endDate, setEndDate] = useState(getToday());
   const [selectedYearMonth, setSelectedYearMonth] = useState(getPreviousMonthYearMonth());
 
   // Month options for monthly table dropdown
