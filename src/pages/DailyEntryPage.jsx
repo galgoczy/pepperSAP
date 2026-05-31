@@ -774,7 +774,10 @@ export default function DailyEntryPage() {
           <Select
             label="Egység kiválasztása"
             value={selectedUnit}
-            onChange={(e) => setSelectedUnit(e.target.value)}
+            onChange={(e) => {
+              setSelectedUnit(e.target.value);
+              updateSetting('lastUnitId', e.target.value);
+            }}
             options={restaurantUnits.map(u => ({ value: u.id, label: u.name }))}
             placeholder="Válassz egységet..."
           />

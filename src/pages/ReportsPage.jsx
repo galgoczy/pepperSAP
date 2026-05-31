@@ -3,6 +3,7 @@ import { Download, ChevronLeft, ChevronRight, FileSpreadsheet, Calendar } from '
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
+import { useAppSettings } from '../hooks/useAppSettings';
 import { Card, Button, Select } from '../components/common';
 import MonthlyReport from '../components/reports/MonthlyReport';
 import MonthlyTableReport from '../components/reports/MonthlyTableReport';
@@ -78,6 +79,7 @@ function formatYearMonth(yearMonth) {
 export default function ReportsPage() {
   const { isAdmin, isEvents, isAccountant, canViewAllUnits, unitId } = useAuth();
   const { units } = useUnits();
+  const { settings, updateSetting } = useAppSettings();
   const [startDate, setStartDate] = useState(getFirstDayOfMonth());
   const [endDate, setEndDate] = useState(getLastDayOfMonth());
   const [selectedYearMonth, setSelectedYearMonth] = useState(getPreviousMonthYearMonth());
@@ -95,7 +97,13 @@ export default function ReportsPage() {
   };
   const [reportType, setReportType] = useState(getDefaultReportType());
   const [isExportOpen, setIsExportOpen] = useState(false);
-  const [selectedUnit, setSelectedUnit] = useState(unitId || '');
+  const [selectedUnit, setSelectedUnit] = useState(() => {
+    if (!canViewAllUnits) return unitId || '';
+    // Admin/accountant: apply the "default unit" preference ('' = all units).
+    if (settings.defaultUnitMode === 'specific' && settings.defaultUnitId) return settings.defaultUnitId;
+    if (settings.defaultUnitMode === 'remember' && settings.lastUnitId) return settings.lastUnitId;
+    return unitId || '';
+  });
 
   // Get restaurant units only (exclude events unit)
   const restaurantUnits = units.filter((u) => u.type === 'restaurant');
@@ -133,6 +141,7 @@ export default function ReportsPage() {
   // Reset report type if current selection is not available
   const handleUnitChange = (newUnit) => {
     setSelectedUnit(newUnit);
+    if (canViewAllUnits) updateSetting('lastUnitId', newUnit);
     // If switching to/from "all units", reset report type based on role
     if ((newUnit === '' && selectedUnit !== '') || (newUnit !== '' && selectedUnit === '')) {
       if (isAccountant) {
