@@ -362,7 +362,21 @@ export function AuthProvider({ children }) {
 
     // Set up visibility change handler to refresh on tab focus
     const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible' && userRef.current) {
+      if (document.visibilityState !== 'visible') {
+        // Tab hidden: stop the auto-refresh timer. Browsers heavily throttle
+        // timers in background tabs, so the built-in refresh can miss and the
+        // access token silently expires - which is what makes the app load so
+        // slowly (or hang) when you come back after being idle.
+        supabase.auth.stopAutoRefresh();
+        return;
+      }
+
+      // Tab visible again: resume proactive token refresh and immediately make
+      // sure we have a valid session, so the queries that fire on focus don't
+      // stall on an expired token (no manual page reload needed).
+      supabase.auth.startAutoRefresh();
+
+      if (userRef.current) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) {

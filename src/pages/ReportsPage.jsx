@@ -3,7 +3,6 @@ import { Download, ChevronLeft, ChevronRight, FileSpreadsheet, Calendar } from '
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
-import { useAppSettings } from '../hooks/useAppSettings';
 import { Card, Button, Select } from '../components/common';
 import MonthlyReport from '../components/reports/MonthlyReport';
 import MonthlyTableReport from '../components/reports/MonthlyTableReport';
@@ -70,10 +69,15 @@ function getMonthlyTableMonthOptions() {
   return options;
 }
 
+// Parse yearMonth to get display text
+function formatYearMonth(yearMonth) {
+  const [year, month] = yearMonth.split('-').map(Number);
+  return `${year}. ${MONTH_NAMES[month - 1]}`;
+}
+
 export default function ReportsPage() {
   const { isAdmin, isEvents, isAccountant, canViewAllUnits, unitId } = useAuth();
   const { units } = useUnits();
-  const { settings, updateSetting } = useAppSettings();
   const [startDate, setStartDate] = useState(getFirstDayOfMonth());
   const [endDate, setEndDate] = useState(getLastDayOfMonth());
   const [selectedYearMonth, setSelectedYearMonth] = useState(getPreviousMonthYearMonth());
