@@ -3,7 +3,8 @@ import { User, Lock, Bell, Shield, Eye, Settings2, Star, Building, Landmark, Rad
 import { useAuth } from '../hooks/useAuth';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { useAllUnitRevenueSettings } from '../hooks/useUnitRevenueSettings';
-import { Card, Button, Input, LoadingSpinner } from '../components/common';
+import { useUnits } from '../hooks/useSupabase';
+import { Card, Button, Input, Select, LoadingSpinner } from '../components/common';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 
@@ -19,6 +20,7 @@ export default function SettingsPage() {
   const { user, profile, isAdmin, refetchProfile } = useAuth();
   const { settings, updateSetting } = useAppSettings();
   const { allSettings, loading: settingsLoading, updateSettings } = useAllUnitRevenueSettings();
+  const { units } = useUnits();
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [newPassword, setNewPassword] = useState('');
@@ -256,6 +258,51 @@ export default function SettingsPage() {
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-pepper-red/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pepper-red"></div>
               </div>
             </label>
+          </div>
+        </Card>
+      )}
+
+      {/* Default unit on open (Admin only) */}
+      {isAdmin && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <Building className="h-5 w-5 text-gray-400" />
+              Alapértelmezett egység
+            </div>
+          }
+        >
+          <p className="text-sm text-gray-500 mb-4">
+            Mely egység legyen kiválasztva, amikor megnyitod a napi jelentést vagy a riportokat.
+          </p>
+          <div className="space-y-4 max-w-md">
+            <Select
+              label="Mód"
+              value={settings.defaultUnitMode}
+              onChange={(e) => updateSetting('defaultUnitMode', e.target.value)}
+              options={[
+                { value: 'default', label: 'Alapértelmezett (első egység)' },
+                { value: 'remember', label: 'Legutóbb megnyitott egység' },
+                { value: 'specific', label: 'Megadott egység' },
+              ]}
+            />
+            {settings.defaultUnitMode === 'specific' && (
+              <Select
+                label="Egység"
+                value={settings.defaultUnitId}
+                onChange={(e) => updateSetting('defaultUnitId', e.target.value)}
+                options={[
+                  { value: '', label: 'Válassz egységet...' },
+                  ...units
+                    .filter((u) => u.type === 'restaurant')
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((u) => ({ value: u.id, label: u.name })),
+                ]}
+              />
+            )}
+            <p className="text-xs text-gray-400">
+              Ez a beállítás ehhez a böngészőhöz tartozik (helyileg tárolva).
+            </p>
           </div>
         </Card>
       )}

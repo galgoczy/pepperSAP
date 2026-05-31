@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Select, LoadingSpinner, Modal, Badge } from '../components/common';
 import { usePaymentItems, PAYMENT_KIND_META } from '../hooks/usePaymentItems';
+import { useAppSettings, resolveDefaultUnit } from '../hooks/useAppSettings';
 import DailyRevenueForm from '../components/daily/DailyRevenueForm';
 import HouseCashForm from '../components/daily/HouseCashForm';
 import DailyReport from '../components/daily/DailyReport';
@@ -62,6 +63,7 @@ const tabs = [
 export default function DailyEntryPage() {
   const { isAdmin, unitId } = useAuth();
   const { units, loading: unitsLoading } = useUnits();
+  const { settings, updateSetting } = useAppSettings();
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('all');
   const [selectedDate, setSelectedDate] = useState(searchParams.get('date') || getToday());
@@ -89,9 +91,13 @@ export default function DailyEntryPage() {
     setSelectedUnit(unitParam);
   }
 
-  // Auto-select first unit for admin if none selected (during render, not in effect)
-  if (isAdmin && !selectedUnit && !unitParam && restaurantUnits.length > 0 && selectedUnit !== restaurantUnits[0].id) {
-    setSelectedUnit(restaurantUnits[0].id);
+  // Auto-select unit for admin if none selected (during render, not in effect).
+  // Honours the admin "default unit" preference (default / remember / specific).
+  if (isAdmin && !selectedUnit && !unitParam && restaurantUnits.length > 0) {
+    const target = resolveDefaultUnit(settings, restaurantUnits, restaurantUnits[0].id);
+    if (target && selectedUnit !== target) {
+      setSelectedUnit(target);
+    }
   }
 
   // Use user's unit if not admin
