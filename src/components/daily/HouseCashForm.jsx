@@ -36,13 +36,17 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
 
   // Auto-calculated values from hook (with defaults to prevent NaN)
   const {
-    officialExpenses: cashInvoiceExpenses = 0,   // Készpénzes (számlás) kifizetések
+    officialExpenses: cashInvoiceExpenses = 0,   // Készpénzes (számlás) kifizetések - csak megjelenítéshez
+    officialCashExpenses = 0,     // Hivatalos KÉSZPÉNZES kifizetések (a zsebet mozgatják)
     nonOfficialExpenses: nonInvoiceExpenses = 0,  // Nem számlás kifizetések
     totalCashRegisterCash = 0,    // Napi forgalom (auto from cash registers)
     totalCashRegisterRevenue = 0, // Pénztárgép összes bevétel
     softwareRevenue = 0,          // Szoftver bevétel
+    totalDiscrepancies = 0,       // HUF elütések
     wageTypePayments = 0,         // Bér jellegű kifizetések hivatalos része (EFO + wage)
     wageTypeExtra = 0,            // Bér jellegű kifizetések nem hivatalos része
+    cashTransfersToday = 0,       // Napi nettó készpénz átküldés
+    reserveTransfersToday = 0,    // Napi nettó tartalék átküldés
   } = calculatedData || {};
 
   // Software vs cash register difference (calculated)
@@ -68,16 +72,19 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Calculate daily movement (income - expenses) for Pénztár zseb
-  // Income: napi forgalom (auto) + egyéb hivatalos bevétel
+  // Pénztár zseb napi mozgás (egységes képlet, megegyezik a sorozat-számítással):
+  // (pénztárgép kp - elütések + egyéb hivatalos kp bevétel)
+  //   - (hivatalos KÉSZPÉNZES kifizetések + hivatalos EFO/bér) +/- készpénz átküldés
   const dailyIncome =
-    totalCashRegisterCash +
-    (parseFloat(formData.official_other_income) || 0);
+    totalCashRegisterCash -
+    totalDiscrepancies +
+    (parseFloat(formData.official_other_income) || 0) +
+    (cashTransfersToday > 0 ? cashTransfersToday : 0);
 
-  // Expenses: készpénzes számlák (auto) + bér jellegű kifizetések (auto)
   const dailyExpenses =
-    cashInvoiceExpenses +
-    wageTypePayments;
+    officialCashExpenses +
+    wageTypePayments +
+    (cashTransfersToday < 0 ? -cashTransfersToday : 0);
 
   const dailyMovement = dailyIncome - dailyExpenses;
 
@@ -95,7 +102,8 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
     softwareCashRegisterDiff +
     (parseFloat(formData.other_extra_income) || 0) -
     nonInvoiceExpenses -
-    wageTypeExtra;
+    wageTypeExtra +
+    reserveTransfersToday;
 
   // Tartalék záró = tartalék nyitó + napi tartalék forgalom
   const reserveClosing = reserveOpening + reserveMovement;
@@ -222,14 +230,14 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
             suffix="Ft"
           />
 
-          {/* Auto-calculated: Készpénzes számlák */}
+          {/* Auto-calculated: Készpénzes hivatalos kifizetések */}
           <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
             <div className="flex items-center gap-2 mb-1">
               <Calculator className="h-4 w-4 text-red-600" />
-              <span className="text-sm font-medium text-red-700">Készpénzes számlák (-)</span>
+              <span className="text-sm font-medium text-red-700">Hivatalos kp kifizetések (-)</span>
             </div>
-            <p className="text-xl font-bold text-red-800">{formatCurrency(cashInvoiceExpenses)}</p>
-            <p className="text-xs text-red-600 mt-1">Számlás kifizetésekből (automatikus)</p>
+            <p className="text-xl font-bold text-red-800">{formatCurrency(officialCashExpenses)}</p>
+            <p className="text-xs text-red-600 mt-1">Készpénzes hivatalos kifizetésekből (automatikus)</p>
           </div>
 
           {/* Auto-calculated: Bér jellegű kifizetések */}

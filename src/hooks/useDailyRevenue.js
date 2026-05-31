@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { fetchHouseCashSeries, openingForDate } from '../lib/houseCashSeries';
 import toast from 'react-hot-toast';
 
 export function useDailyRevenue(unitId, date) {
@@ -244,6 +245,9 @@ export function useHouseCash(unitId, date) {
     efoPaymentsTotal: 0,         // EFO kifizetések hivatalos összege
     wagePaymentsTotal: 0,        // Heti bér kifizetések hivatalos összege
     wageTypeExtra: 0,            // Bér jellegű kifizetések nem hivatalos része
+    officialCashExpenses: 0,     // Hivatalos KÉSZPÉNZES kifizetések
+    cashTransfersToday: 0,       // Napi nettó készpénz átküldés (be - ki)
+    reserveTransfersToday: 0,    // Napi nettó tartalék átküldés (be - ki)
   });
   const [discrepancyDetails, setDiscrepancyDetails] = useState([]); // All discrepancy entries
   const [loading, setLoading] = useState(true);
@@ -277,21 +281,17 @@ export function useHouseCash(unitId, date) {
       // entry - NOT necessarily yesterday (there can be gaps with no entry).
 
       // Fetch all needed data in parallel
-      const [currentResult, previousResult, expensesResult, dailyRevenueResult, efoPaymentsResult, wagePaymentsResult] = await Promise.all([
+      const [currentResult, seriesResult, expensesResult, dailyRevenueResult, efoPaymentsResult, wagePaymentsResult] = await Promise.all([
         supabase
           .from('house_cash')
           .select('*')
           .eq('unit_id', unitId)
           .eq('date', date)
           .maybeSingle(),
-        supabase
-          .from('house_cash')
-          .select('official_total, other_total')
-          .eq('unit_id', unitId)
-          .lt('date', date)
-          .order('date', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
+        // Opening balances are computed live from the full history (so a day's
+        // closing always equals the next day's opening, regardless of gaps or
+        // whether the házipénztár tab was explicitly saved).
+        fetchHouseCashSeries(unitId, date),
         supabase
           .from('expenses')
           .select('amount, is_official, payment_method')
@@ -316,15 +316,20 @@ export function useHouseCash(unitId, date) {
       ]);
 
       if (currentResult.error) throw currentResult.error;
-      if (previousResult.error && previousResult.error.code !== 'PGRST116') {
-        console.error('Error fetching previous day:', previousResult.error);
-      }
+      const opening = openingForDate(seriesResult, date);
+      const seriesRow = seriesResult.byDate.get(date);
+      const cashTransfersToday = seriesRow?.cashTransfers || 0;
+      const reserveTransfersToday = seriesRow?.reserveTransfers || 0;
 
       // Calculate expenses
       const expenses = expensesResult.data || [];
       // Hivatalos (számlás) kifizetések - minden is_official=true
       const officialExpenses = expenses
         .filter(e => e.is_official === true)
+        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      // Hivatalos KÉSZPÉNZES kifizetések (ezek mozgatják a Pénztár zsebet)
+      const officialCashExpenses = expenses
+        .filter(e => e.is_official === true && e.payment_method === 'cash')
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
       // Nem számlás kifizetések - is_official=false
       const nonOfficialExpenses = expenses
@@ -425,8 +430,8 @@ export function useHouseCash(unitId, date) {
       const wageTypeExtra = efoExtraTotal + wageExtraTotal;
 
       setHouseCash(currentResult.data || null);
-      setPreviousDayClosing(previousResult.data?.official_total || null);
-      setPreviousDayReserveClosing(previousResult.data?.other_total || null);
+      setPreviousDayClosing(opening.cash || 0);
+      setPreviousDayReserveClosing(opening.reserve || 0);
       setDiscrepancyDetails(allDiscrepancies);
       setCalculatedData({
         officialExpenses,
@@ -441,6 +446,9 @@ export function useHouseCash(unitId, date) {
         efoPaymentsTotal,
         wagePaymentsTotal,
         wageTypeExtra,
+        officialCashExpenses,
+        cashTransfersToday,
+        reserveTransfersToday,
       });
     } catch (error) {
       console.error('Error fetching house cash:', error);
