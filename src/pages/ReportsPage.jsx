@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, ChevronLeft, FileSpreadsheet, Calendar } from 'lucide-react';
+import { Download, ChevronLeft, ChevronRight, FileSpreadsheet, Calendar } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
