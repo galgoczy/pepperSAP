@@ -18,6 +18,7 @@ import BalanceCard from '../components/cash/BalanceCard';
 import TransferForm from '../components/cash/TransferForm';
 import TransferList from '../components/cash/TransferList';
 import PocketList from '../components/cash/PocketList';
+import BalanceBreakdownModal from '../components/cash/BalanceBreakdownModal';
 import OpeningBalanceRevisionsPanel from '../components/cash/OpeningBalanceRevisionsPanel';
 import { formatCurrency, formatDate, getToday } from '../lib/utils';
 
@@ -62,6 +63,7 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
     modifyTransfer,
   } = useTransfers(unitId);
   const [showTransferForm, setShowTransferForm] = useState(false);
+  const [breakdownPocket, setBreakdownPocket] = useState(null);
 
   const restaurantUnits = units.filter(u => u.type === 'restaurant');
   const incomingTransfers = transfers.filter(
@@ -101,6 +103,15 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
         reserve={balance.reserve}
         loading={balanceLoading}
         showReserve={showReserve}
+        onSelectPocket={setBreakdownPocket}
+      />
+
+      <BalanceBreakdownModal
+        isOpen={!!breakdownPocket}
+        onClose={() => setBreakdownPocket(null)}
+        unitId={unitId}
+        pocket={breakdownPocket || 'cash'}
+        title={breakdownPocket === 'reserve' ? 'Tartalék - összetétel' : 'Készpénz - összetétel'}
       />
 
       {/* Incoming transfers needing approval */}

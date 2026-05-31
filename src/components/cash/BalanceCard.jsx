@@ -2,7 +2,7 @@ import { Wallet, Banknote } from 'lucide-react';
 import { Card } from '../common';
 import { formatCurrency } from '../../lib/utils';
 
-export default function BalanceCard({ title, cash, reserve, pocketsTotal, loading, showReserve = true }) {
+export default function BalanceCard({ title, cash, reserve, pocketsTotal, loading, showReserve = true, onSelectPocket }) {
   if (loading) {
     return (
       <Card>
@@ -22,7 +22,12 @@ export default function BalanceCard({ title, cash, reserve, pocketsTotal, loadin
 
       <div className={`grid gap-4 ${showReserve ? 'md:grid-cols-2' : ''}`}>
         {/* Cash balance */}
-        <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+        <button
+          type="button"
+          onClick={onSelectPocket ? () => onSelectPocket('cash') : undefined}
+          disabled={!onSelectPocket}
+          className={`p-4 bg-green-50 rounded-lg border border-green-200 text-left transition-colors ${onSelectPocket ? 'hover:bg-green-100 cursor-pointer' : ''}`}
+        >
           <div className="flex items-center gap-2 text-green-700 mb-2">
             <Banknote className="h-5 w-5" />
             <span className="text-sm font-medium">Készpénz</span>
@@ -30,11 +35,17 @@ export default function BalanceCard({ title, cash, reserve, pocketsTotal, loadin
           <p className={`text-2xl font-bold ${cash >= 0 ? 'text-green-700' : 'text-red-600'}`}>
             {formatCurrency(cash)}
           </p>
-        </div>
+          {onSelectPocket && <p className="text-xs text-green-600 mt-1">Részletek megtekintése</p>}
+        </button>
 
         {/* Reserve balance */}
         {showReserve && (
-          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <button
+            type="button"
+            onClick={onSelectPocket ? () => onSelectPocket('reserve') : undefined}
+            disabled={!onSelectPocket}
+            className={`p-4 bg-blue-50 rounded-lg border border-blue-200 text-left transition-colors ${onSelectPocket ? 'hover:bg-blue-100 cursor-pointer' : ''}`}
+          >
             <div className="flex items-center gap-2 text-blue-700 mb-2">
               <Wallet className="h-5 w-5" />
               <span className="text-sm font-medium">Tartalék</span>
@@ -42,7 +53,8 @@ export default function BalanceCard({ title, cash, reserve, pocketsTotal, loadin
             <p className={`text-2xl font-bold ${reserve >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
               {formatCurrency(reserve)}
             </p>
-          </div>
+            {onSelectPocket && <p className="text-xs text-blue-600 mt-1">Részletek megtekintése</p>}
+          </button>
         )}
       </div>
 
