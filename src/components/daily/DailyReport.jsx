@@ -8,7 +8,7 @@ import { formatCurrency, formatDate, PAYMENT_METHODS } from '../../lib/utils';
 
 export default function DailyReport({ date, unitId }) {
   const { revenue, cashRegisterTotals, cashRegisterDetails, loading: revenueLoading } = useDailyRevenue(unitId, date);
-  const { houseCash, calculatedData, discrepancyDetails, loading: cashLoading } = useHouseCash(unitId, date);
+  const { houseCash, calculatedData, discrepancyDetails, previousDayClosing, previousDayReserveClosing, loading: cashLoading } = useHouseCash(unitId, date);
   const { items: paymentItems, loading: paymentsLoading, refetch: refetchPayments } = usePaymentItems(unitId, date, date);
   const [editingItem, setEditingItem] = useState(null);
 
@@ -63,8 +63,16 @@ export default function DailyReport({ date, unitId }) {
   const officialTotal = adjustedCash - officialExpenses - efoPayments;
 
   // Tartalék: szoftver-pénztárgép különbség + extra bevétel - nem számlás kifizetések
+  // - bér jellegű (nem hivatalos) kifizetések
+  const wageTypeExtra = calculatedData?.wageTypeExtra || 0;
   const revenueDifference = softwareRevenue - totalCashRegisterRevenue;
-  const reserveTotal = revenueDifference + extraIncome - nonOfficialExpenses;
+  const reserveTotal = revenueDifference + extraIncome - nonOfficialExpenses - wageTypeExtra;
+
+  // Openings (from previous day's closings) and closings for the report
+  const openingBalance = previousDayClosing || 0;
+  const reserveOpening = previousDayReserveClosing || 0;
+  const cashClosing = openingBalance + officialTotal;       // Házipénztár zárás = nyitó + napi egyenleg
+  const reserveClosingReport = reserveOpening + reserveTotal; // Tartalék zárás = nyitó + napi egyenleg
 
   // All payments for the day (invoices + EFO + weekly wage), already sorted.
   const totalExpenses = paymentItems.reduce(
@@ -355,6 +363,14 @@ export default function DailyReport({ date, unitId }) {
                   {formatCurrency(officialTotal)}
                 </span>
               </div>
+              <div className="flex justify-between text-gray-500">
+                <span>Nyitó egyenleg:</span>
+                <span>{formatCurrency(openingBalance)}</span>
+              </div>
+              <div className="flex justify-between font-bold bg-emerald-50 p-1 rounded">
+                <span className="text-emerald-700">Házipénztár zárás:</span>
+                <span className="text-emerald-800">{formatCurrency(cashClosing)}</span>
+              </div>
             </div>
           </div>
 
@@ -380,6 +396,14 @@ export default function DailyReport({ date, unitId }) {
                 <span className={reserveTotal >= 0 ? 'text-blue-800' : 'text-red-600'}>
                   {formatCurrency(reserveTotal)}
                 </span>
+              </div>
+              <div className="flex justify-between text-gray-500">
+                <span>Tartalék nyitó:</span>
+                <span>{formatCurrency(reserveOpening)}</span>
+              </div>
+              <div className="flex justify-between font-bold bg-blue-50 p-1 rounded">
+                <span className="text-blue-700">Tartalék zárás:</span>
+                <span className="text-blue-900">{formatCurrency(reserveClosingReport)}</span>
               </div>
             </div>
           </div>

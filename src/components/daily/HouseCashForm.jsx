@@ -8,7 +8,7 @@ import { formatCurrency } from '../../lib/utils';
 const DEFAULT_CHANGE_AMOUNT = 30000;
 
 export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
-  const { houseCash, previousDayClosing, calculatedData, loading, saveHouseCash } = useHouseCash(unitId, date);
+  const { houseCash, previousDayClosing, previousDayReserveClosing, calculatedData, loading, saveHouseCash } = useHouseCash(unitId, date);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     change_amount: DEFAULT_CHANGE_AMOUNT,
@@ -18,6 +18,8 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
 
   // Opening balance from previous day's closing
   const openingBalance = previousDayClosing || 0;
+  // Reserve opening from previous day's reserve closing
+  const reserveOpening = previousDayReserveClosing || 0;
 
   // Auto-calculated values from hook (with defaults to prevent NaN)
   const {
@@ -72,18 +74,23 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
   // Napi záró pénztár = nyitó + napi egyenleg
   const dailyClosingCash = openingBalance + dailyMovement;
 
-  // Tartalék (separate tracking)
+  // Tartalék napi forgalom (daily reserve movement)
   // other_difference is now auto-calculated (softwareCashRegisterDiff)
   // other_expenses is now auto-calculated (nonInvoiceExpenses)
   // Also subtract the non-official (extra) part of EFO + wage payments.
-  const otherTotal =
+  const reserveMovement =
     softwareCashRegisterDiff +
     (parseFloat(formData.other_extra_income) || 0) -
     nonInvoiceExpenses -
     wageTypeExtra;
 
-  // For saving: official_total is the closing balance
+  // Tartalék záró = tartalék nyitó + napi tartalék forgalom
+  const reserveClosing = reserveOpening + reserveMovement;
+
+  // For saving: official_total is the closing balance; other_total is the
+  // reserve closing balance (so it becomes the next day's reserve opening).
   const officialTotal = closingBalance;
+  const otherTotal = reserveClosing;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -253,6 +260,32 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
         </div>
       </Card>
 
+      {/* Closing Balance - Running total (placed under Pénztár zseb, above Tartalék) */}
+      <Card className="bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200">
+        <div className="space-y-4">
+          {/* Running balance calculation */}
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+            <span>{formatCurrency(openingBalance)}</span>
+            <ArrowRight className="h-4 w-4" />
+            <span className={dailyMovement >= 0 ? 'text-green-600' : 'text-red-600'}>
+              {dailyMovement >= 0 ? '+' : ''}{formatCurrency(dailyMovement)}
+            </span>
+            <ArrowRight className="h-4 w-4" />
+            <span className="font-bold">{formatCurrency(closingBalance)}</span>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-emerald-200">
+            <div>
+              <p className="text-lg font-semibold text-emerald-700">Záró egyenleg</p>
+              <p className="text-xs text-emerald-600">Ez lesz a következő nap nyitója</p>
+            </div>
+            <span className="text-3xl font-bold text-emerald-800">
+              {formatCurrency(closingBalance)}
+            </span>
+          </div>
+        </div>
+      </Card>
+
       {/* Other pocket */}
       <Card
         title={
@@ -309,41 +342,36 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
           </div>
         </div>
 
-        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
           <div className="flex justify-between items-center">
             <span className="font-medium text-blue-700">
-              Tartalék összesen:
+              Tartalék összesen (napi forgalom):
             </span>
             <span className="text-xl font-bold text-blue-800">
-              {formatCurrency(otherTotal)}
+              {formatCurrency(reserveMovement)}
             </span>
           </div>
-        </div>
-      </Card>
-
-      {/* Closing Balance - Running total */}
-      <Card className="bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200">
-        <div className="space-y-4">
-          {/* Running balance calculation */}
-          <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
-            <span>{formatCurrency(openingBalance)}</span>
-            <ArrowRight className="h-4 w-4" />
-            <span className={dailyMovement >= 0 ? 'text-green-600' : 'text-red-600'}>
-              {dailyMovement >= 0 ? '+' : ''}{formatCurrency(dailyMovement)}
-            </span>
-            <ArrowRight className="h-4 w-4" />
-            <span className="font-bold">{formatCurrency(closingBalance)}</span>
+          <div className="flex justify-between items-center text-sm border-t border-blue-200 pt-2">
+            <span className="text-blue-600">Tartalék nyitó:</span>
+            <span className="font-medium text-blue-700">{formatCurrency(reserveOpening)}</span>
           </div>
-
-          <div className="flex items-center justify-between pt-2 border-t border-emerald-200">
-            <div>
-              <p className="text-lg font-semibold text-emerald-700">Záró egyenleg</p>
-              <p className="text-xs text-emerald-600">Ez lesz a következő nap nyitója</p>
-            </div>
-            <span className="text-3xl font-bold text-emerald-800">
-              {formatCurrency(closingBalance)}
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-blue-600">Tartalék forgalom:</span>
+            <span className="font-medium text-blue-700">
+              {reserveMovement >= 0 ? '+' : ''}{formatCurrency(reserveMovement)}
             </span>
           </div>
+          <div className="flex justify-between items-center border-t border-blue-200 pt-2">
+            <span className="font-semibold text-blue-700">Tartalék záró:</span>
+            <span className="text-lg font-bold text-blue-900">{formatCurrency(reserveClosing)}</span>
+          </div>
+          <OpeningBalanceRevision
+            unitId={unitId}
+            date={date}
+            currentBalance={reserveOpening}
+            pocket="reserve"
+            onRevisionApproved={() => window.location.reload()}
+          />
         </div>
       </Card>
 

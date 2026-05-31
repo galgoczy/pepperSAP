@@ -230,6 +230,7 @@ export function useDailyRevenue(unitId, date) {
 export function useHouseCash(unitId, date) {
   const [houseCash, setHouseCash] = useState(null);
   const [previousDayClosing, setPreviousDayClosing] = useState(null);
+  const [previousDayReserveClosing, setPreviousDayReserveClosing] = useState(null);
   const [calculatedData, setCalculatedData] = useState({
     officialExpenses: 0,         // Hivatalos (számlás) kifizetések összesen
     nonOfficialExpenses: 0,      // Nem számlás kifizetések összesen
@@ -251,6 +252,7 @@ export function useHouseCash(unitId, date) {
     if (!unitId || !date) {
       setHouseCash(null);
       setPreviousDayClosing(null);
+      setPreviousDayReserveClosing(null);
       setCalculatedData({
         officialExpenses: 0,
         nonOfficialExpenses: 0,
@@ -286,7 +288,7 @@ export function useHouseCash(unitId, date) {
           .maybeSingle(),
         supabase
           .from('house_cash')
-          .select('official_total')
+          .select('official_total, other_total')
           .eq('unit_id', unitId)
           .eq('date', previousDay)
           .maybeSingle(),
@@ -424,6 +426,7 @@ export function useHouseCash(unitId, date) {
 
       setHouseCash(currentResult.data || null);
       setPreviousDayClosing(previousResult.data?.official_total || null);
+      setPreviousDayReserveClosing(previousResult.data?.other_total || null);
       setDiscrepancyDetails(allDiscrepancies);
       setCalculatedData({
         officialExpenses,
@@ -502,6 +505,7 @@ export function useHouseCash(unitId, date) {
   return {
     houseCash,
     previousDayClosing,
+    previousDayReserveClosing,
     calculatedData,
     discrepancyDetails,
     loading,

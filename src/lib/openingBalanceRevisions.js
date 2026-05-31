@@ -1,7 +1,9 @@
 import { supabase } from './supabase';
 
 // Approving an opening-balance revision updates the previous day's closing
-// balance (which is the target day's opening balance).
+// balance (which is the target day's opening balance). The pocket determines
+// which closing value is updated: official_total (Pénztár zseb) or other_total
+// (Tartalék).
 export async function approveOpeningBalanceRevision(revision, reviewerId) {
   const { error } = await supabase
     .from('opening_balance_revisions')
@@ -17,9 +19,11 @@ export async function approveOpeningBalanceRevision(revision, reviewerId) {
   previousDay.setDate(previousDay.getDate() - 1);
   const previousDayStr = previousDay.toISOString().split('T')[0];
 
+  const column = revision.pocket === 'reserve' ? 'other_total' : 'official_total';
+
   const { error: updateError } = await supabase
     .from('house_cash')
-    .update({ official_total: revision.proposed_opening_balance })
+    .update({ [column]: revision.proposed_opening_balance })
     .eq('unit_id', revision.unit_id)
     .eq('date', previousDayStr);
 
