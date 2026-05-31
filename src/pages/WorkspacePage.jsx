@@ -87,17 +87,26 @@ export default function WorkspacePage() {
       .from('user_profiles')
       .select('id, full_name, email, role');
 
+    const usersMap = {};
     if (error) {
       console.error('Felhasználók betöltési hiba:', error);
     } else if (data) {
       console.log('Felhasználók betöltve:', data.length);
-      const usersMap = {};
       data.forEach(u => {
         usersMap[u.id] = u;
       });
-      setUsers(usersMap);
     }
-  }, []);
+    // Always include the current user so their own messages resolve to a name
+    // even if user_profiles is unavailable (RLS) or has no row for them.
+    if (user?.id && !usersMap[user.id]) {
+      usersMap[user.id] = {
+        id: user.id,
+        full_name: profile?.full_name || '',
+        email: profile?.email || user.email || '',
+      };
+    }
+    setUsers(usersMap);
+  }, [user, profile]);
 
   // Fetch messages for selected channel
   const fetchMessages = useCallback(async () => {
