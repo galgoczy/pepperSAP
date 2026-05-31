@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { formatDate } from '../lib/utils';
+import { formatDate, getDisplayName } from '../lib/utils';
 
 const MESSAGE_TYPES = {
   text: { icon: MessageSquare, label: 'Üzenet' },
@@ -306,7 +306,7 @@ export default function WorkspacePage() {
   }, [selectedChannel, fetchMessages, channels, fetchUnreadCounts]);
 
   const getUserName = (userId) => {
-    return users[userId]?.full_name || users[userId]?.email || 'Ismeretlen';
+    return getDisplayName(users[userId]);
   };
 
   // First message the current user has not seen yet (drives the divider position)
@@ -513,7 +513,7 @@ export default function WorkspacePage() {
                         <option value="">Felelős (opcionális)</option>
                         {Object.values(users).map((u) => (
                           <option key={u.id} value={u.id}>
-                            {u.full_name || u.email}
+                            {getDisplayName(u)}
                           </option>
                         ))}
                       </select>
@@ -577,9 +577,9 @@ export default function WorkspacePage() {
 // Message item component
 function MessageItem({ message, users, currentUserId, onToggleTask }) {
   const isOwnMessage = message.author_id === currentUserId;
-  const userName = users[message.author_id]?.full_name || users[message.author_id]?.email || 'Ismeretlen';
+  const userName = getDisplayName(users[message.author_id]);
   const assigneeName = message.task_assignee_id
-    ? users[message.task_assignee_id]?.full_name || 'Valaki'
+    ? getDisplayName(users[message.task_assignee_id])
     : null;
 
   const formatTime = (dateStr) => {
@@ -684,7 +684,7 @@ function MessageItem({ message, users, currentUserId, onToggleTask }) {
             <p className="text-xs text-green-600 mt-2">
               Kész: {formatDate(message.task_completed_at)}
               {message.task_completed_by && users[message.task_completed_by] && (
-                <> - {users[message.task_completed_by].full_name}</>
+                <> - {getDisplayName(users[message.task_completed_by])}</>
               )}
             </p>
           )}

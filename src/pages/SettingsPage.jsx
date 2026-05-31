@@ -23,8 +23,6 @@ export default function SettingsPage() {
   const { units } = useUnits();
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || '');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
@@ -48,38 +46,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handleChangePassword = async (e) => {
-    e.preventDefault();
-
-    if (newPassword !== confirmPassword) {
-      toast.error('Az új jelszavak nem egyeznek!');
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      toast.error('Az új jelszó legalább 6 karakter kell legyen!');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (error) throw error;
-
-      setNewPassword('');
-      setConfirmPassword('');
-      toast.success('Jelszó sikeresen megváltoztatva!');
-    } catch (error) {
-      console.error(error);
-      toast.error('Hiba történt a jelszó megváltoztatásakor');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -135,7 +101,7 @@ export default function SettingsPage() {
         </form>
       </Card>
 
-      {/* Password Section */}
+      {/* Password Section - disabled: accounts use Microsoft 365 sign-in */}
       <Card
         title={
           <div className="flex items-center gap-2">
@@ -144,29 +110,33 @@ export default function SettingsPage() {
           </div>
         }
       >
-        <form onSubmit={handleChangePassword} className="space-y-4">
+        <p className="text-sm text-gray-500 mb-4">
+          A bejelentkezés Microsoft 365 fiókkal történik, ezért a jelszó itt nem módosítható.
+          A jelszavadat a Microsoft fiókod beállításaiban tudod megváltoztatni.
+        </p>
+        <div className="space-y-4 opacity-50 pointer-events-none select-none" aria-disabled="true">
           <Input
             label="Új jelszó"
             type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            required
+            value=""
+            disabled
+            onChange={() => {}}
           />
 
           <Input
             label="Új jelszó megerősítése"
             type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
+            value=""
+            disabled
+            onChange={() => {}}
           />
 
           <div className="pt-4">
-            <Button type="submit" loading={loading}>
+            <Button type="button" disabled>
               Jelszó megváltoztatása
             </Button>
           </div>
-        </form>
+        </div>
       </Card>
 
       {/* Unit Revenue Settings - Admin only */}

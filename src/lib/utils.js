@@ -38,6 +38,15 @@ export const calculateTotal = (items, field = 'amount') => {
   return items.reduce((sum, item) => sum + (parseFloat(item[field]) || 0), 0);
 };
 
+// Display name for a user: full_name if set, otherwise the local part of the
+// email (e.g. "rsr@pepperhouse.hu" -> "rsr"), falling back to "Ismeretlen".
+export const getDisplayName = (profile) => {
+  if (!profile) return 'Ismeretlen';
+  if (profile.full_name && profile.full_name.trim()) return profile.full_name.trim();
+  if (profile.email) return profile.email.split('@')[0];
+  return 'Ismeretlen';
+};
+
 // Combine class names (clsx alternative)
 export const cn = (...classes) => {
   return classes.filter(Boolean).join(' ');
