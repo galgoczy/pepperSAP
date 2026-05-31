@@ -1208,12 +1208,12 @@ function FullMonthlyReport({ data, totals, unitName, startDate, endDate }) {
         </div>
       </div>
 
-      {/* Revenue trend chart */}
-      {data.length > 1 && (
+      {/* Revenue trend chart (includes 0-revenue days across the range) */}
+      {chartData.length > 1 && (
         <div className="mt-6 pt-4 border-t border-gray-200">
           <h4 className="text-sm font-medium text-gray-700 mb-3">Napi forgalom alakulása</h4>
           <RevenueTrendChart
-            data={data.map((row) => ({
+            data={chartData.map((row) => ({
               label: formatDate(row.date).split('.').slice(1).join('.').trim(),
               value: row.totalSoftware,
             }))}
