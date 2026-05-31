@@ -7,6 +7,7 @@ import { useAppSettings } from '../hooks/useAppSettings';
 import { Card, Button, Select } from '../components/common';
 import MonthlyReport from '../components/reports/MonthlyReport';
 import MonthlyTableReport from '../components/reports/MonthlyTableReport';
+import HouseCashReport from '../components/reports/HouseCashReport';
 import ExportModal from '../components/reports/ExportModal';
 import { getFirstDayOfMonth, getToday } from '../lib/utils';
 
@@ -21,6 +22,7 @@ const baseReportTypes = [
   { value: 'full_monthly', label: 'Teljes havi forgalom' },
   { value: 'cash_revenue', label: 'Készpénz bevételek' },
   { value: 'cash_register', label: 'Pénztárgép jelentés' },
+  { value: 'house_cash', label: 'Házipénztár' },
   { value: 'events', label: 'Rendezvény összesítő' },
 ];
 
@@ -31,6 +33,7 @@ const adminAggregateReportTypes = [
   { value: 'cash_revenue_all', label: 'Készpénz bevételek - összes egység' },
   { value: 'cash_register_all_simple', label: 'Pénztárgép forgalom - összes egység (egyszerű)' },
   { value: 'cash_register_all_detailed', label: 'Pénztárgép forgalom - összes egység (részletes)' },
+  { value: 'house_cash', label: 'Házipénztár - összes egység' },
   { value: 'events_all', label: 'Rendezvény összesítő - összes egység' },
 ];
 
@@ -334,6 +337,13 @@ export default function ReportsPage() {
       {reportType === 'monthly_table' ? (
         <MonthlyTableReport
           yearMonth={selectedYearMonth}
+        />
+      ) : reportType === 'house_cash' ? (
+        <HouseCashReport
+          unitId={effectiveUnitId}
+          units={units}
+          startDate={startDate}
+          endDate={endDate}
         />
       ) : (
         <MonthlyReport
