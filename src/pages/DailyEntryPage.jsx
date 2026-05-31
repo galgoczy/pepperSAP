@@ -28,6 +28,27 @@ function formatPdfCurrency(amount) {
   return num.toLocaleString('hu-HU') + ' Ft';
 }
 
+// White Pepper House logo used in the PDF header (transparent PNG in /public)
+const PDF_LOGO_URL = `${import.meta.env.BASE_URL}Pepperhouse_logo_2021_rgb_horizontal_white.png`;
+const PDF_LOGO_ASPECT = 2777 / 516; // width / height of the source PNG
+
+// Load an image as a data URL so jsPDF can embed it. Returns null on failure.
+async function loadImageDataUrl(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 const tabs = [
   { id: 'all', label: 'Minden adat' },
   { id: 'revenue', label: 'Napi forgalom' },
@@ -82,8 +103,16 @@ export default function DailyEntryPage() {
   // Generate Daily Report PDF
   const generateDailyReportPdf = async () => {
     try {
+      // Previous day (for opening balance on the cash report page)
+      const prevDate = new Date(selectedDate);
+      prevDate.setDate(prevDate.getDate() - 1);
+      const previousDayStr = prevDate.toISOString().split('T')[0];
+
+      // Load the header logo (embedded into the PDF)
+      const logoDataUrl = await loadImageDataUrl(PDF_LOGO_URL);
+
       // Fetch data
-      const [revenueResult, houseCashResult, expensesResult, efoResult, wageResult] = await Promise.all([
+      const [revenueResult, houseCashResult, expensesResult, efoResult, wageResult, previousResult] = await Promise.all([
         supabase
           .from('daily_revenue')
           .select('*')
@@ -114,6 +143,12 @@ export default function DailyEntryPage() {
           .eq('unit_id', effectiveUnitId)
           .eq('payment_date', selectedDate)
           .order('created_at', { ascending: true }),
+        supabase
+          .from('house_cash')
+          .select('official_total')
+          .eq('unit_id', effectiveUnitId)
+          .eq('date', previousDayStr)
+          .maybeSingle(),
       ]);
 
       const revenue = revenueResult.data;
@@ -121,6 +156,7 @@ export default function DailyEntryPage() {
       const expenses = expensesResult.data || [];
       const efoPaymentsList = efoResult.data || [];
       const wagePaymentsList = wageResult.data || [];
+      const openingBalance = parseFloat(previousResult.data?.official_total) || 0;
 
       // Sort expenses: official first
       const sortedExpenses = [...expenses].sort((a, b) => {
@@ -207,28 +243,39 @@ export default function DailyEntryPage() {
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const pageWidth = doc.internal.pageSize.getWidth();
       const rightMargin = pageWidth - 15; // Right edge for values
-      let y = 15;
 
-      // Header with styled background
-      doc.setFillColor(211, 47, 47); // Pepper red
-      doc.rect(0, 0, pageWidth, 28, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(20);
-      doc.setFont('helvetica', 'bold');
-      doc.text(sanitizeForPdf('PEPPER HOUSE'), pageWidth / 2, 12, { align: 'center' });
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'normal');
-      doc.text(sanitizeForPdf('Napi elszámolás'), pageWidth / 2, 20, { align: 'center' });
-      doc.setTextColor(0, 0, 0);
+      // Draws the red header band with the white logo + subtitle and the
+      // unit name / date below it. Returns the y position to continue from.
+      const drawHeader = (subtitle) => {
+        doc.setFillColor(211, 47, 47); // Pepper red
+        doc.rect(0, 0, pageWidth, 28, 'F');
+        if (logoDataUrl) {
+          const logoH = 10;
+          const logoW = logoH * PDF_LOGO_ASPECT;
+          doc.addImage(logoDataUrl, 'PNG', (pageWidth - logoW) / 2, 4, logoW, logoH);
+        } else {
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(20);
+          doc.setFont('helvetica', 'bold');
+          doc.text(sanitizeForPdf('PEPPER HOUSE'), pageWidth / 2, 13, { align: 'center' });
+        }
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'normal');
+        doc.text(sanitizeForPdf(subtitle), pageWidth / 2, 22, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
 
-      y = 36;
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'bold');
-      doc.text(sanitizeForPdf(selectedUnitName || 'Egység'), pageWidth / 2, y, { align: 'center' });
-      y += 5;
-      doc.setFont('helvetica', 'normal');
-      doc.text(formatDate(selectedDate), pageWidth / 2, y, { align: 'center' });
-      y += 10;
+        let hy = 36;
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf(selectedUnitName || 'Egység'), pageWidth / 2, hy, { align: 'center' });
+        hy += 5;
+        doc.setFont('helvetica', 'normal');
+        doc.text(formatDate(selectedDate), pageWidth / 2, hy, { align: 'center' });
+        return hy + 10;
+      };
+
+      let y = drawHeader('Napi elszámolás');
 
       // Revenue section
       doc.setFontSize(14);
@@ -539,28 +586,128 @@ export default function DailyEntryPage() {
       doc.setTextColor(0, 0, 0);
       y += 18;
 
-      // Date + signature area at the bottom
-      if (y > 250) {
-        doc.addPage();
-        y = 30;
-      } else {
-        y = Math.max(y + 10, 255);
-      }
+      // ===== Page 2: Pénztárjelentés (cash report) =====
+      doc.addPage();
+      y = drawHeader('Pénztárjelentés');
+
+      // Per-register cash register revenue + total
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Pénztárgép forgalom'), 15, y);
+      y += 8;
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
-      doc.text(sanitizeForPdf('Kelt: ' + formatDate(selectedDate)), 20, y);
-      doc.setDrawColor(0, 0, 0);
-      doc.line(120, y, 190, y);
-      doc.setFontSize(8);
-      doc.setTextColor(120, 120, 120);
-      doc.text(sanitizeForPdf('Készítette (aláírás)'), 155, y + 4, { align: 'center' });
-      doc.setTextColor(0, 0, 0);
+      if (cashRegisterDetails.length > 0) {
+        cashRegisterDetails.forEach((cr) => {
+          if (y > 255) { doc.addPage(); y = drawHeader('Pénztárjelentés'); }
+          const registerName = cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Pénztárgép';
+          const regTotal = (parseFloat(cr.vat_0_percent) || 0) + (parseFloat(cr.vat_5_percent) || 0) +
+            (parseFloat(cr.vat_18_percent) || 0) + (parseFloat(cr.vat_27_percent) || 0);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.text(sanitizeForPdf(registerName + ' (AP: ' + (cr.cash_registers?.ap_number || '-') + ')'), 20, y);
+          doc.text(formatPdfCurrency(regTotal), rightMargin, y, { align: 'right' });
+          y += 4;
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.text(sanitizeForPdf('0%: ' + formatPdfCurrency(cr.vat_0_percent) + '  5%: ' + formatPdfCurrency(cr.vat_5_percent) + '  18%: ' + formatPdfCurrency(cr.vat_18_percent) + '  27%: ' + formatPdfCurrency(cr.vat_27_percent) + '  Borr: ' + formatPdfCurrency(cr.tips)), 25, y);
+          y += 6;
+          doc.setFontSize(10);
+        });
+      } else {
+        doc.text(sanitizeForPdf('Nincs pénztárgép adat'), 20, y);
+        y += 6;
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text(sanitizeForPdf('Pénztárgép forgalom összesen:'), 20, y);
+      doc.text(formatPdfCurrency(totalCashRegisterRevenue), rightMargin, y, { align: 'right' });
+      y += 10;
 
-      // Footer
-      doc.setFontSize(8);
-      doc.setTextColor(128, 128, 128);
-      doc.text(sanitizeForPdf('Pepper House Pénzügyi Nyilvántartó Rendszer'), pageWidth / 2, 285, { align: 'center' });
-      doc.text(sanitizeForPdf('Nyomtatva: ' + new Date().toLocaleString('hu-HU')), pageWidth / 2, 290, { align: 'center' });
+      // Payment methods
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Fizetési módok'), 15, y);
+      y += 8;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(sanitizeForPdf('Készpénz:'), 20, y);
+      doc.text(formatPdfCurrency(totalCashRegisterCash), rightMargin, y, { align: 'right' });
+      y += 5;
+      doc.text(sanitizeForPdf('Bankkártya:'), 20, y);
+      doc.text(formatPdfCurrency(totalCashRegisterCard), rightMargin, y, { align: 'right' });
+      y += 5;
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Összesen:'), 20, y);
+      doc.text(formatPdfCurrency(totalCashRegisterCash + totalCashRegisterCard), rightMargin, y, { align: 'right' });
+      y += 10;
+
+      // Házipénztár - csak Pénztár zseb (Tartalék NEM kell)
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Házipénztár - Pénztár zseb'), 15, y);
+      y += 8;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(sanitizeForPdf('Korrigált készpénz:'), 20, y);
+      doc.text(formatPdfCurrency(adjustedCash), rightMargin, y, { align: 'right' });
+      y += 5;
+      doc.setTextColor(180, 0, 0);
+      doc.text(sanitizeForPdf('Hivatalos kifizetések:'), 20, y);
+      doc.text('-' + formatPdfCurrency(officialExpenses), rightMargin, y, { align: 'right' });
+      y += 5;
+      doc.text(sanitizeForPdf('Bér jellegű kifizetések:'), 20, y);
+      doc.text('-' + formatPdfCurrency(efoPayments), rightMargin, y, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+      y += 5;
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Pénztár zseb összesen:'), 20, y);
+      if (officialTotal >= 0) { doc.setTextColor(0, 128, 0); } else { doc.setTextColor(180, 0, 0); }
+      doc.text(formatPdfCurrency(officialTotal), rightMargin, y, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+      y += 10;
+
+      // Pénztár zárás = nyitó + pénztárgép kp bevétel - hivatalos kp költségek
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Pénztár zárás'), 15, y);
+      y += 8;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(sanitizeForPdf('Nyitó egyenleg:'), 20, y);
+      doc.text(formatPdfCurrency(openingBalance), rightMargin, y, { align: 'right' });
+      y += 5;
+      doc.text(sanitizeForPdf('Pénztárgép készpénz bevétel:'), 20, y);
+      doc.text('+' + formatPdfCurrency(totalCashRegisterCash), rightMargin, y, { align: 'right' });
+      y += 5;
+      doc.setTextColor(180, 0, 0);
+      doc.text(sanitizeForPdf('Hivatalos kp költségek:'), 20, y);
+      doc.text('-' + formatPdfCurrency(officialExpenses), rightMargin, y, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+      y += 6;
+      const cashClosing = openingBalance + totalCashRegisterCash - officialExpenses;
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, y - 2, rightMargin, y - 2);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text(sanitizeForPdf('Pénztár zárás:'), 20, y + 4);
+      doc.text(formatPdfCurrency(cashClosing), rightMargin, y + 4, { align: 'right' });
+
+      // ===== Finalize: signature (bottom-right) + footer on every page =====
+      const totalPages = doc.getNumberOfPages();
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        doc.setDrawColor(0, 0, 0);
+        doc.line(140, 280, rightMargin, 280);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(120, 120, 120);
+        doc.text(sanitizeForPdf('aláírás'), (140 + rightMargin) / 2, 284, { align: 'center' });
+        doc.setTextColor(128, 128, 128);
+        doc.text(sanitizeForPdf('Pepper House Pénzügyi Nyilvántartó Rendszer'), pageWidth / 2, 288, { align: 'center' });
+        doc.text(sanitizeForPdf('Nyomtatva: ' + new Date().toLocaleString('hu-HU')), pageWidth / 2, 292, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
+      }
 
       // Save PDF
       const fileName = `napi_riport_${selectedUnitName.replace(/\s+/g, '_')}_${selectedDate}.pdf`;

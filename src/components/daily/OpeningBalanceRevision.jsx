@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { Button, Input, Textarea, Modal } from '../common';
 import { formatCurrency } from '../../lib/utils';
+import { approveOpeningBalanceRevision, rejectOpeningBalanceRevision } from '../../lib/openingBalanceRevisions';
 import toast from 'react-hot-toast';
 
 export default function OpeningBalanceRevision({ unitId, date, currentBalance, onRevisionApproved }) {
@@ -27,7 +28,7 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
     try {
       const { data, error } = await supabase
         .from('opening_balance_revisions')
-        .select('*')
+        .select('*, units (name)')
         .eq('unit_id', unitId)
         .eq('target_date', date)
         .eq('status', 'pending')
@@ -91,38 +92,12 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('opening_balance_revisions')
-        .update({
-          status: action,
-          reviewed_by: user?.id,
-          reviewed_at: new Date().toISOString(),
-        })
-        .eq('id', pendingRevision.id);
-
-      if (error) throw error;
-
       if (action === 'approved') {
-        // Update the house_cash record for the previous day to set new closing balance
-        const previousDay = new Date(date);
-        previousDay.setDate(previousDay.getDate() - 1);
-        const previousDayStr = previousDay.toISOString().split('T')[0];
-
-        const { error: updateError } = await supabase
-          .from('house_cash')
-          .update({
-            official_total: pendingRevision.proposed_opening_balance,
-          })
-          .eq('unit_id', unitId)
-          .eq('date', previousDayStr);
-
-        if (updateError) {
-          console.error('Error updating house_cash:', updateError);
-        }
-
+        await approveOpeningBalanceRevision(pendingRevision, user?.id);
         toast.success('Módosítás jóváhagyva!');
         onRevisionApproved?.();
       } else {
+        await rejectOpeningBalanceRevision(pendingRevision, user?.id);
         toast.success('Módosítás elutasítva');
       }
 
@@ -146,6 +121,9 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
           <div className="flex-1">
             <p className="text-sm font-medium text-yellow-800">
               Módosítási kérelem függőben
+              {pendingRevision.units?.name && (
+                <span className="font-normal"> — {pendingRevision.units.name} pénztára</span>
+              )}
             </p>
             <p className="text-xs text-yellow-700 mt-1">
               Javasolt érték: {formatCurrency(pendingRevision.proposed_opening_balance)}
@@ -186,6 +164,7 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
   return (
     <>
       <button
+        type="button"
         onClick={() => setShowModal(true)}
         className="mt-2 text-xs text-amber-600 hover:text-amber-700 flex items-center gap-1"
       >

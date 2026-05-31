@@ -18,6 +18,7 @@ import BalanceCard from '../components/cash/BalanceCard';
 import TransferForm from '../components/cash/TransferForm';
 import TransferList from '../components/cash/TransferList';
 import PocketList from '../components/cash/PocketList';
+import OpeningBalanceRevisionsPanel from '../components/cash/OpeningBalanceRevisionsPanel';
 import { formatCurrency, formatDate, getToday } from '../lib/utils';
 
 export default function CashManagementPage() {
@@ -358,6 +359,9 @@ function AdminCashView({ units }) {
 
       {activeTab === 'revisions' && (
         <div className="space-y-4">
+          {/* Pending opening-balance revision requests from units (per-unit) */}
+          <OpeningBalanceRevisionsPanel />
+
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-semibold text-gray-900">Revíziók</h2>
             <Button onClick={() => setShowRevisionModal(true)}>
