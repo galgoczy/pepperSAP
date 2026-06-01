@@ -210,13 +210,14 @@ export default function CashRegisterSection({
     handleChange('discrepancies', newDiscrepancies);
   };
 
-  // Calculate totals
+  // Calculate totals. NOTE: tips (borravaló) are intentionally NOT part of the
+  // register turnover — they are recorded separately and summed into the
+  // "Egyéb készpénz bevétel" tip field on the revenue form.
   const cashRegisterTotal =
     (parseFloat(formData.vat_0_percent) || 0) +
     (parseFloat(formData.vat_5_percent) || 0) +
     (parseFloat(formData.vat_18_percent) || 0) +
-    (parseFloat(formData.vat_27_percent) || 0) +
-    (parseFloat(formData.tips) || 0);
+    (parseFloat(formData.vat_27_percent) || 0);
 
   // Validate card payments
   const cardValidation = validateCardPayments(

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, Trash2, Edit2, Package, Utensils } from 'lucide-react';
 import { Button, Input, Modal } from '../common';
+import { Textarea } from '../common/Input';
 import { formatCurrency, formatDate } from '../../lib/utils';
 import { useProjectNumberSuggestions } from '../../hooks/useProtocolItems';
 
@@ -10,6 +11,7 @@ const PACKAGE_OPTIONS = [
   { value: 3, label: '3 - Prémium' },
   { value: 4, label: '4 - Luxus' },
   { value: 5, label: '5 - VIP' },
+  { value: 6, label: 'Egyedi' },
 ];
 
 const VAT_RATES = [
@@ -37,6 +39,7 @@ function BekeszitesForm({ item, onSave, onCancel }) {
     location: item?.location || '',
     amount: item?.amount || '',
     vat_rate: item?.vat_rate ?? 27,
+    notes: item?.notes || '',
   });
   const [showSuggestions, setShowSuggestions] = useState(false);
 
@@ -189,7 +192,7 @@ function BekeszitesForm({ item, onSave, onCancel }) {
           onChange={(e) => handleChange('location', e.target.value)}
         />
         <Input
-          label="Összeg"
+          label="Bruttó összeg"
           type="number"
           step="0.01"
           value={formData.amount}
@@ -215,6 +218,14 @@ function BekeszitesForm({ item, onSave, onCancel }) {
         </div>
       </div>
 
+      <Textarea
+        label="Megjegyzés"
+        value={formData.notes}
+        onChange={(e) => handleChange('notes', e.target.value)}
+        rows={2}
+        placeholder="Szabadszöveges megjegyzés..."
+      />
+
       <div className="flex justify-end gap-2 pt-4">
         <Button type="button" variant="secondary" onClick={onCancel}>
           Mégse
@@ -236,9 +247,20 @@ function EttermiForm({ item, onSave, onCancel }) {
     item_date: item?.item_date || new Date().toISOString().split('T')[0],
     consumption_time: item?.consumption_time || '',
     guest_count: item?.guest_count || '',
-    amount: item?.amount || '',
-    vat_rate: item?.vat_rate ?? 27,
   });
+  // Line items: rows of { description, gross, vat_rate }. The header-level
+  // amount is no longer entered directly — it is the sum of the line grosses.
+  const [lineItems, setLineItems] = useState(
+    Array.isArray(item?.line_items) && item.line_items.length > 0
+      ? item.line_items.map((li) => ({
+          description: li.description || '',
+          gross: li.gross ?? '',
+          vat_rate: li.vat_rate ?? 27,
+        }))
+      : [{ description: '', gross: '', vat_rate: 27 }]
+  );
+
+  const lineTotal = lineItems.reduce((sum, li) => sum + (parseFloat(li.gross) || 0), 0);
 
   const formatTimeInput = (value) => {
     const digits = value.replace(/\D/g, '');
@@ -258,12 +280,38 @@ function EttermiForm({ item, onSave, onCancel }) {
     setFormData((prev) => ({ ...prev, [field]: processedValue }));
   };
 
+  const updateLine = (index, field, value) => {
+    setLineItems((prev) => prev.map((li, i) => (i === index ? { ...li, [field]: value } : li)));
+  };
+  const addLine = () => setLineItems((prev) => [...prev, { description: '', gross: '', vat_rate: 27 }]);
+  const removeLine = (index) => setLineItems((prev) => prev.filter((_, i) => i !== index));
+
   const handleSave = () => {
-    if (!formData.amount) {
+    // Keep only rows that have some content.
+    const cleaned = lineItems
+      .filter((li) => (li.description && li.description.trim()) || parseFloat(li.gross) > 0)
+      .map((li) => ({
+        description: li.description?.trim() || '',
+        gross: parseFloat(li.gross) || 0,
+        vat_rate: parseFloat(li.vat_rate) || 0,
+      }));
+    if (cleaned.length === 0) {
       return;
     }
-    onSave(formData);
+    const total = cleaned.reduce((sum, li) => sum + li.gross, 0);
+    // Save aggregate amount + the dominant vat_rate (first line) for backward
+    // compatibility, plus the full line_items array.
+    onSave({
+      ...formData,
+      line_items: cleaned,
+      amount: total,
+      vat_rate: cleaned[0].vat_rate,
+    });
   };
+
+  const canSave = lineItems.some(
+    (li) => (li.description && li.description.trim()) || parseFloat(li.gross) > 0
+  );
 
   return (
     <div className="space-y-4">
@@ -304,38 +352,79 @@ function EttermiForm({ item, onSave, onCancel }) {
           value={formData.guest_count}
           onChange={(e) => handleChange('guest_count', e.target.value)}
         />
-        <Input
-          label="Összeg"
-          type="number"
-          step="0.01"
-          value={formData.amount}
-          onChange={(e) => handleChange('amount', e.target.value)}
-          suffix="Ft"
-          required
-        />
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            ÁFA kulcs
-          </label>
-          <select
-            value={formData.vat_rate}
-            onChange={(e) => handleChange('vat_rate', parseFloat(e.target.value))}
-            className="w-full rounded-lg border-gray-300 shadow-sm focus:border-pepper-red focus:ring-pepper-red"
-          >
-            {VAT_RATES.map((rate) => (
-              <option key={rate.value} value={rate.value}>
-                {rate.label}
-              </option>
-            ))}
-          </select>
+      </div>
+
+      {/* Line items: text + bruttó + ÁFA kulcs per row */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-medium text-gray-700">Tételek</h4>
+          <Button type="button" variant="outline" size="sm" onClick={addLine}>
+            <Plus className="h-4 w-4" />
+            Tétel hozzáadása
+          </Button>
         </div>
+        {lineItems.map((li, index) => (
+          <div key={index} className="grid grid-cols-12 gap-2 items-end">
+            <div className="col-span-6">
+              <Input
+                label={index === 0 ? 'Megnevezés' : undefined}
+                value={li.description}
+                onChange={(e) => updateLine(index, 'description', e.target.value)}
+                placeholder="Tétel megnevezése"
+              />
+            </div>
+            <div className="col-span-3">
+              <Input
+                label={index === 0 ? 'Bruttó' : undefined}
+                type="number"
+                step="0.01"
+                value={li.gross}
+                onChange={(e) => updateLine(index, 'gross', e.target.value)}
+                suffix="Ft"
+              />
+            </div>
+            <div className="col-span-2">
+              {index === 0 && (
+                <label className="block text-sm font-medium text-gray-700 mb-1">ÁFA</label>
+              )}
+              <select
+                value={li.vat_rate}
+                onChange={(e) => updateLine(index, 'vat_rate', parseFloat(e.target.value))}
+                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-pepper-red focus:ring-pepper-red py-2.5"
+              >
+                {VAT_RATES.map((rate) => (
+                  <option key={rate.value} value={rate.value}>
+                    {rate.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="col-span-1 flex justify-center pb-1">
+              <button
+                type="button"
+                onClick={() => removeLine(index)}
+                disabled={lineItems.length === 1}
+                className="p-1 text-gray-400 hover:text-red-500 disabled:opacity-30"
+                title="Tétel törlése"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Aggregate amount (read-only, sum of line grosses) */}
+      <div className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+        <span className="text-sm font-medium text-gray-700">Összeg (bruttó, tételek összege)</span>
+        <span className="font-bold text-gray-900">{formatCurrency(lineTotal)}</span>
       </div>
 
       <div className="flex justify-end gap-2 pt-4">
         <Button type="button" variant="secondary" onClick={onCancel}>
           Mégse
         </Button>
-        <Button type="button" onClick={handleSave} disabled={!formData.amount}>
+        <Button type="button" onClick={handleSave} disabled={!canSave}>
           {item ? 'Mentés' : 'Hozzáadás'}
         </Button>
       </div>
@@ -584,7 +673,7 @@ export default function ProtocolItemsSection({
           setEditingItem(null);
         }}
         title={editingItem ? 'Éttermi fogyasztás szerkesztése' : 'Új éttermi fogyasztás'}
-        size="md"
+        size="lg"
       >
         <EttermiForm
           item={editingItem}

@@ -69,6 +69,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
   const cashRegisterDataRef = useRef({});
   const [perRegisterSoftwareSum, setPerRegisterSoftwareSum] = useState(0);
   const [perRegisterGuestSum, setPerRegisterGuestSum] = useState(0);
+  const [perRegisterTipsSum, setPerRegisterTipsSum] = useState(0);
 
   useEffect(() => {
     if (cashRegisters.length > 0) {
@@ -149,6 +150,11 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       0
     );
     setPerRegisterGuestSum(guestSum);
+    const tipsSum = cashRegisterRevenues.reduce(
+      (total, r) => total + (parseFloat(r.tips) || 0),
+      0
+    );
+    setPerRegisterTipsSum(tipsSum);
   }, [cashRegisterRevenues]);
 
   const handleChange = (field, value) => {
@@ -225,18 +231,33 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
 
   const handleCashRegisterChange = (registerId, data) => {
     cashRegisterDataRef.current[registerId] = data;
-    const sum = Object.values(cashRegisterDataRef.current).reduce(
-      (total, regData) => total + (parseFloat(regData?.software_revenue) || 0),
+    // Sum across ALL registers, merging edited values with any existing,
+    // not-yet-touched registers. Previously this summed only the touched
+    // registers in cashRegisterDataRef, so editing one register dropped the
+    // others from the software-revenue total — that's why re-entering every
+    // register "fixed" the number.
+    const existing = existingDataByRegister();
+    const mergedFor = (register) =>
+      cashRegisterDataRef.current[register.id] || existing[register.id] || {};
+
+    const sum = cashRegisters.reduce(
+      (total, register) => total + (parseFloat(mergedFor(register).software_revenue) || 0),
       0
     );
     setPerRegisterSoftwareSum(sum);
-    // Sum the per-register guest counts (merging edited values with any
-    // existing, not-yet-touched registers).
-    const guestSum = cashRegisters.reduce((total, register) => {
-      const regData = cashRegisterDataRef.current[register.id] || existingDataByRegister()[register.id] || {};
-      return total + (parseInt(regData.guest_count, 10) || 0);
-    }, 0);
+
+    const guestSum = cashRegisters.reduce(
+      (total, register) => total + (parseInt(mergedFor(register).guest_count, 10) || 0),
+      0
+    );
     setPerRegisterGuestSum(guestSum);
+
+    const tipsSum = cashRegisters.reduce(
+      (total, register) => total + (parseFloat(mergedFor(register).tips) || 0),
+      0
+    );
+    setPerRegisterTipsSum(tipsSum);
+
     if (!formData.software_revenue_manual_override && sum > 0) {
       setFormData(prev => ({ ...prev, total_revenue: sum.toString() }));
     }
@@ -263,6 +284,9 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       const savedRevenue = await saveRevenue({
         ...formData,
         protocol_gross: protocolGrossToSave,
+        // Actual tips: sum of the per-cash-register tip amounts (recorded only,
+        // not part of any turnover calculation).
+        actual_tips: perRegisterTipsSum,
         // Guest count: sum of the per-cash-register values when present,
         // otherwise the manually entered value.
         guest_count: perRegisterGuestSum > 0 ? perRegisterGuestSum : formData.guest_count,
@@ -693,12 +717,12 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         />
         <div className="mt-4">
           <Input
-            label="Borravaló (minden fajta tényleges borravaló)"
-            type="number"
-            step="0.01"
-            value={formData.actual_tips}
-            onChange={(e) => handleChange('actual_tips', e.target.value)}
-            suffix="Ft"
+            label="Borravaló (pénztárgépenként összesítve)"
+            type="text"
+            value={formatCurrency(perRegisterTipsSum)}
+            readOnly
+            disabled
+            helper="A pénztárgépeknél rögzített borravalók összege (a forgalomba nem számít bele)"
           />
         </div>
       </Card>

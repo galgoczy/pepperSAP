@@ -761,7 +761,7 @@ export default function DailyEntryPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Napi adatrögzítés</h1>
           <p className="text-gray-500 mt-1">
-            {selectedUnitName && `${selectedUnitName} - `}{selectedDate}
+            {selectedUnitName && `${selectedUnitName} - `}{selectedDate ? selectedDate.replace(/-/g, '/') : ''}
           </p>
         </div>
 
@@ -887,7 +887,7 @@ export default function DailyEntryPage() {
                     onClick={() => setShowWageForm(true)}
                   >
                     <Banknote className="h-4 w-4" />
-                    Heti bér
+                    Napi / Heti bér
                   </Button>
                 </div>
               </h2>
@@ -980,7 +980,7 @@ export default function DailyEntryPage() {
               </Button>
               <Button variant="secondary" onClick={() => setShowWageForm(true)}>
                 <Banknote className="h-4 w-4" />
-                Új Heti bér
+                Új Napi / Heti bér
               </Button>
             </div>
 
