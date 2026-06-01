@@ -99,14 +99,19 @@ export default function TransferList({
     return transfer.destination_unit_id === currentUnitId;
   };
 
-  // The person who initiated a still-pending transfer (or an admin) can edit or
-  // delete it before it gets approved.
+  // A still-pending transfer can be edited/deleted before approval by an admin,
+  // by the person who initiated it, OR by a user of the unit that sent it
+  // (so the originating unit can always manage its own outgoing transfer, even
+  // if initiated_by is missing/old or a different colleague created it).
   const canManageOwn = (transfer) => {
     if (!showActions) return false;
     if (transfer.status !== 'pending') return false;
     if (!onEdit && !onDelete) return false;
     if (isAdmin) return true;
-    return !!currentUserId && transfer.initiated_by === currentUserId;
+    if (currentUserId && transfer.initiated_by === currentUserId) return true;
+    // The sending unit owns its outgoing transfer while it is pending.
+    if (currentUnitId && transfer.source_unit_id === currentUnitId) return true;
+    return false;
   };
 
   return (
