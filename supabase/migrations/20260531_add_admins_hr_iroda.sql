@@ -25,8 +25,10 @@ BEGIN
       CONTINUE;
     END IF;
 
-    INSERT INTO user_profiles (id, email, full_name, role, unit_id)
-    VALUES (auth_id, target_email, split_part(target_email, '@', 1), 'admin', NULL)
+    -- A user_profiles táblában NINCS email oszlop (az email az auth.users-ben
+    -- van), ezért csak a ténylegesen létező oszlopokat töltjük.
+    INSERT INTO user_profiles (id, full_name, role, unit_id)
+    VALUES (auth_id, split_part(target_email, '@', 1), 'admin', NULL)
     ON CONFLICT (id) DO UPDATE
       SET role = 'admin';
 

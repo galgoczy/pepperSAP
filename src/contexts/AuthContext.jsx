@@ -65,10 +65,10 @@ export function AuthProvider({ children }) {
       unitId = unit?.id || null;
     }
 
-    // Create new profile
+    // Create new profile. Note: user_profiles has no email column (email lives
+    // on auth.users), so we must not send it or the insert fails.
     const newProfile = {
       id: authUser.id,
-      email: email,
       full_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || email.split('@')[0],
       role: roleConfig.role,
       unit_id: unitId,
