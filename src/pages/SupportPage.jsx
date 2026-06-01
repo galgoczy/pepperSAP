@@ -54,14 +54,15 @@ export default function SupportPage() {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedTicket, setSelectedTicket] = useState(null);
   const [expandedTickets, setExpandedTickets] = useState(new Set());
+  const [replyDrafts, setReplyDrafts] = useState({}); // ticketId -> draft text
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
-  // Filters
+  // Filters. For admins, default to showing every unit's tickets.
   const [filters, setFilters] = useState({
     status: '',
     category: '',
-    showAll: false, // Admin only
+    showAll: isAdmin, // Admin only - default on so admins see all tickets
   });
 
   // Form state
@@ -113,6 +114,13 @@ export default function SupportPage() {
       fetchTickets();
     }
   }, [user, fetchTickets]);
+
+  // When admin status resolves after mount, default to showing all tickets.
+  useEffect(() => {
+    if (isAdmin) {
+      setFilters((prev) => ({ ...prev, showAll: true }));
+    }
+  }, [isAdmin]);
 
   // Submit new ticket
   const handleSubmit = async (e) => {
@@ -180,6 +188,43 @@ export default function SupportPage() {
     } catch (error) {
       console.error('Error updating ticket:', error);
       toast.error('Hiba a frissítéskor');
+    }
+  };
+
+  // Admin: save a short reply (stored in resolution_notes).
+  const submitReply = async (ticketId, replyText) => {
+    if (!replyText?.trim()) return;
+    try {
+      const { error } = await supabase
+        .from('support_tickets')
+        .update({ resolution_notes: replyText.trim() })
+        .eq('id', ticketId);
+
+      if (error) throw error;
+
+      toast.success('Válasz mentve!');
+      fetchTickets();
+    } catch (error) {
+      console.error('Error saving reply:', error?.message, error);
+      toast.error(`Hiba a válasz mentésekor: ${error?.message || 'ismeretlen hiba'}`);
+    }
+  };
+
+  // Admin: delete a ticket.
+  const deleteTicket = async (ticketId) => {
+    try {
+      const { error } = await supabase
+        .from('support_tickets')
+        .delete()
+        .eq('id', ticketId);
+
+      if (error) throw error;
+
+      toast.success('Bejelentés törölve!');
+      fetchTickets();
+    } catch (error) {
+      console.error('Error deleting ticket:', error?.message, error);
+      toast.error(`Hiba a törléskor: ${error?.message || 'ismeretlen hiba'}`);
     }
   };
 
@@ -384,7 +429,7 @@ export default function SupportPage() {
                       </div>
 
                       {/* Admin actions */}
-                      {isAdmin && ticket.status !== 'closed' && (
+                      {isAdmin && (
                         <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                           {ticket.status === 'new' && (
                             <button
@@ -394,7 +439,7 @@ export default function SupportPage() {
                               Folyamatban
                             </button>
                           )}
-                          {ticket.status === 'in_progress' && (
+                          {(ticket.status === 'new' || ticket.status === 'in_progress') && (
                             <button
                               onClick={() => updateTicketStatus(ticket.id, 'resolved')}
                               className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
@@ -428,6 +473,46 @@ export default function SupportPage() {
                           <div>
                             <h4 className="text-sm font-medium text-gray-700 mb-2">Megoldás</h4>
                             <p className="text-sm text-gray-600 whitespace-pre-wrap">{ticket.resolution_notes}</p>
+                          </div>
+                        )}
+
+                        {isAdmin && (
+                          <div className="pt-4 border-t space-y-2">
+                            <h4 className="text-sm font-medium text-gray-700">Válasz / megoldás</h4>
+                            <textarea
+                              value={replyDrafts[ticket.id] ?? ticket.resolution_notes ?? ''}
+                              onChange={(e) => setReplyDrafts(prev => ({ ...prev, [ticket.id]: e.target.value }))}
+                              rows={2}
+                              placeholder="Rövid válasz a bejelentőnek..."
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-pepper-red"
+                            />
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => submitReply(ticket.id, replyDrafts[ticket.id] ?? ticket.resolution_notes ?? '')}
+                              >
+                                <Send className="h-4 w-4 mr-1" />
+                                Válasz mentése
+                              </Button>
+                              {ticket.status !== 'resolved' && ticket.status !== 'closed' && (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => updateTicketStatus(ticket.id, 'resolved', replyDrafts[ticket.id])}
+                                >
+                                  <CheckCircle className="h-4 w-4 mr-1" />
+                                  Megoldva
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                onClick={() => setDeleteConfirm(ticket)}
+                              >
+                                <XCircle className="h-4 w-4 mr-1" />
+                                Törlés
+                              </Button>
+                            </div>
                           </div>
                         )}
 
@@ -562,6 +647,35 @@ export default function SupportPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete confirmation (admin) */}
+      <Modal
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        title="Bejelentés törlése"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Biztosan törlöd ezt a bejelentést
+            {deleteConfirm && <> (<strong>{deleteConfirm.subject}</strong>)</>}? Ez a művelet nem vonható vissza.
+          </p>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="secondary" onClick={() => setDeleteConfirm(null)}>
+              Mégse
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                deleteTicket(deleteConfirm.id);
+                setDeleteConfirm(null);
+              }}
+            >
+              Törlés
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
