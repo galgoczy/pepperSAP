@@ -13,6 +13,8 @@ let handledOAuthCode = null;
 const EMAIL_ROLE_MAP = {
   'gergo@pepperhouse.hu': { role: 'admin', unit_name: null },
   'info@pepperhouse.hu': { role: 'admin', unit_name: null },
+  'hr@pepperhouse.hu': { role: 'admin', unit_name: null },
+  'iroda@pepperhouse.hu': { role: 'admin', unit_name: null },
   'szentkiralyi@pepperhouse.hu': { role: 'unit', unit_name: 'Szentkirályi' },
   'rendezveny@pepperhouse.hu': { role: 'events', unit_name: 'Rendezvény Egység' },
 };
