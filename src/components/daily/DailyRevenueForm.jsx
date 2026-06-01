@@ -383,7 +383,6 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
                 }
               }}
               suffix="Ft"
-              required
             />
             {perRegisterSoftwareSum > 0 && !formData.software_revenue_manual_override && (
               <p className="text-xs text-green-600 mt-1">

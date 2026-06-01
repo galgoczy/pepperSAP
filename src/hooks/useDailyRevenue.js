@@ -142,6 +142,13 @@ export function useDailyRevenue(unitId, date) {
       ])
     );
 
+    // total_revenue is NOT NULL (DEFAULT 0) in the schema, so an empty/cleared
+    // value must be saved as 0 rather than null (e.g. when deleting the daily
+    // software revenue), otherwise the insert/update violates the constraint.
+    if (cleanedData.total_revenue === null || cleanedData.total_revenue === undefined) {
+      cleanedData.total_revenue = 0;
+    }
+
     const dataToSave = {
       ...cleanedData,
       unit_id: unitId,
