@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -24,12 +25,17 @@ import {
   ShoppingCart,
   Wallet,
   MessageCircle,
+  ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
 
 export default function Sidebar({ isOpen, onClose }) {
   const { isAdmin, isEvents, isAccountant, profile } = useAuth();
+  // Sections that are collapsible default to collapsed; track open/closed here.
+  const [collapsedSections, setCollapsedSections] = useState({ 'CRM / Sales': true });
+  const toggleSection = (title) =>
+    setCollapsedSections((prev) => ({ ...prev, [title]: !prev[title] }));
 
   // If no profile exists (database not set up), show all menu items for development
   const noProfileYet = !profile;
@@ -132,9 +138,10 @@ export default function Sidebar({ isOpen, onClose }) {
         },
       ],
     },
-    // CRM / Sales section
+    // CRM / Sales section (collapsible - not actively used yet)
     {
       title: 'CRM / Sales',
+      collapsible: true,
       items: [
         {
           label: 'Ügyfelek',
@@ -242,33 +249,54 @@ export default function Sidebar({ isOpen, onClose }) {
             const visibleItems = section.items.filter((item) => item.show);
             if (visibleItems.length === 0) return null;
 
+            const isCollapsible = section.collapsible && section.title;
+            const isCollapsed = isCollapsible && collapsedSections[section.title];
+
             return (
               <div key={sectionIdx}>
                 {section.title && (
-                  <h3 className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                    {section.title}
-                  </h3>
-                )}
-                <div className="space-y-1">
-                  {visibleItems.map((item) => (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      onClick={onClose}
-                      className={({ isActive }) =>
-                        cn(
-                          'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors',
-                          isActive
-                            ? 'bg-pepper-red text-white'
-                            : 'text-gray-700 hover:bg-gray-100'
-                        )
-                      }
+                  isCollapsible ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSection(section.title)}
+                      className="w-full flex items-center justify-between px-4 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider hover:text-gray-600"
                     >
-                      <item.icon className="h-5 w-5" />
-                      {item.label}
-                    </NavLink>
-                  ))}
-                </div>
+                      <span>{section.title}</span>
+                      <ChevronDown
+                        className={cn(
+                          'h-4 w-4 transition-transform',
+                          isCollapsed ? '-rotate-90' : 'rotate-0'
+                        )}
+                      />
+                    </button>
+                  ) : (
+                    <h3 className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                      {section.title}
+                    </h3>
+                  )
+                )}
+                {!isCollapsed && (
+                  <div className="space-y-1">
+                    {visibleItems.map((item) => (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        onClick={onClose}
+                        className={({ isActive }) =>
+                          cn(
+                            'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors',
+                            isActive
+                              ? 'bg-pepper-red text-white'
+                              : 'text-gray-700 hover:bg-gray-100'
+                          )
+                        }
+                      >
+                        <item.icon className="h-5 w-5" />
+                        {item.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
