@@ -152,8 +152,10 @@ export default function SupportPage() {
       });
       fetchTickets();
     } catch (error) {
-      console.error('Error submitting ticket:', error);
-      toast.error('Hiba a bejelentés küldésekor');
+      // Surface the real Postgres reason (message/details/hint/code) so schema
+      // or RLS problems are diagnosable instead of a generic toast.
+      console.error('Error submitting ticket:', error?.message, error?.details, error?.hint, error?.code, error);
+      toast.error(`Hiba a bejelentés küldésekor: ${error?.message || 'ismeretlen hiba'}`);
     }
   };
 
