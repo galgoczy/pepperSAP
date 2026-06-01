@@ -37,14 +37,18 @@ const adminAggregateReportTypes = [
   { value: 'events_all', label: 'Rendezvény összesítő - összes egység' },
 ];
 
-// Get previous month's first and last day
+// Get previous month's first and last day (using LOCAL date components, not
+// UTC — toISOString() shifts back a day in timezones ahead of UTC like Hungary,
+// which made the range start on the last day of the month before).
 function getPreviousMonthDates() {
   const now = new Date();
   const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+  const ymd = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   return {
-    start: firstDay.toISOString().split('T')[0],
-    end: lastDay.toISOString().split('T')[0],
+    start: ymd(firstDay),
+    end: ymd(lastDay),
   };
 }
 
@@ -243,7 +247,7 @@ export default function ReportsPage() {
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-44 max-w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
+                    className="w-full px-2 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
                   />
                 </div>
               </div>
@@ -258,12 +262,12 @@ export default function ReportsPage() {
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
                     min={startDate}
-                    className="w-44 max-w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
+                    className="w-full px-2 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1 lg:col-span-3">
                 <label className="block text-sm font-medium text-gray-700">
                   Gyors választás
                 </label>

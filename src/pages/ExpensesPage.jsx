@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, ChevronLeft, ChevronRight, Users, Banknote } from 'lucide-react';
+import { Plus, ChevronLeft, Users, Banknote } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Modal, Select } from '../components/common';
@@ -10,14 +10,17 @@ import WagePaymentForm from '../components/expenses/WagePaymentForm';
 import PaymentEditModal from '../components/expenses/PaymentEditModal';
 import { getFirstDayOfMonth, getLastDayOfMonth } from '../lib/utils';
 
-// Get previous month's first and last day
+// Get previous month's first and last day (LOCAL components — toISOString()
+// shifts back a day in timezones ahead of UTC like Hungary).
 function getPreviousMonthDates() {
   const now = new Date();
   const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+  const ymd = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   return {
-    start: firstDay.toISOString().split('T')[0],
-    end: lastDay.toISOString().split('T')[0],
+    start: ymd(firstDay),
+    end: ymd(lastDay),
   };
 }
 
@@ -75,7 +78,7 @@ export default function ExpensesPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Kifizetések</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Kifizetések / számlák</h1>
           <p className="text-gray-500 mt-1">
             Számlák és kiadások nyilvántartása
           </p>
@@ -97,37 +100,33 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {/* Filters row for admin */}
-      {isAdmin && (
-        <div className="flex flex-wrap items-center gap-4">
+      {/* Filters row: unit selector (admin only) + month quick-select (everyone) */}
+      <div className="flex flex-wrap items-center gap-4">
+        {isAdmin && (
           <Select
             value={selectedUnit}
             onChange={(e) => setSelectedUnit(e.target.value)}
             options={unitOptions}
             className="w-48"
           />
+        )}
 
-          {isCurrentMonth ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handlePreviousMonth}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Előző hónap
-            </Button>
-          ) : (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleCurrentMonth}
-            >
-              Aktuális hónap
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      )}
+        <Button
+          variant={isCurrentMonth ? 'primary' : 'secondary'}
+          size="sm"
+          onClick={handleCurrentMonth}
+        >
+          Aktuális hónap
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={handlePreviousMonth}
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Előző hónap
+        </Button>
+      </div>
 
       {/* Expense list */}
       <Card>

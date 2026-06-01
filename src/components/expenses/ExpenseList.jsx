@@ -80,19 +80,27 @@ export default function ExpenseList({
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-4">
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setShowFilters(!showFilters)}
-        >
-          <Filter className="h-4 w-4" />
-          Szűrők
-        </Button>
+      {/* Filters: button + total on one row; the filter controls open on a
+          separate row below so everything fits comfortably. */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-4">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter className="h-4 w-4" />
+            Szűrők
+          </Button>
+
+          <div className="ml-auto text-sm text-gray-500">
+            Összesen: <span className="font-semibold text-gray-900">{formatCurrency(totalAmount)}</span>
+            <span className="ml-2">({filteredItems.length} tétel)</span>
+          </div>
+        </div>
 
         {showFilters && (
-          <>
+          <div className="flex flex-wrap items-end gap-4">
             <div className="flex items-center gap-2">
               <DatePicker
                 value={startDate}
@@ -107,6 +115,7 @@ export default function ExpenseList({
             </div>
 
             <Select
+              label="Ktg fajtája"
               value={kindFilter}
               onChange={(e) => setKindFilter(e.target.value)}
               options={[
@@ -119,6 +128,7 @@ export default function ExpenseList({
             />
 
             <Select
+              label="Fiz. módja"
               value={paymentFilter}
               onChange={(e) => setPaymentFilter(e.target.value)}
               options={[
@@ -131,13 +141,8 @@ export default function ExpenseList({
               ]}
               className="w-48"
             />
-          </>
+          </div>
         )}
-
-        <div className="ml-auto text-sm text-gray-500">
-          Összesen: <span className="font-semibold text-gray-900">{formatCurrency(totalAmount)}</span>
-          <span className="ml-2">({filteredItems.length} tétel)</span>
-        </div>
       </div>
 
       {/* Table */}
