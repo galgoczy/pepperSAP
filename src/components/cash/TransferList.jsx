@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Edit2, ArrowRight, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Check, Edit2, ArrowRight, Clock, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 import { Card, Button, Badge, Modal, Input } from '../common';
 import { formatCurrency, formatDate } from '../../lib/utils';
 
@@ -15,12 +15,18 @@ export default function TransferList({
   loading,
   onApprove,
   onModify,
+  onEdit,
+  onDelete,
   currentUnitId,
+  currentUserId,
   isAdmin,
   showActions = true,
 }) {
   const [modifyModal, setModifyModal] = useState(null);
   const [newAmount, setNewAmount] = useState('');
+  const [editModal, setEditModal] = useState(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   if (loading) {
     return (
@@ -65,12 +71,42 @@ export default function TransferList({
     return transfer.destination_unit?.name || 'Ismeretlen';
   };
 
+  const handleEditClick = (transfer) => {
+    setEditModal(transfer);
+    setEditAmount(transfer.amount.toString());
+  };
+
+  const handleEditSubmit = () => {
+    if (editModal && editAmount) {
+      onEdit(editModal.id, parseFloat(editAmount));
+      setEditModal(null);
+      setEditAmount('');
+    }
+  };
+
+  const handleDeleteConfirm = () => {
+    if (deleteConfirm) {
+      onDelete(deleteConfirm.id);
+      setDeleteConfirm(null);
+    }
+  };
+
   const canApprove = (transfer) => {
     if (!showActions) return false;
     if (transfer.status !== 'pending') return false;
     if (isAdmin) return true;
     // Non-admin can approve if they are the destination
     return transfer.destination_unit_id === currentUnitId;
+  };
+
+  // The person who initiated a still-pending transfer (or an admin) can edit or
+  // delete it before it gets approved.
+  const canManageOwn = (transfer) => {
+    if (!showActions) return false;
+    if (transfer.status !== 'pending') return false;
+    if (!onEdit && !onDelete) return false;
+    if (isAdmin) return true;
+    return !!currentUserId && transfer.initiated_by === currentUserId;
   };
 
   return (
@@ -129,23 +165,47 @@ export default function TransferList({
                 </div>
 
                 {/* Actions */}
-                {canApprove(transfer) && (
-                  <div className="mt-3 flex gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => onApprove(transfer.id)}
-                    >
-                      <Check className="h-4 w-4" />
-                      Jóváhagyás
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => handleModifyClick(transfer)}
-                    >
-                      <Edit2 className="h-4 w-4" />
-                      Módosítás
-                    </Button>
+                {(canApprove(transfer) || canManageOwn(transfer)) && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {canApprove(transfer) && (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => onApprove(transfer.id)}
+                        >
+                          <Check className="h-4 w-4" />
+                          Jóváhagyás
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => handleModifyClick(transfer)}
+                        >
+                          <Edit2 className="h-4 w-4" />
+                          Módosítás
+                        </Button>
+                      </>
+                    )}
+                    {canManageOwn(transfer) && onEdit && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleEditClick(transfer)}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                        Szerkesztés
+                      </Button>
+                    )}
+                    {canManageOwn(transfer) && onDelete && (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => setDeleteConfirm(transfer)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Törlés
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>
@@ -181,6 +241,61 @@ export default function TransferList({
             </Button>
             <Button onClick={handleModifySubmit}>
               Mentés és jóváhagyás
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit (pending, before approval) Modal */}
+      <Modal
+        isOpen={!!editModal}
+        onClose={() => setEditModal(null)}
+        title="Átküldés szerkesztése"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Jóváhagyás előtt módosíthatod az összeget. Az átküldés továbbra is függőben marad.
+          </p>
+          <Input
+            label="Összeg"
+            type="number"
+            step="1"
+            min="0"
+            value={editAmount}
+            onChange={(e) => setEditAmount(e.target.value)}
+            suffix="Ft"
+            required
+          />
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="secondary" onClick={() => setEditModal(null)}>
+              Mégse
+            </Button>
+            <Button onClick={handleEditSubmit}>
+              Mentés
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete (pending, before approval) confirmation */}
+      <Modal
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        title="Átküldés törlése"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Biztosan törlöd ezt a függőben lévő átküldést
+            {deleteConfirm && <> (<strong>{formatCurrency(deleteConfirm.amount)}</strong>)</>}? Ez a művelet nem vonható vissza.
+          </p>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="secondary" onClick={() => setDeleteConfirm(null)}>
+              Mégse
+            </Button>
+            <Button variant="danger" onClick={handleDeleteConfirm}>
+              Törlés
             </Button>
           </div>
         </div>

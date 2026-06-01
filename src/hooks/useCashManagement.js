@@ -318,6 +318,46 @@ export function useTransfers(unitId, direction = 'all') {
     }
   };
 
+  // Edit a still-pending transfer's amount (before approval). Keeps it pending.
+  const editPendingTransfer = async (transferId, newAmount) => {
+    try {
+      const { error } = await supabase
+        .from('cash_transfers')
+        .update({ amount: newAmount })
+        .eq('id', transferId)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+
+      toast.success('Átküldés módosítva');
+      fetchTransfers();
+    } catch (error) {
+      console.error('Error editing pending transfer:', error);
+      toast.error('Hiba az átküldés módosításakor');
+      throw error;
+    }
+  };
+
+  // Delete a still-pending transfer (before approval).
+  const deleteTransfer = async (transferId) => {
+    try {
+      const { error } = await supabase
+        .from('cash_transfers')
+        .delete()
+        .eq('id', transferId)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+
+      toast.success('Átküldés törölve');
+      fetchTransfers();
+    } catch (error) {
+      console.error('Error deleting transfer:', error);
+      toast.error('Hiba az átküldés törlésekor');
+      throw error;
+    }
+  };
+
   return {
     transfers,
     loading,
@@ -325,6 +365,8 @@ export function useTransfers(unitId, direction = 'all') {
     createTransfer,
     approveTransfer,
     modifyTransfer,
+    editPendingTransfer,
+    deleteTransfer,
   };
 }
 

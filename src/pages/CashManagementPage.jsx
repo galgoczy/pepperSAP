@@ -54,6 +54,7 @@ function UnitCashView({ unitId, units }) {
 
 // Reusable unit cash view content (used by both regular users and admin when viewing a unit)
 function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = true }) {
+  const { user } = useAuth();
   const { balance, loading: balanceLoading, refetch: refetchBalance } = useUnitBalance(unitId);
   const {
     transfers,
@@ -61,6 +62,8 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
     createTransfer,
     approveTransfer,
     modifyTransfer,
+    editPendingTransfer,
+    deleteTransfer,
   } = useTransfers(unitId);
   const [showTransferForm, setShowTransferForm] = useState(false);
   const [breakdownPocket, setBreakdownPocket] = useState(null);
@@ -83,6 +86,16 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
 
   const handleModify = async (id, amount) => {
     await modifyTransfer(id, amount);
+    refetchBalance();
+  };
+
+  const handleEdit = async (id, amount) => {
+    await editPendingTransfer(id, amount);
+    refetchBalance();
+  };
+
+  const handleDelete = async (id) => {
+    await deleteTransfer(id);
     refetchBalance();
   };
 
@@ -140,7 +153,10 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
           loading={transfersLoading}
           onApprove={handleApprove}
           onModify={handleModify}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
           currentUnitId={unitId}
+          currentUserId={user?.id}
           isAdmin={isAdmin}
           showActions={true}
         />
@@ -172,6 +188,8 @@ function AdminCashView({ units }) {
     createTransfer,
     approveTransfer,
     modifyTransfer,
+    editPendingTransfer,
+    deleteTransfer,
     refetch: refetchTransfers,
   } = useTransfers(null); // null = all transfers
   const { payments, loading: paymentsLoading, createPayment, refetch: refetchPayments } = useCentralPayments();
@@ -216,6 +234,16 @@ function AdminCashView({ units }) {
 
   const handleModify = async (id, amount) => {
     await modifyTransfer(id, amount);
+    refetchCentral();
+  };
+
+  const handleEdit = async (id, amount) => {
+    await editPendingTransfer(id, amount);
+    refetchCentral();
+  };
+
+  const handleDelete = async (id) => {
+    await deleteTransfer(id);
     refetchCentral();
   };
 
@@ -350,6 +378,8 @@ function AdminCashView({ units }) {
             loading={transfersLoading}
             onApprove={handleApprove}
             onModify={handleModify}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
             isAdmin={true}
             showActions={true}
           />
