@@ -9,14 +9,27 @@ export const AuthContext = createContext(null);
 // that has already been consumed fails on the second exchange attempt.
 let handledOAuthCode = null;
 
-// Predefined user roles based on email
+// Predefined user roles based on email. This is the login whitelist: a user
+// with no profile row yet can only sign in if their email appears here (the
+// profile is then created with the given role/unit). Keep this in sync with the
+// real user_profiles table + units.name values.
 const EMAIL_ROLE_MAP = {
+  // Admins
   'gergo@pepperhouse.hu': { role: 'admin', unit_name: null },
   'info@pepperhouse.hu': { role: 'admin', unit_name: null },
   'hr@pepperhouse.hu': { role: 'admin', unit_name: null },
   'iroda@pepperhouse.hu': { role: 'admin', unit_name: null },
-  'szentkiralyi@pepperhouse.hu': { role: 'unit', unit_name: 'Szentkirályi' },
+  'admin@test.local': { role: 'admin', unit_name: null },
+  // Events
+  'events@pepperhouse.hu': { role: 'events', unit_name: 'Rendezvény Egység' },
   'rendezveny@pepperhouse.hu': { role: 'events', unit_name: 'Rendezvény Egység' },
+  // Units (unit_name MUST exactly match units.name)
+  'unit@pepperhouse.hu': { role: 'unit', unit_name: 'Szentkirályi' },
+  'szentkiralyi@pepperhouse.hu': { role: 'unit', unit_name: 'Szentkirályi' },
+  'knorr105@pepperhouse.hu': { role: 'unit', unit_name: 'Knorr 105' },
+  'rsr@pepperhouse.hu': { role: 'unit', unit_name: 'RSR' },
+  // Accountant (read-only)
+  'konyveles@pepperhouse.hu': { role: 'accountant', unit_name: null },
 };
 
 export function AuthProvider({ children }) {
