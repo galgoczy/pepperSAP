@@ -19,6 +19,7 @@ const EMAIL_ROLE_MAP = {
   'info@pepperhouse.hu': { role: 'admin', unit_name: null },
   'hr@pepperhouse.hu': { role: 'admin', unit_name: null },
   'iroda@pepperhouse.hu': { role: 'admin', unit_name: null },
+  'penzugy@pepperhouse.hu': { role: 'admin', unit_name: null },
   'admin@test.local': { role: 'admin', unit_name: null },
   // Events
   'events@pepperhouse.hu': { role: 'events', unit_name: 'Rendezvény Egység' },
@@ -27,6 +28,7 @@ const EMAIL_ROLE_MAP = {
   'unit@pepperhouse.hu': { role: 'unit', unit_name: 'Szentkirályi' },
   'szentkiralyi@pepperhouse.hu': { role: 'unit', unit_name: 'Szentkirályi' },
   'knorr105@pepperhouse.hu': { role: 'unit', unit_name: 'Knorr 105' },
+  'knorr69@pepperhouse.hu': { role: 'unit', unit_name: 'Knorr 69' },
   'rsr@pepperhouse.hu': { role: 'unit', unit_name: 'RSR' },
   // Accountant (read-only)
   'konyveles@pepperhouse.hu': { role: 'accountant', unit_name: null },
