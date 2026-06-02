@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { useAppSettings } from '../hooks/useAppSettings';
-import { Card, Button, Select } from '../components/common';
+import { Card, Button, Select, DateInput } from '../components/common';
 import MonthlyReport from '../components/reports/MonthlyReport';
 import MonthlyTableReport from '../components/reports/MonthlyTableReport';
 import HouseCashReport from '../components/reports/HouseCashReport';
@@ -242,29 +242,21 @@ export default function ReportsPage() {
                 <label className="block text-sm font-medium text-gray-700">
                   Kezdő dátum
                 </label>
-                <div className="relative">
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-2 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
-                  />
-                </div>
+                <DateInput
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
               </div>
 
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-gray-700">
                   Záró dátum
                 </label>
-                <div className="relative">
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    min={startDate}
-                    className="w-full px-2 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
-                  />
-                </div>
+                <DateInput
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  min={startDate}
+                />
               </div>
 
               <div className="space-y-1 lg:col-span-3">

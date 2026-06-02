@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
-import { Card, Button, Select, LoadingSpinner, Modal, Badge } from '../components/common';
+import { Card, Button, Select, LoadingSpinner, Modal, Badge, DateInput } from '../components/common';
 import { usePaymentItems, PAYMENT_KIND_META } from '../hooks/usePaymentItems';
 import { useAppSettings, resolveDefaultUnit } from '../hooks/useAppSettings';
 import DailyRevenueForm from '../components/daily/DailyRevenueForm';
@@ -768,12 +768,11 @@ export default function DailyEntryPage() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <CalendarDays className="h-5 w-5 text-gray-400" />
-            <input
-              type="date"
+            <DateInput
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
               max={getToday()}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
+              className="w-44"
             />
           </div>
 

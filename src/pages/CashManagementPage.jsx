@@ -207,8 +207,17 @@ function AdminCashView({ units }) {
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [showTransferForm, setShowTransferForm] = useState(false);
 
   const restaurantUnits = units.filter(u => u.type === 'restaurant');
+
+  // Central -> unit transfer (becomes a pending transfer like any other; an
+  // admin still approves it).
+  const handleCentralTransfer = async (data) => {
+    await createTransfer(data);
+    refetchCentral();
+    refetchTransfers();
+  };
   const pendingTransfers = transfers.filter(t => t.status === 'pending');
 
   // Handle unit selection change - refetch data when switching back to central
@@ -339,9 +348,13 @@ function AdminCashView({ units }) {
           />
 
           {/* Quick actions */}
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Button onClick={() => setShowPaymentModal(true)}>
               Kifizetés rögzítése
+            </Button>
+            <Button onClick={() => setShowTransferForm(true)}>
+              <Send className="h-4 w-4" />
+              Átküldés egységnek
             </Button>
             <Button variant="secondary" onClick={() => setShowRevisionModal(true)}>
               Revízió
@@ -435,6 +448,17 @@ function AdminCashView({ units }) {
           onClosePocket={closePocket}
         />
       )}
+
+      {/* Central -> unit transfer */}
+      <TransferForm
+        isOpen={showTransferForm}
+        onClose={() => setShowTransferForm(false)}
+        onSubmit={handleCentralTransfer}
+        units={restaurantUnits}
+        sourceUnitId={null}
+        sourceType="central"
+        isAdmin={true}
+      />
 
       {/* Payment Modal */}
       <CentralPaymentModal

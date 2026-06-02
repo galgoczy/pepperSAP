@@ -124,6 +124,7 @@ export function useCentralBalance() {
     try {
       const [
         transfersInResult,
+        transfersOutResult,
         paymentsResult,
         revisionsResult,
         pocketsResult,
@@ -133,6 +134,12 @@ export function useCentralBalance() {
           .from('cash_transfers')
           .select('amount, transfer_type')
           .eq('destination_type', 'central')
+          .eq('status', 'approved'),
+        // Transfers OUT of central to a unit (approved) — reduce central balance
+        supabase
+          .from('cash_transfers')
+          .select('amount, transfer_type')
+          .eq('source_type', 'central')
           .eq('status', 'approved'),
         // Central payments
         supabase
@@ -157,6 +164,14 @@ export function useCentralBalance() {
         .filter(t => t.transfer_type === 'reserve')
         .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
 
+      // Transfers OUT of central to units (approved) — reduce central balance
+      const transfersOutCash = (transfersOutResult.data || [])
+        .filter(t => t.transfer_type === 'cash')
+        .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+      const transfersOutReserve = (transfersOutResult.data || [])
+        .filter(t => t.transfer_type === 'reserve')
+        .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+
       // Payments
       const paymentsCash = (paymentsResult.data || [])
         .filter(p => p.payment_type === 'cash')
@@ -178,8 +193,8 @@ export function useCentralBalance() {
         .reduce((sum, p) => sum + (parseFloat(p.current_amount) || 0), 0);
 
       // Calculate balances
-      const cashBalance = transfersInCash - paymentsCash + revisionsCash - totalPockets;
-      const reserveBalance = transfersInReserve - paymentsReserve + revisionsReserve;
+      const cashBalance = transfersInCash - transfersOutCash - paymentsCash + revisionsCash - totalPockets;
+      const reserveBalance = transfersInReserve - transfersOutReserve - paymentsReserve + revisionsReserve;
 
       setBalance({ cash: cashBalance, reserve: reserveBalance });
       setPocketsTotal(totalPockets);

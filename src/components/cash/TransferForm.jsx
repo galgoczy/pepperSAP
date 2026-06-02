@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Send } from 'lucide-react';
-import { Button, Input, Select, Modal } from '../common';
+import { Button, Input, Select, Modal, DateInput } from '../common';
 import { Textarea } from '../common/Input';
 import { getToday } from '../../lib/utils';
 
@@ -11,14 +11,16 @@ export default function TransferForm({
   units,
   sourceUnitId,
   sourceType = 'unit',
-  isAdmin = false,
 }) {
+  const isFromCentral = sourceType === 'central';
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     amount: '',
     transfer_date: getToday(),
     transfer_type: 'cash',
-    destination_type: 'central',
+    // From central the destination is always a unit; from a unit it defaults to
+    // central but can be another unit.
+    destination_type: isFromCentral ? 'unit' : 'central',
     destination_unit_id: '',
     notes: '',
   });
@@ -47,11 +49,11 @@ export default function TransferForm({
         amount: '',
         transfer_date: getToday(),
         transfer_type: 'cash',
-        destination_type: 'central',
+        destination_type: isFromCentral ? 'unit' : 'central',
         destination_unit_id: '',
         notes: '',
       });
-    } catch (error) {
+    } catch {
       // Error handled in hook
     } finally {
       setLoading(false);
@@ -59,7 +61,8 @@ export default function TransferForm({
   };
 
   const destinationOptions = [
-    { value: 'central', label: 'Központ' },
+    // Central can only send to a unit; a unit can send to central or another unit.
+    ...(isFromCentral ? [] : [{ value: 'central', label: 'Központ' }]),
     ...units
       .filter(u => u.id !== sourceUnitId)
       .map(u => ({ value: u.id, label: u.name })),
@@ -95,14 +98,17 @@ export default function TransferForm({
           required
         />
 
-        <Input
-          label="Dátum"
-          type="date"
-          value={formData.transfer_date}
-          onChange={(e) => handleChange('transfer_date', e.target.value)}
-          max={getToday()}
-          required
-        />
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-700">
+            Dátum<span className="text-red-500 ml-1">*</span>
+          </label>
+          <DateInput
+            value={formData.transfer_date}
+            onChange={(e) => handleChange('transfer_date', e.target.value)}
+            max={getToday()}
+            required
+          />
+        </div>
 
         <Select
           label="Cél"
@@ -118,6 +124,7 @@ export default function TransferForm({
             }
           }}
           options={destinationOptions}
+          placeholder={isFromCentral ? 'Válassz egységet...' : undefined}
           required
         />
 
