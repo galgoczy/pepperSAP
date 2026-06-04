@@ -303,12 +303,19 @@ export function useRegisterClosureBaselines(registerIds, date) {
       if (error) throw error;
 
       // First row per register is the most recent closure before `date`.
+      // Normalize to number-or-null so that a missing sequence / cumulative on
+      // the previous closure (common for older imported data) is treated as
+      // "no baseline" and skips the check rather than flagging a false error.
+      const toNumberOrNull = (v) =>
+        v === null || v === undefined || v === '' || Number.isNaN(Number(v))
+          ? null
+          : Number(v);
       const map = {};
       for (const row of data || []) {
         if (map[row.cash_register_id]) continue;
         map[row.cash_register_id] = {
-          sequence: row.closure_sequence,
-          cumulative: row.cumulative_revenue,
+          sequence: toNumberOrNull(row.closure_sequence),
+          cumulative: toNumberOrNull(row.cumulative_revenue),
           date: row.daily_revenue?.date,
         };
       }
