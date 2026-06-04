@@ -44,7 +44,8 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
   const { revenue, loading: revenueLoading, saveRevenue, ensureRevenueExists } = useDailyRevenue(unitId, date);
   const { cashRegisters, loading: registersLoading } = useActiveCashRegisters(unitId, date);
   const { revenues: cashRegisterRevenues, saveAllRevenues } = useAllCashRegisterRevenue(revenue?.id);
-  const { settings: revenueSettings, loading: settingsLoading } = useUnitRevenueSettings(unitId);
+  const { settings: revenueSettings, loading: settingsLoading, updateSettings: updateRevenueSettings } = useUnitRevenueSettings(unitId);
+  const multiClosuresEnabled = revenueSettings?.multiple_closures_enabled ?? false;
   const { items: protocolItems, totalAmount: protocolItemsTotal, createItem: createProtocolItem, updateItem: updateProtocolItem, deleteItem: deleteProtocolItem, setDailyRevenueId } = useProtocolItems(revenue?.id);
   const { validationResult: eventValidation, validateEventRevenue } = useEventRevenueValidation(unitId, date);
 
@@ -557,11 +558,35 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         </Card>
       ) : (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <Calculator className="h-5 w-5 text-pepper-red" />
-              Pénztárgépek ({cashRegisters.length})
-            </h2>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-4">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Calculator className="h-5 w-5 text-pepper-red" />
+                Pénztárgépek ({cashRegisters.length})
+              </h2>
+              {/* Unit-level toggle: multiple closures per register per day */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={multiClosuresEnabled}
+                onClick={() => updateRevenueSettings({ multiple_closures_enabled: !multiClosuresEnabled })}
+                className="flex items-center gap-2 text-sm text-gray-600"
+                title="Egység-szintű beállítás"
+              >
+                <span
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    multiClosuresEnabled ? 'bg-pepper-red' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      multiClosuresEnabled ? 'translate-x-4' : 'translate-x-1'
+                    }`}
+                  />
+                </span>
+                Több zárás / nap
+              </button>
+            </div>
             <div className="text-right">
               <div className="text-sm text-gray-500">Összes forgalom</div>
               <div className="text-lg font-bold text-gray-900">
@@ -572,10 +597,15 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
 
           {cashRegisters.map((register) => {
             const registerClosures = closureList.filter((c) => c.register.id === register.id);
-            const multiple = registerClosures.length > 1;
+            // When the toggle is off, only the first closure is shown; any extra
+            // closures stay in the data (totals/save) but are hidden from entry.
+            const visibleClosures = multiClosuresEnabled
+              ? registerClosures
+              : registerClosures.filter((c) => c.closureNumber === 1);
+            const multiple = visibleClosures.length > 1;
             return (
               <div key={register.id} className="space-y-3">
-                {registerClosures.map((c) => (
+                {visibleClosures.map((c) => (
                   <CashRegisterSection
                     key={c.key}
                     register={register}
@@ -590,14 +620,16 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
                     validation={closureValidations[c.key]}
                   />
                 ))}
-                <button
-                  type="button"
-                  onClick={() => addClosure(register.id)}
-                  className="w-full flex items-center justify-center gap-2 py-2 text-sm text-pepper-red border-2 border-dashed border-pepper-red border-opacity-40 rounded-lg hover:bg-pepper-red hover:bg-opacity-5 transition-colors"
-                >
-                  <Plus className="h-4 w-4" />
-                  További zárás a mai napra ({register.ap_number})
-                </button>
+                {multiClosuresEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => addClosure(register.id)}
+                    className="w-full flex items-center justify-center gap-2 py-2 text-sm text-pepper-red border-2 border-dashed border-pepper-red border-opacity-40 rounded-lg hover:bg-pepper-red hover:bg-opacity-5 transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                    További zárás a mai napra ({register.ap_number})
+                  </button>
+                )}
               </div>
             );
           })}
