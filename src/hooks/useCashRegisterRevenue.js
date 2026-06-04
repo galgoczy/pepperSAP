@@ -182,54 +182,70 @@ export function useAllCashRegisterRevenue(dailyRevenueId) {
     fetchRevenues();
   }, [fetchRevenues]);
 
-  // Save all cash register revenues at once
-  // Can pass overrideDailyRevenueId for newly created daily_revenue entries
-  const saveAllRevenues = async (revenuesByRegisterId, overrideDailyRevenueId = null) => {
+  // Save all cash register closures at once.
+  // `closures` is an array of objects, each carrying cash_register_id +
+  // closure_number + the editable field data. Existing DB rows that are not in
+  // the submitted set (matched by register + closure_number) are deleted, so
+  // removing a closure in the UI also removes it here.
+  // Can pass overrideDailyRevenueId for newly created daily_revenue entries.
+  const saveAllRevenues = async (closures, overrideDailyRevenueId = null) => {
     const effectiveId = overrideDailyRevenueId || dailyRevenueId;
     if (!effectiveId) {
       console.error('No dailyRevenueId available for saving cash register revenues');
       return;
     }
 
+    const list = Array.isArray(closures) ? closures : [];
+
     try {
-      const promises = Object.entries(revenuesByRegisterId).map(
-        async ([cashRegisterId, data]) => {
-          const existingRevenue = revenues.find(
-            (r) => r.cash_register_id === cashRegisterId
-          );
-
-          // Clean data - convert empty strings to null for numeric fields
-          const cleanedData = Object.fromEntries(
-            Object.entries(data).map(([key, value]) => [
-              key,
-              value === '' ? null : value
-            ])
-          );
-
-          const dataToSave = {
-            ...cleanedData,
-            daily_revenue_id: effectiveId,
-            cash_register_id: cashRegisterId,
-          };
-
-          if (existingRevenue?.id) {
-            return supabase
-              .from('cash_register_revenue')
-              .update(dataToSave)
-              .eq('id', existingRevenue.id)
-              .select()
-              .single();
-          } else {
-            return supabase
-              .from('cash_register_revenue')
-              .insert([dataToSave])
-              .select()
-              .single();
-          }
-        }
+      const submittedKeys = new Set(
+        list.map((c) => `${c.cash_register_id}#${c.closure_number ?? 1}`)
       );
 
-      const results = await Promise.all(promises);
+      // Delete DB rows that are no longer present in the submitted set.
+      const toDelete = revenues.filter(
+        (r) => !submittedKeys.has(`${r.cash_register_id}#${r.closure_number ?? 1}`)
+      );
+      const deletePromises = toDelete.map((r) =>
+        supabase.from('cash_register_revenue').delete().eq('id', r.id)
+      );
+
+      const upsertPromises = list.map(async (closure) => {
+        const { cash_register_id, closure_number = 1, ...data } = closure;
+        const existingRevenue = revenues.find(
+          (r) =>
+            r.cash_register_id === cash_register_id &&
+            (r.closure_number ?? 1) === closure_number
+        );
+
+        // Clean data - convert empty strings to null for numeric fields
+        const cleanedData = Object.fromEntries(
+          Object.entries(data).map(([key, value]) => [key, value === '' ? null : value])
+        );
+
+        const dataToSave = {
+          ...cleanedData,
+          daily_revenue_id: effectiveId,
+          cash_register_id,
+          closure_number,
+        };
+
+        if (existingRevenue?.id) {
+          return supabase
+            .from('cash_register_revenue')
+            .update(dataToSave)
+            .eq('id', existingRevenue.id)
+            .select()
+            .single();
+        }
+        return supabase
+          .from('cash_register_revenue')
+          .insert([dataToSave])
+          .select()
+          .single();
+      });
+
+      const results = await Promise.all([...deletePromises, ...upsertPromises]);
 
       // Check for errors
       const errors = results.filter((r) => r.error);
@@ -256,4 +272,56 @@ export function useAllCashRegisterRevenue(dailyRevenueId) {
     refetch: fetchRevenues,
     saveAllRevenues,
   };
+}
+
+// Fetch, for each register, the chronologically last closure strictly BEFORE
+// `date` (across all days and units — a register's Z-counter is continuous even
+// if it moves units). Used to validate the closure sequence number and the
+// cumulative ("göngyölt") revenue of the first closure of the day.
+export function useRegisterClosureBaselines(registerIds, date) {
+  const idsKey = (registerIds || []).slice().sort().join(',');
+  const [baselines, setBaselines] = useState({});
+
+  const fetchBaselines = useCallback(async () => {
+    const ids = idsKey ? idsKey.split(',') : [];
+    if (ids.length === 0 || !date) {
+      setBaselines({});
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('cash_register_revenue')
+        .select(
+          'cash_register_id, closure_number, closure_sequence, cumulative_revenue, daily_revenue!inner(date)'
+        )
+        .in('cash_register_id', ids)
+        .lt('daily_revenue.date', date)
+        .order('date', { referencedTable: 'daily_revenue', ascending: false })
+        .order('closure_number', { ascending: false });
+
+      if (error) throw error;
+
+      // First row per register is the most recent closure before `date`.
+      const map = {};
+      for (const row of data || []) {
+        if (map[row.cash_register_id]) continue;
+        map[row.cash_register_id] = {
+          sequence: row.closure_sequence,
+          cumulative: row.cumulative_revenue,
+          date: row.daily_revenue?.date,
+        };
+      }
+      setBaselines(map);
+    } catch (error) {
+      console.error('Error fetching closure baselines:', error);
+      setBaselines({});
+    }
+  }, [idsKey, date]);
+
+  useEffect(() => {
+    fetchBaselines();
+  }, [fetchBaselines]);
+
+  return { baselines, refetch: fetchBaselines };
 }

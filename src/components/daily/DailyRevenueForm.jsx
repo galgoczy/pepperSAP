@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark, Banknote, Radio, PartyPopper, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark, Banknote, Radio, PartyPopper, AlertTriangle, CheckCircle, Plus } from 'lucide-react';
 import { useDailyRevenue } from '../../hooks/useDailyRevenue';
-import { useActiveCashRegisters, useAllCashRegisterRevenue } from '../../hooks/useCashRegisterRevenue';
+import { useActiveCashRegisters, useAllCashRegisterRevenue, useRegisterClosureBaselines } from '../../hooks/useCashRegisterRevenue';
 import { useProtocolItems } from '../../hooks/useProtocolItems';
 import { useUnitRevenueSettings } from '../../hooks/useUnitRevenueSettings';
 import { useEventRevenueValidation } from '../../hooks/useEventRevenueValidation';
@@ -26,6 +26,19 @@ const MARK_COLORS = [
   { value: 'blue', label: 'Kék', className: 'bg-blue-500 border-blue-600' },
   { value: 'purple', label: 'Lila', className: 'bg-purple-500 border-purple-600' },
 ];
+
+// Stable key identifying a single closure (one register can have several per day).
+const closureKeyOf = (registerId, closureNumber) => `${registerId}#${closureNumber}`;
+
+// A closure's turnover = sum of the VAT buckets (gross, tips excluded), i.e. the
+// "Forgalom" shown in the box. Used for the cumulative ("göngyölt") revenue check.
+const closureTurnover = (data) =>
+  (parseFloat(data?.vat_0_percent) || 0) +
+  (parseFloat(data?.vat_5_percent) || 0) +
+  (parseFloat(data?.vat_18_percent) || 0) +
+  (parseFloat(data?.vat_27_percent) || 0);
+
+const CUMULATIVE_TOLERANCE = 1; // Ft; rounding tolerance for the göngyölt check
 
 export default function DailyRevenueForm({ date, unitId, unitName }) {
   const { revenue, loading: revenueLoading, saveRevenue, ensureRevenueExists } = useDailyRevenue(unitId, date);
@@ -71,14 +84,53 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
   const [perRegisterGuestSum, setPerRegisterGuestSum] = useState(0);
   const [perRegisterTipsSum, setPerRegisterTipsSum] = useState(0);
 
-  useEffect(() => {
-    if (cashRegisters.length > 0) {
-      const expanded = {};
-      cashRegisters.forEach((r, index) => {
-        expanded[r.id] = index === 0 || cashRegisters.length <= 2;
+  // Multiple closures per register: manually added closures and removed ones.
+  const [extraClosures, setExtraClosures] = useState([]); // [{ registerId, closureNumber }]
+  const [removedKeys, setRemovedKeys] = useState(() => new Set());
+  const [closureValidations, setClosureValidations] = useState({}); // key -> warnings
+
+  // Chronologically-previous closure per register (for sequence / cumulative checks)
+  const registerIds = useMemo(() => cashRegisters.map((r) => r.id), [cashRegisters]);
+  const { baselines } = useRegisterClosureBaselines(registerIds, date);
+
+  // Existing saved closures indexed by closure key.
+  const existingByKey = useMemo(() => {
+    const map = {};
+    cashRegisterRevenues.forEach((r) => {
+      map[closureKeyOf(r.cash_register_id, r.closure_number ?? 1)] = r;
+    });
+    return map;
+  }, [cashRegisterRevenues]);
+
+  // The list of closures to render: every register has closure #1, plus any
+  // extra closures the user added, minus the ones they removed. Ordered by
+  // register (as in cashRegisters) then by closure number.
+  const closureList = useMemo(() => {
+    const result = [];
+    cashRegisters.forEach((register) => {
+      const existingNums = cashRegisterRevenues
+        .filter((r) => r.cash_register_id === register.id)
+        .map((r) => r.closure_number ?? 1);
+      const extraNums = extraClosures
+        .filter((c) => c.registerId === register.id)
+        .map((c) => c.closureNumber);
+      const nums = Array.from(new Set([1, ...existingNums, ...extraNums]))
+        .filter((n) => !removedKeys.has(closureKeyOf(register.id, n)))
+        .sort((a, b) => a - b);
+      nums.forEach((n) => {
+        result.push({ register, closureNumber: n, key: closureKeyOf(register.id, n) });
       });
-      setExpandedRegisters(expanded);
-    }
+    });
+    return result;
+  }, [cashRegisters, cashRegisterRevenues, extraClosures, removedKeys]);
+
+  useEffect(() => {
+    const expanded = {};
+    closureList.forEach((c, index) => {
+      expanded[c.key] = index === 0 || closureList.length <= 2 || c.closureNumber > 1;
+    });
+    setExpandedRegisters(expanded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cashRegisters]);
 
   useEffect(() => {
@@ -131,31 +183,83 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     }
   }, [revenue, date]);
 
-  const existingDataByRegister = useCallback(() => {
-    const map = {};
-    cashRegisterRevenues.forEach((r) => {
-      map[r.cash_register_id] = r;
+  const mergedForKey = useCallback(
+    (key) => cashRegisterDataRef.current[key] || existingByKey[key] || {},
+    [existingByKey]
+  );
+
+  // Recompute the cross-closure sums and the per-closure validations (closure
+  // sequence number and cumulative "göngyölt" revenue). Returns the software
+  // revenue sum so callers can mirror it into total_revenue.
+  const recomputeDerived = useCallback(() => {
+    let software = 0;
+    let guests = 0;
+    let tips = 0;
+    const validations = {};
+
+    const byRegister = {};
+    closureList.forEach((c) => {
+      (byRegister[c.register.id] = byRegister[c.register.id] || []).push(c);
     });
-    return map;
-  }, [cashRegisterRevenues]);
+
+    Object.entries(byRegister).forEach(([registerId, closures]) => {
+      const base = baselines[registerId];
+      let predecessor = base ? { sequence: base.sequence, cumulative: base.cumulative } : null;
+
+      closures.forEach((c) => {
+        const data = mergedForKey(c.key);
+        software += parseFloat(data.software_revenue) || 0;
+        guests += parseInt(data.guest_count, 10) || 0;
+        tips += parseFloat(data.tips) || 0;
+
+        const turnover = closureTurnover(data);
+        const seq =
+          data.closure_sequence === '' || data.closure_sequence == null
+            ? null
+            : parseInt(data.closure_sequence, 10);
+        const cum =
+          data.cumulative_revenue === '' || data.cumulative_revenue == null
+            ? null
+            : parseFloat(data.cumulative_revenue);
+
+        let sequenceWarning = null;
+        let expectedSequence = null;
+        if (predecessor && predecessor.sequence != null) {
+          expectedSequence = predecessor.sequence + 1;
+          if (seq != null && seq !== expectedSequence) sequenceWarning = expectedSequence;
+        }
+
+        let cumulativeWarning = null;
+        let expectedCumulative = null;
+        if (predecessor && predecessor.cumulative != null) {
+          expectedCumulative = predecessor.cumulative + turnover;
+          if (cum != null && Math.abs(cum - expectedCumulative) > CUMULATIVE_TOLERANCE) {
+            cumulativeWarning = expectedCumulative;
+          }
+        }
+
+        validations[c.key] = {
+          sequenceWarning,
+          expectedSequence,
+          cumulativeWarning,
+          expectedCumulative,
+        };
+
+        // Chain: the next closure of this register is checked against this one.
+        predecessor = { sequence: seq, cumulative: cum };
+      });
+    });
+
+    setPerRegisterSoftwareSum(software);
+    setPerRegisterGuestSum(guests);
+    setPerRegisterTipsSum(tips);
+    setClosureValidations(validations);
+    return software;
+  }, [closureList, baselines, mergedForKey]);
 
   useEffect(() => {
-    const sum = cashRegisterRevenues.reduce(
-      (total, r) => total + (parseFloat(r.software_revenue) || 0),
-      0
-    );
-    setPerRegisterSoftwareSum(sum);
-    const guestSum = cashRegisterRevenues.reduce(
-      (total, r) => total + (parseInt(r.guest_count, 10) || 0),
-      0
-    );
-    setPerRegisterGuestSum(guestSum);
-    const tipsSum = cashRegisterRevenues.reduce(
-      (total, r) => total + (parseFloat(r.tips) || 0),
-      0
-    );
-    setPerRegisterTipsSum(tipsSum);
-  }, [cashRegisterRevenues]);
+    recomputeDerived();
+  }, [recomputeDerived]);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -229,46 +333,66 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     }
   }, [formData.event_revenue_gross, validateEventRevenue, revenueSettings?.show_event_revenue]);
 
-  const handleCashRegisterChange = (registerId, data) => {
-    cashRegisterDataRef.current[registerId] = data;
-    // Sum across ALL registers, merging edited values with any existing,
-    // not-yet-touched registers. Previously this summed only the touched
-    // registers in cashRegisterDataRef, so editing one register dropped the
-    // others from the software-revenue total — that's why re-entering every
-    // register "fixed" the number.
-    const existing = existingDataByRegister();
-    const mergedFor = (register) =>
-      cashRegisterDataRef.current[register.id] || existing[register.id] || {};
-
-    const sum = cashRegisters.reduce(
-      (total, register) => total + (parseFloat(mergedFor(register).software_revenue) || 0),
-      0
-    );
-    setPerRegisterSoftwareSum(sum);
-
-    const guestSum = cashRegisters.reduce(
-      (total, register) => total + (parseInt(mergedFor(register).guest_count, 10) || 0),
-      0
-    );
-    setPerRegisterGuestSum(guestSum);
-
-    const tipsSum = cashRegisters.reduce(
-      (total, register) => total + (parseFloat(mergedFor(register).tips) || 0),
-      0
-    );
-    setPerRegisterTipsSum(tipsSum);
-
-    if (!formData.software_revenue_manual_override && sum > 0) {
-      setFormData(prev => ({ ...prev, total_revenue: sum.toString() }));
+  const handleCashRegisterChange = (key, data) => {
+    cashRegisterDataRef.current[key] = data;
+    const software = recomputeDerived();
+    if (!formData.software_revenue_manual_override && software > 0) {
+      setFormData((prev) => ({ ...prev, total_revenue: software.toString() }));
     }
   };
 
-  const toggleExpand = (registerId) => {
+  const toggleExpand = (key) => {
     setExpandedRegisters((prev) => ({
       ...prev,
-      [registerId]: !prev[registerId],
+      [key]: !prev[key],
     }));
   };
+
+  // Add another closure for a register on this day.
+  const addClosure = (registerId) => {
+    const nums = closureList
+      .filter((c) => c.register.id === registerId)
+      .map((c) => c.closureNumber);
+    const next = (nums.length ? Math.max(...nums) : 0) + 1;
+    setExtraClosures((prev) => [...prev, { registerId, closureNumber: next }]);
+    setExpandedRegisters((prev) => ({ ...prev, [closureKeyOf(registerId, next)]: true }));
+  };
+
+  // Remove a closure (only additional ones, i.e. closure number > 1).
+  const removeClosure = (registerId, closureNumber) => {
+    if (closureNumber <= 1) return;
+    const key = closureKeyOf(registerId, closureNumber);
+    setRemovedKeys((prev) => new Set(prev).add(key));
+    setExtraClosures((prev) =>
+      prev.filter((c) => !(c.registerId === registerId && c.closureNumber === closureNumber))
+    );
+    delete cashRegisterDataRef.current[key];
+  };
+
+  // Fields that belong to a cash_register_revenue row (everything else on an
+  // existing row — id, joins, timestamps — must not be sent back).
+  const CLOSURE_FIELDS = [
+    'software_revenue', 'guest_count',
+    'vat_0_percent', 'vat_5_percent', 'vat_18_percent', 'vat_27_percent',
+    'tips', 'discrepancies',
+    'cash_payment', 'card_payment', 'szep_card_payment',
+    'terminal_card', 'terminal_szep', 'terminal_discrepancy_note',
+    'closure_sequence', 'cumulative_revenue',
+  ];
+
+  const buildClosuresToSave = () =>
+    closureList.map((c) => {
+      const src = mergedForKey(c.key);
+      const fields = {};
+      CLOSURE_FIELDS.forEach((f) => {
+        if (src[f] !== undefined) fields[f] = src[f];
+      });
+      return {
+        cash_register_id: c.register.id,
+        closure_number: c.closureNumber,
+        ...fields,
+      };
+    });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -284,16 +408,19 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       const savedRevenue = await saveRevenue({
         ...formData,
         protocol_gross: protocolGrossToSave,
-        // Actual tips: sum of the per-cash-register tip amounts (recorded only,
-        // not part of any turnover calculation).
+        // Actual tips: sum of the per-closure tip amounts (recorded only, not
+        // part of any turnover calculation).
         actual_tips: perRegisterTipsSum,
-        // Guest count: sum of the per-cash-register values when present,
-        // otherwise the manually entered value.
+        // Guest count: sum of the per-closure values when present, otherwise the
+        // manually entered value.
         guest_count: perRegisterGuestSum > 0 ? perRegisterGuestSum : formData.guest_count,
       });
 
-      if (cashRegisters.length > 0 && savedRevenue?.id) {
-        await saveAllRevenues(cashRegisterDataRef.current, savedRevenue.id);
+      if (closureList.length > 0 && savedRevenue?.id) {
+        await saveAllRevenues(buildClosuresToSave(), savedRevenue.id);
+        // Added / removed closures are now reflected in the refetched data.
+        setExtraClosures([]);
+        setRemovedKeys(new Set());
       }
 
       toast.success('Napi adatok sikeresen mentve!');
@@ -304,17 +431,10 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     }
   };
 
-  const totalCashRegisterRevenue = cashRegisters.reduce((sum, register) => {
-    const data = cashRegisterDataRef.current[register.id] || existingDataByRegister()[register.id] || {};
-    return (
-      sum +
-      (parseFloat(data.vat_0_percent) || 0) +
-      (parseFloat(data.vat_5_percent) || 0) +
-      (parseFloat(data.vat_18_percent) || 0) +
-      (parseFloat(data.vat_27_percent) || 0)
-      // tips not included in revenue total
-    );
-  }, 0);
+  const totalCashRegisterRevenue = closureList.reduce(
+    (sum, c) => sum + closureTurnover(mergedForKey(c.key)),
+    0
+  );
 
   const loading = revenueLoading || registersLoading || settingsLoading;
 
@@ -450,18 +570,37 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
             </div>
           </div>
 
-          {cashRegisters.map((register) => (
-            <CashRegisterSection
-              key={register.id}
-              register={register}
-              existingData={existingDataByRegister()[register.id]}
-              onChange={handleCashRegisterChange}
-              expanded={expandedRegisters[register.id]}
-              onToggleExpand={() => toggleExpand(register.id)}
-              unitName={unitName}
-              date={date}
-            />
-          ))}
+          {cashRegisters.map((register) => {
+            const registerClosures = closureList.filter((c) => c.register.id === register.id);
+            const multiple = registerClosures.length > 1;
+            return (
+              <div key={register.id} className="space-y-3">
+                {registerClosures.map((c) => (
+                  <CashRegisterSection
+                    key={c.key}
+                    register={register}
+                    existingData={existingByKey[c.key]}
+                    onChange={(data) => handleCashRegisterChange(c.key, data)}
+                    expanded={expandedRegisters[c.key]}
+                    onToggleExpand={() => toggleExpand(c.key)}
+                    unitName={unitName}
+                    date={date}
+                    closureLabel={multiple ? `${c.closureNumber}. zárás` : null}
+                    onRemove={c.closureNumber > 1 ? () => removeClosure(register.id, c.closureNumber) : null}
+                    validation={closureValidations[c.key]}
+                  />
+                ))}
+                <button
+                  type="button"
+                  onClick={() => addClosure(register.id)}
+                  className="w-full flex items-center justify-center gap-2 py-2 text-sm text-pepper-red border-2 border-dashed border-pepper-red border-opacity-40 rounded-lg hover:bg-pepper-red hover:bg-opacity-5 transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  További zárás a mai napra ({register.ap_number})
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 

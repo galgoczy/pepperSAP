@@ -14,11 +14,13 @@ const DEFAULT_DISCREPANCY = { amount: '', currency: 'HUF', note: '' };
 const DEFAULT_FORM_DATA = {
   software_revenue: '',
   guest_count: '',
+  closure_sequence: '',
   vat_0_percent: '',
   vat_5_percent: '',
   vat_18_percent: '',
   vat_27_percent: '',
   tips: '',
+  cumulative_revenue: '',
   discrepancies: [], // Array of {amount, currency, note}
   cash_payment: '',
   card_payment: '',
@@ -44,6 +46,8 @@ function computeFormData(existingData) {
   return {
     software_revenue: existingData.software_revenue || '',
     guest_count: existingData.guest_count ?? '',
+    closure_sequence: existingData.closure_sequence ?? '',
+    cumulative_revenue: existingData.cumulative_revenue ?? '',
     vat_0_percent: existingData.vat_0_percent || '',
     vat_5_percent: existingData.vat_5_percent || '',
     vat_18_percent: existingData.vat_18_percent || '',
@@ -77,6 +81,9 @@ export default function CashRegisterSection({
   onToggleExpand,
   unitName,
   date,
+  closureLabel = null,
+  onRemove = null,
+  validation = null,
 }) {
   const [formData, setFormData] = useState(() => computeFormData(existingData));
   const prevExistingDataRef = useRef(existingData);
@@ -189,7 +196,7 @@ export default function CashRegisterSection({
   const handleChange = (field, value) => {
     const newData = { ...formData, [field]: value };
     setFormData(newData);
-    onChange(register.id, newData);
+    onChange(newData);
   };
 
   // Discrepancy management functions
@@ -245,6 +252,11 @@ export default function CashRegisterSection({
               {register.name && (
                 <span className="text-gray-500">({register.name})</span>
               )}
+              {closureLabel && (
+                <span className="px-2 py-0.5 text-xs font-medium bg-pepper-red bg-opacity-10 text-pepper-red rounded-full">
+                  {closureLabel}
+                </span>
+              )}
             </div>
             {register.terminal_number && (
               <div className="flex items-center gap-1 text-xs text-gray-500">
@@ -299,6 +311,21 @@ export default function CashRegisterSection({
                 value={formData.guest_count}
                 onChange={(e) => handleChange('guest_count', e.target.value)}
                 suffix="fő"
+              />
+            </div>
+            <div className="mt-3">
+              <Input
+                label="Zárás sorszáma"
+                type="number"
+                step="1"
+                min="0"
+                value={formData.closure_sequence}
+                onChange={(e) => handleChange('closure_sequence', e.target.value)}
+                error={
+                  validation?.sequenceWarning != null
+                    ? `Az előző záráshoz képest ${validation.expectedSequence} lenne a sorszám (n+1). Ellenőrizd!`
+                    : null
+                }
               />
             </div>
           </div>
@@ -358,6 +385,22 @@ export default function CashRegisterSection({
             <div className="mt-3 p-2 bg-gray-50 rounded-lg flex justify-between items-center text-sm">
               <span className="text-gray-600">Összesen:</span>
               <span className="font-bold">{formatCurrency(cashRegisterTotal)}</span>
+            </div>
+            <div className="mt-3">
+              <Input
+                label="Göngyölt forgalom"
+                type="number"
+                step="0.01"
+                value={formData.cumulative_revenue}
+                onChange={(e) => handleChange('cumulative_revenue', e.target.value)}
+                suffix="Ft"
+                helper="A Z-jelentés göngyölt forgalma (előző göngyölt + ezen zárás forgalma)"
+                error={
+                  validation?.cumulativeWarning != null
+                    ? `Az előző göngyölt + forgalom alapján ${formatCurrency(validation.expectedCumulative)} lenne. Valószínűleg elütés!`
+                    : null
+                }
+              />
             </div>
           </div>
 
@@ -504,7 +547,7 @@ export default function CashRegisterSection({
             </h4>
             <div className={`grid gap-3 ${SHOW_SZEP_FIELDS ? 'md:grid-cols-2' : ''}`}>
               <Input
-                label="Bankkártya (terminál)"
+                label="Bankkártya (terminál - borravaló nélkül)"
                 type="number"
                 step="0.01"
                 value={formData.terminal_card}
@@ -552,6 +595,22 @@ export default function CashRegisterSection({
               </div>
             )}
           </div>
+
+          {/* Remove this (additional) closure */}
+          {onRemove && (
+            <div className="pt-2 border-t border-gray-100">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onRemove}
+                className="text-red-600 border-red-200 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                Zárás törlése
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </Card>

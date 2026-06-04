@@ -312,12 +312,14 @@ export default function CashierImportPage() {
             const registerId = registerMap[rec.apNumber];
             if (!registerId) continue;
 
-            // Upsert cash_register_revenue
+            // Upsert cash_register_revenue (import = the first/only closure of
+            // the day for the register; closure_number 1).
             const { error: upsertError } = await supabase
               .from('cash_register_revenue')
               .upsert({
                 daily_revenue_id: dailyRevenueId,
                 cash_register_id: registerId,
+                closure_number: 1,
                 vat_0_percent: rec.vat_0,
                 vat_5_percent: rec.vat_5,
                 vat_18_percent: rec.vat_18,
@@ -329,7 +331,7 @@ export default function CashierImportPage() {
                 discrepancy_amount: rec.discrepancy !== 0 ? rec.discrepancy : 0,
                 discrepancy_note: rec.discrepancy !== 0 ? 'Excel import eltérés' : null,
               }, {
-                onConflict: 'daily_revenue_id,cash_register_id',
+                onConflict: 'daily_revenue_id,cash_register_id,closure_number',
               });
 
             if (upsertError) throw upsertError;
