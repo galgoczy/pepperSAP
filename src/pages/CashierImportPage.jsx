@@ -258,6 +258,20 @@ export default function CashierImportPage() {
               results.errors.push(`Pénztárgép létrehozás hiba: ${register.apNumber}`);
               continue;
             }
+
+            // Open a date-ranged assignment starting far in the past so the
+            // imported historical days can later be edited (the daily form
+            // offers registers by unit + date).
+            const { error: assignError } = await supabase
+              .from('cash_register_assignments')
+              .insert({
+                cash_register_id: newReg.id,
+                unit_id: unitId,
+                start_date: '2000-01-01',
+                end_date: null,
+              });
+            if (assignError) console.error('Error creating register assignment:', assignError);
+
             registerMap[register.apNumber] = newReg.id;
           }
         }

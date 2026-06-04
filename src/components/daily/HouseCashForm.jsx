@@ -11,7 +11,7 @@ const DEFAULT_CHANGE_AMOUNT = 30000;
 
 export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
   const { houseCash, previousDayClosing, previousDayReserveClosing, calculatedData, loading, saveHouseCash } = useHouseCash(unitId, date);
-  const { cashRegisters } = useActiveCashRegisters(unitId);
+  const { cashRegisters } = useActiveCashRegisters(unitId, date);
   const { settings } = useAppSettings();
   const showReserve = settings.showReserve;
   const [saving, setSaving] = useState(false);

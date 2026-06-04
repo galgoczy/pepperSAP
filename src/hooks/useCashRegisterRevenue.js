@@ -1,9 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { getToday } from '../lib/utils';
 import toast from 'react-hot-toast';
 
-// Hook for fetching active cash registers for a unit
-export function useActiveCashRegisters(unitId) {
+// Hook for fetching the cash registers that belong to a unit on a given DATE.
+//
+// Which registers a unit has is date-driven: each register has one or more
+// assignment periods (cash_register_assignments) describing when it belonged to
+// which unit. For data entry we offer the registers whose assignment covers the
+// selected date at this unit. This makes past-date editing and historical
+// imports attach data to the correct registers, and prevents a freshly added
+// register from retroactively appearing in earlier statistics.
+export function useActiveCashRegisters(unitId, date) {
+  const effectiveDate = date || getToday();
   const [cashRegisters, setCashRegisters] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -15,25 +24,36 @@ export function useActiveCashRegisters(unitId) {
     }
 
     try {
+      // Assignments at this unit whose interval covers the selected date.
       const { data, error } = await supabase
-        .from('cash_registers')
-        .select('*')
+        .from('cash_register_assignments')
+        .select('start_date, cash_registers(*)')
         .eq('unit_id', unitId)
-        .in('status', ['active', 'suspended'])
-        .order('created_at', { ascending: true });
+        .lte('start_date', effectiveDate)
+        .or(`end_date.is.null,end_date.gte.${effectiveDate}`)
+        .order('start_date', { ascending: true });
 
       if (error) throw error;
 
-      // Filter to only active registers for data entry
-      const activeRegisters = (data || []).filter((r) => r.status === 'active');
-      setCashRegisters(activeRegisters);
+      // Flatten to register rows, drop any without an embedded register,
+      // dedupe by id, and keep only active ones for data entry.
+      const seen = new Set();
+      const registers = [];
+      for (const row of data || []) {
+        const reg = row.cash_registers;
+        if (!reg || seen.has(reg.id)) continue;
+        seen.add(reg.id);
+        if (reg.status === 'active') registers.push(reg);
+      }
+      registers.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+      setCashRegisters(registers);
     } catch (error) {
       console.error('Error fetching cash registers:', error);
       toast.error('Hiba a pénztárgépek betöltésekor');
     } finally {
       setLoading(false);
     }
-  }, [unitId]);
+  }, [unitId, effectiveDate]);
 
   useEffect(() => {
     fetchCashRegisters();

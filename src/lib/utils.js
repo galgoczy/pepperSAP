@@ -67,6 +67,14 @@ export const getToday = () => {
   return toLocalYmd(new Date());
 };
 
+// Add (or subtract) days to a YYYY-MM-DD date string, returning YYYY-MM-DD
+export const addDays = (ymd, days) => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + days);
+  return toLocalYmd(date);
+};
+
 // Get first day of current month
 export const getFirstDayOfMonth = () => {
   const date = new Date();

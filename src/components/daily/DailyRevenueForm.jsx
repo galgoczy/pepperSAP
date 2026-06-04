@@ -29,7 +29,7 @@ const MARK_COLORS = [
 
 export default function DailyRevenueForm({ date, unitId, unitName }) {
   const { revenue, loading: revenueLoading, saveRevenue, ensureRevenueExists } = useDailyRevenue(unitId, date);
-  const { cashRegisters, loading: registersLoading } = useActiveCashRegisters(unitId);
+  const { cashRegisters, loading: registersLoading } = useActiveCashRegisters(unitId, date);
   const { revenues: cashRegisterRevenues, saveAllRevenues } = useAllCashRegisterRevenue(revenue?.id);
   const { settings: revenueSettings, loading: settingsLoading } = useUnitRevenueSettings(unitId);
   const { items: protocolItems, totalAmount: protocolItemsTotal, createItem: createProtocolItem, updateItem: updateProtocolItem, deleteItem: deleteProtocolItem, setDailyRevenueId } = useProtocolItems(revenue?.id);

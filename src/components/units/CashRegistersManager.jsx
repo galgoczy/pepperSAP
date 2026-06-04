@@ -60,13 +60,14 @@ export default function CashRegistersManager({ unitId, unitName }) {
     name: '',
     notes: '',
     default_change_amount: '',
+    valid_from: getToday(),
   });
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState('');
 
   const handleOpenCreate = () => {
     setEditingRegister(null);
-    setFormData({ ap_number: '', terminal_number: '', name: '', notes: '', default_change_amount: '' });
+    setFormData({ ap_number: '', terminal_number: '', name: '', notes: '', default_change_amount: '', valid_from: getToday() });
     setFormError('');
     setIsFormOpen(true);
   };
@@ -79,6 +80,7 @@ export default function CashRegistersManager({ unitId, unitName }) {
       name: register.name || '',
       notes: register.notes || '',
       default_change_amount: register.default_change_amount ?? '',
+      valid_from: getToday(),
     });
     setFormError('');
     setIsFormOpen(true);
@@ -103,16 +105,18 @@ export default function CashRegistersManager({ unitId, unitName }) {
     setFormLoading(true);
 
     try {
+      // valid_from is an assignment property, not a cash_registers column.
+      const { valid_from, ...registerFields } = formData;
       const payload = {
-        ...formData,
+        ...registerFields,
         default_change_amount:
-          formData.default_change_amount === '' ? null : parseFloat(formData.default_change_amount),
+          registerFields.default_change_amount === '' ? null : parseFloat(registerFields.default_change_amount),
       };
       if (editingRegister) {
         await updateCashRegister(editingRegister.id, payload);
         toast.success('Pénztárgép sikeresen frissítve!');
       } else {
-        await createCashRegister(payload);
+        await createCashRegister(payload, valid_from);
         toast.success('Pénztárgép sikeresen létrehozva!');
       }
       setIsFormOpen(false);
@@ -384,6 +388,24 @@ export default function CashRegistersManager({ unitId, unitName }) {
             helper="Formátum: AP + opcionális betű + max 10 számjegy"
             disabled={!!editingRegister}
           />
+
+          {!editingRegister && (
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-gray-700">
+                Érvényes ettől<span className="text-red-500 ml-1">*</span>
+              </label>
+              <DateInput
+                value={formData.valid_from}
+                onChange={(e) => setFormData({ ...formData, valid_from: e.target.value })}
+                max={getToday()}
+                required
+              />
+              <p className="text-xs text-gray-500">
+                Ettől a naptól jelenik meg a napi rögzítésnél. Korábbi statisztikába
+                nem kerül bele. Régi adat importjához állíts be korábbi dátumot.
+              </p>
+            </div>
+          )}
 
           <Input
             label="Terminál szám"
