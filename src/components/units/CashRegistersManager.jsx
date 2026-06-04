@@ -5,12 +5,12 @@ import {
   Trash2,
   Calculator,
   CreditCard,
-  Power,
   PowerOff,
   Pause,
   Play,
+  ArrowRightLeft,
 } from 'lucide-react';
-import { useCashRegisters } from '../../hooks/useSupabase';
+import { useCashRegisters, useUnits } from '../../hooks/useSupabase';
 import {
   Card,
   Button,
@@ -18,8 +18,11 @@ import {
   ConfirmModal,
   Badge,
   Input,
+  Select,
+  DateInput,
   LoadingSpinner,
 } from '../common';
+import { getToday } from '../../lib/utils';
 import toast from 'react-hot-toast';
 
 const STATUS_BADGES = {
@@ -36,12 +39,19 @@ export default function CashRegistersManager({ unitId, unitName }) {
     updateCashRegister,
     deactivateCashRegister,
     suspendCashRegister,
+    moveCashRegister,
+    getCashRegisterRevenueCount,
     deleteCashRegister,
   } = useCashRegisters(unitId);
+  const { units } = useUnits();
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeactivateOpen, setIsDeactivateOpen] = useState(false);
+  const [isMoveOpen, setIsMoveOpen] = useState(false);
+  const [moveData, setMoveData] = useState({ toUnitId: '', effectiveDate: getToday() });
+  const [moveLoading, setMoveLoading] = useState(false);
+  const [deleteRevenueCount, setDeleteRevenueCount] = useState(null);
   const [editingRegister, setEditingRegister] = useState(null);
   const [selectedRegister, setSelectedRegister] = useState(null);
   const [formData, setFormData] = useState({
@@ -138,14 +148,48 @@ export default function CashRegistersManager({ unitId, unitName }) {
     }
   };
 
+  const handleOpenMove = (register) => {
+    setSelectedRegister(register);
+    setMoveData({ toUnitId: '', effectiveDate: getToday() });
+    setIsMoveOpen(true);
+  };
+
+  const handleMove = async () => {
+    if (!moveData.toUnitId) {
+      toast.error('Válassz cél egységet!');
+      return;
+    }
+    setMoveLoading(true);
+    try {
+      await moveCashRegister(selectedRegister.id, moveData.toUnitId, moveData.effectiveDate);
+      toast.success('Pénztárgép áthelyezve! A múltbeli forgalom a régi egységnél marad.');
+      setIsMoveOpen(false);
+      setSelectedRegister(null);
+    } catch {
+      toast.error('Hiba történt az áthelyezés során!');
+    } finally {
+      setMoveLoading(false);
+    }
+  };
+
+  const handleOpenDelete = async (register) => {
+    setSelectedRegister(register);
+    setDeleteRevenueCount(null);
+    setIsDeleteOpen(true);
+    // Check whether the register has recorded revenue (blocks deletion).
+    const count = await getCashRegisterRevenueCount(register.id);
+    setDeleteRevenueCount(count);
+  };
+
   const handleDelete = async () => {
     try {
       await deleteCashRegister(selectedRegister.id);
       toast.success('Pénztárgép törölve!');
       setIsDeleteOpen(false);
       setSelectedRegister(null);
-    } catch {
-      toast.error('Hiba történt a törlés során!');
+    } catch (error) {
+      // The DB trigger blocks deletion when revenue exists.
+      toast.error(error?.message || 'Hiba történt a törlés során!');
     }
   };
 
@@ -242,6 +286,13 @@ export default function CashRegistersManager({ unitId, unitName }) {
                     <Edit className="h-4 w-4 text-gray-500" />
                   </button>
                   <button
+                    onClick={() => handleOpenMove(register)}
+                    className="p-2 hover:bg-blue-50 rounded-lg"
+                    title="Áthelyezés másik egységbe"
+                  >
+                    <ArrowRightLeft className="h-4 w-4 text-blue-500" />
+                  </button>
+                  <button
                     onClick={() => {
                       setSelectedRegister(register);
                       setIsDeactivateOpen(true);
@@ -281,10 +332,7 @@ export default function CashRegistersManager({ unitId, unitName }) {
                     <Badge {...STATUS_BADGES[register.status]} />
                   </div>
                   <button
-                    onClick={() => {
-                      setSelectedRegister(register);
-                      setIsDeleteOpen(true);
-                    }}
+                    onClick={() => handleOpenDelete(register)}
                     className="p-2 hover:bg-red-50 rounded-lg"
                     title="Véglegesen törlés"
                   >
@@ -394,19 +442,111 @@ export default function CashRegistersManager({ unitId, unitName }) {
         variant="danger"
       />
 
-      {/* Delete confirm */}
-      <ConfirmModal
+      {/* Delete confirm (data-aware: blocked when revenue exists) */}
+      <Modal
         isOpen={isDeleteOpen}
         onClose={() => {
           setIsDeleteOpen(false);
           setSelectedRegister(null);
         }}
-        onConfirm={handleDelete}
         title="Pénztárgép törlése"
-        message={`Biztosan véglegesen törölni szeretnéd a "${selectedRegister?.ap_number}" pénztárgépet? Ez a művelet visszavonhatatlan.`}
-        confirmText="Törlés"
-        variant="danger"
-      />
+        size="sm"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setIsDeleteOpen(false);
+                setSelectedRegister(null);
+              }}
+            >
+              Mégse
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleDelete}
+              disabled={deleteRevenueCount === null || deleteRevenueCount > 0}
+            >
+              Törlés
+            </Button>
+          </>
+        }
+      >
+        {deleteRevenueCount === null ? (
+          <p className="text-sm text-gray-500">Adatok ellenőrzése…</p>
+        ) : deleteRevenueCount > 0 ? (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            Ehhez a pénztárgéphez <strong>{deleteRevenueCount}</strong> rögzített
+            forgalmi nap tartozik, ezért <strong>nem törölhető</strong> (a múltbeli
+            adatok elvesznének). Használd helyette a <strong>Selejtezés</strong>t –
+            a régi adatok megmaradnak, a gép pedig eltűnik a napi rögzítésből.
+          </div>
+        ) : (
+          <p className="text-sm text-gray-600">
+            Ehhez a pénztárgéphez nincs rögzített forgalom. Biztosan véglegesen
+            törlöd a(z) „{selectedRegister?.ap_number}" pénztárgépet? Ez a művelet
+            visszavonhatatlan.
+          </p>
+        )}
+      </Modal>
+
+      {/* Move to another unit */}
+      <Modal
+        isOpen={isMoveOpen}
+        onClose={() => {
+          setIsMoveOpen(false);
+          setSelectedRegister(null);
+        }}
+        title="Pénztárgép áthelyezése"
+        size="sm"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setIsMoveOpen(false);
+                setSelectedRegister(null);
+              }}
+              disabled={moveLoading}
+            >
+              Mégse
+            </Button>
+            <Button onClick={handleMove} loading={moveLoading} disabled={!moveData.toUnitId}>
+              Áthelyezés
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            A(z) <strong>{selectedRegister?.ap_number}</strong> pénztárgép másik
+            egységbe helyezése. Az AP-szám változatlan marad. A megadott dátumig
+            rögzített forgalom a jelenlegi egységnél (<strong>{unitName}</strong>)
+            marad, az új forgalom az új egységhez kerül.
+          </p>
+          <Select
+            label="Cél egység"
+            value={moveData.toUnitId}
+            onChange={(e) => setMoveData((p) => ({ ...p, toUnitId: e.target.value }))}
+            options={units
+              .filter((u) => u.id !== unitId && u.type === 'restaurant')
+              .map((u) => ({ value: u.id, label: u.name }))}
+            placeholder="Válassz egységet..."
+            required
+          />
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700">
+              Áthelyezés dátuma<span className="text-red-500 ml-1">*</span>
+            </label>
+            <DateInput
+              value={moveData.effectiveDate}
+              onChange={(e) => setMoveData((p) => ({ ...p, effectiveDate: e.target.value }))}
+              max={getToday()}
+              required
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

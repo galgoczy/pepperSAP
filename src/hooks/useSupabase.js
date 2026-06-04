@@ -219,6 +219,51 @@ export function useCashRegisters(unitId) {
     return data;
   };
 
+  // Move a register to another unit, effective from a given date. The AP number
+  // stays the same (single record). Past revenue is unaffected because it is
+  // tied to daily_revenue.unit_id, not to the register's current unit_id.
+  const moveCashRegister = async (id, toUnitId, effectiveDate) => {
+    const register = cashRegisters.find((r) => r.id === id);
+    const fromUnitId = register?.unit_id || unitId;
+
+    const { error } = await supabase
+      .from('cash_registers')
+      .update({ unit_id: toUnitId })
+      .eq('id', id);
+    if (error) throw error;
+
+    // Record the move in the history table (best-effort; don't fail the move
+    // if history insert is unavailable).
+    const { data: authData } = await supabase.auth.getUser();
+    const { error: histError } = await supabase
+      .from('cash_register_unit_history')
+      .insert([{
+        cash_register_id: id,
+        from_unit_id: fromUnitId,
+        to_unit_id: toUnitId,
+        effective_date: effectiveDate,
+        moved_by: authData?.user?.id || null,
+      }]);
+    if (histError) console.error('Register move history insert failed:', histError);
+
+    // The register left this unit, so drop it from the local list.
+    setCashRegisters((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  // Count of recorded revenue rows for a register (to decide if it can be
+  // permanently deleted).
+  const getCashRegisterRevenueCount = async (id) => {
+    const { count, error } = await supabase
+      .from('cash_register_revenue')
+      .select('id', { count: 'exact', head: true })
+      .eq('cash_register_id', id);
+    if (error) {
+      console.error('Error counting register revenue:', error);
+      return null;
+    }
+    return count || 0;
+  };
+
   const deleteCashRegister = async (id) => {
     const { error } = await supabase.from('cash_registers').delete().eq('id', id);
     if (error) throw error;
@@ -233,6 +278,8 @@ export function useCashRegisters(unitId) {
     updateCashRegister,
     deactivateCashRegister,
     suspendCashRegister,
+    moveCashRegister,
+    getCashRegisterRevenueCount,
     deleteCashRegister,
   };
 }
