@@ -88,9 +88,10 @@ export async function fetchHouseCashSeries(unitId, endDate) {
       .or(`source_unit_id.eq.${unitId},destination_unit_id.eq.${unitId}`),
     supabase
       .from('opening_balance_revisions')
-      .select('target_date, proposed_opening_balance, pocket, status')
+      .select('target_date, proposed_opening_balance, pocket, status, created_at')
       .eq('unit_id', unitId)
-      .eq('status', 'approved'),
+      .eq('status', 'approved')
+      .order('created_at', { ascending: true }),
   ]);
 
   const byDate = new Map();
@@ -219,9 +220,15 @@ export async function fetchHouseCashSeries(unitId, endDate) {
   return { byDate, orderedDates };
 }
 
-// Opening balances for a given date = closing of the most recent series day
-// strictly before it (0 if none).
+// Opening balances for a given date.
+// If the date itself has a series row, its computed opening is returned — this
+// already accounts for any approved opening-balance revision anchored on that
+// day (so the revised opening shows on the target day, not just the next one).
+// Otherwise it is the closing of the most recent series day strictly before it.
 export function openingForDate(series, date) {
+  const own = series.byDate.get(date);
+  if (own) return { cash: own.cashOpening, reserve: own.reserveOpening };
+
   let cash = 0;
   let reserve = 0;
   for (const d of series.orderedDates) {

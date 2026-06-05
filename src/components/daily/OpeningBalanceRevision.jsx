@@ -11,6 +11,7 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
   const { isAdmin, user } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [pendingRevision, setPendingRevision] = useState(null);
+  const [approvedRevision, setApprovedRevision] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -28,17 +29,32 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
     }
 
     try {
-      const { data, error } = await supabase
-        .from('opening_balance_revisions')
-        .select('*, units (name)')
-        .eq('unit_id', unitId)
-        .eq('target_date', date)
-        .eq('pocket', pocket)
-        .eq('status', 'pending')
-        .maybeSingle();
+      const [pendingRes, approvedRes] = await Promise.all([
+        supabase
+          .from('opening_balance_revisions')
+          .select('*, units (name)')
+          .eq('unit_id', unitId)
+          .eq('target_date', date)
+          .eq('pocket', pocket)
+          .eq('status', 'pending')
+          .maybeSingle(),
+        // Most recent approved revision for this day/pocket — drives the
+        // "módosítva X összegről" note and the revert option.
+        supabase
+          .from('opening_balance_revisions')
+          .select('*')
+          .eq('unit_id', unitId)
+          .eq('target_date', date)
+          .eq('pocket', pocket)
+          .eq('status', 'approved')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
 
-      if (error && error.code !== 'PGRST116') throw error;
-      setPendingRevision(data);
+      if (pendingRes.error && pendingRes.error.code !== 'PGRST116') throw pendingRes.error;
+      setPendingRevision(pendingRes.data);
+      setApprovedRevision(approvedRes.data || null);
     } catch (error) {
       console.error('Error fetching revision:', error);
     } finally {
@@ -114,12 +130,63 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
     }
   };
 
+  // Request reverting an approved revision back to its original value. Like any
+  // opening-balance change, this also needs admin approval.
+  const handleRevert = async () => {
+    if (!approvedRevision) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('opening_balance_revisions')
+        .insert([{
+          unit_id: unitId,
+          target_date: date,
+          pocket,
+          current_opening_balance: currentBalance || 0,
+          proposed_opening_balance: approvedRevision.current_opening_balance,
+          reason: `${pocketLabel} visszaállítása ${formatCurrency(approvedRevision.current_opening_balance)} értékre`,
+          requested_by: user?.id,
+        }]);
+      if (error) throw error;
+      toast.success('Visszaállítási kérelem elküldve! Jóváhagyásra vár.');
+      fetchPendingRevision();
+    } catch (error) {
+      console.error('Error submitting revert request:', error);
+      toast.error('Hiba a visszaállítási kérelem küldésekor');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) return null;
+
+  // "Módosítva X összegről" note for an approved revision currently in effect,
+  // with a revert option (revert also requires approval).
+  const approvedNote = approvedRevision ? (
+    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg flex flex-wrap items-center justify-between gap-2">
+      <p className="text-xs text-blue-700">
+        Módosítva <span className="font-semibold">{formatCurrency(approvedRevision.current_opening_balance)}</span> összegről
+        {' '}(jóváhagyott)
+      </p>
+      {!pendingRevision && (
+        <button
+          type="button"
+          onClick={handleRevert}
+          disabled={saving}
+          className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50"
+        >
+          Visszaállítás
+        </button>
+      )}
+    </div>
+  ) : null;
 
   // Show pending revision status
   if (pendingRevision) {
     return (
-      <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+      <>
+        {approvedNote}
+        <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
         <div className="flex items-start gap-2">
           <Clock className="h-5 w-5 text-yellow-600 mt-0.5" />
           <div className="flex-1">
@@ -161,12 +228,14 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
             )}
           </div>
         </div>
-      </div>
+        </div>
+      </>
     );
   }
 
   return (
     <>
+      {approvedNote}
       <button
         type="button"
         onClick={() => setShowModal(true)}
