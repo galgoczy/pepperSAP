@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 // Admin panel listing all pending opening-balance revision requests across
 // units, so they can be approved from the central házipénztár view. Each item
 // shows which unit's cash it affects.
-export default function OpeningBalanceRevisionsPanel() {
+export default function OpeningBalanceRevisionsPanel({ onChange }) {
   const { user } = useAuth();
   const [revisions, setRevisions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,12 +26,13 @@ export default function OpeningBalanceRevisionsPanel() {
 
       if (error) throw error;
       setRevisions(data || []);
+      onChange?.(); // keep the tab badge count in sync
     } catch (error) {
       console.error('Error fetching opening balance revisions:', error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onChange]);
 
   useEffect(() => {
     fetchRevisions();

@@ -11,6 +11,7 @@ import {
   useRevisions,
   usePockets,
   useCashHistory,
+  usePendingOpeningBalanceRevisions,
 } from '../hooks/useCashManagement';
 import { Card, Button, Input, Select, Modal, Badge } from '../components/common';
 import { Textarea } from '../components/common/Input';
@@ -194,6 +195,7 @@ function AdminCashView({ units }) {
   } = useTransfers(null); // null = all transfers
   const { payments, loading: paymentsLoading, createPayment, refetch: refetchPayments } = useCentralPayments();
   const { revisions, loading: revisionsLoading, createRevision, updateRevision, deleteRevision } = useRevisions();
+  const { count: pendingRevisionCount, refetch: refetchPendingRevisions } = usePendingOpeningBalanceRevisions();
   const {
     pockets,
     activePockets,
@@ -260,7 +262,7 @@ function AdminCashView({ units }) {
     { id: 'central', label: 'Központ', icon: Building2 },
     { id: 'transfers', label: `Átküldések${pendingTransfers.length > 0 ? ` (${pendingTransfers.length})` : ''}` },
     { id: 'payments', label: 'Kifizetések' },
-    { id: 'revisions', label: 'Revíziók' },
+    { id: 'revisions', label: `Revíziók${pendingRevisionCount > 0 ? ` (${pendingRevisionCount})` : ''}` },
     { id: 'pockets', label: 'Zsebek', icon: Wallet },
   ];
 
@@ -414,7 +416,7 @@ function AdminCashView({ units }) {
       {activeTab === 'revisions' && (
         <div className="space-y-4">
           {/* Pending opening-balance revision requests from units (per-unit) */}
-          <OpeningBalanceRevisionsPanel />
+          <OpeningBalanceRevisionsPanel onChange={refetchPendingRevisions} />
 
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-semibold text-gray-900">Revíziók</h2>

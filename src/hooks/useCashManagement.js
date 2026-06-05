@@ -528,6 +528,37 @@ export function useRevisions() {
 }
 
 /**
+ * Hook returning the number of pending opening-balance revision requests
+ * (módosítási kérelmek waiting for admin approval), for badge indicators.
+ */
+export function usePendingOpeningBalanceRevisions() {
+  const [count, setCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const fetchCount = useCallback(async () => {
+    try {
+      const { count: c, error } = await supabase
+        .from('opening_balance_revisions')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending');
+
+      if (error) throw error;
+      setCount(c || 0);
+    } catch (error) {
+      console.error('Error counting pending opening balance revisions:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCount();
+  }, [fetchCount]);
+
+  return { count, loading, refetch: fetchCount };
+}
+
+/**
  * Hook for pockets (admin only)
  */
 export function usePockets() {
