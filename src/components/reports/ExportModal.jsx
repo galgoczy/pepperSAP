@@ -22,6 +22,10 @@ const reportTypeLabels = {
   monthly_table: 'Havi tábla (költség-bevétel)',
 };
 
+// Columns that hold plain counts (e.g. guest headcount), not money — these must
+// not be formatted as currency in the PDF/Excel exports.
+const COUNT_HEADERS = new Set(['Létszám']);
+
 // Hungarian month names for export
 const MONTH_NAMES = [
   'Január', 'Február', 'Március', 'Április', 'Május', 'Június',
@@ -289,7 +293,7 @@ async function fetchFullMonthlyExport(startDate, endDate, unitId) {
     }
   });
 
-  const headers = ['Dátum', 'Novo', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Összesen'];
+  const headers = ['Dátum', 'Létszám', 'Novo', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Összesen'];
 
   // Get unit name
   const unitName = revenues[0]?.units?.name || '';
@@ -306,6 +310,7 @@ async function fetchFullMonthlyExport(startDate, endDate, unitId) {
 
     return {
       'Dátum': formatDate(row.date),
+      'Létszám': parseInt(row.guest_count, 10) || 0,
       'Novo': totalSoftware,
       'Pénztárgép KP': cashRegisterCash,
       'Pénztárgép kártya': cashRegisterCard,
@@ -619,6 +624,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
         cashRegisterCash: 0,
         cashRegisterCard: 0,
         cashRegisterTotal: 0,
+        guestCount: 0,
       };
     }
 
@@ -631,6 +637,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     unitData[unitId].cashRegisterCash += cashRegisterCash;
     unitData[unitId].cashRegisterCard += cashRegisterCard;
     unitData[unitId].cashRegisterTotal += cashRegisterTotal;
+    unitData[unitId].guestCount += parseInt(row.guest_count, 10) || 0;
   });
 
   // Add expenses
@@ -655,7 +662,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     unit.dailyResult = unit.cashRegisterTotal + unit.reserveRevenue - unitExpenses.invoice;
   });
 
-  const headers = ['Egység', 'Novo', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Összesen'];
+  const headers = ['Egység', 'Létszám', 'Novo', 'Pénztárgép KP', 'Pénztárgép kártya', 'Tartalék bevétel', 'Összesen'];
 
   const unitsArray = Object.values(unitData).sort((a, b) => a.unitName.localeCompare(b.unitName));
 
@@ -667,6 +674,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
     reserveRevenue: unitsArray.reduce((sum, u) => sum + u.reserveRevenue, 0),
     invoiceExpenses: unitsArray.reduce((sum, u) => sum + u.invoiceExpenses, 0),
     dailyResult: unitsArray.reduce((sum, u) => sum + u.dailyResult, 0),
+    guestCount: unitsArray.reduce((sum, u) => sum + (u.guestCount || 0), 0),
   };
 
   // Process events data
@@ -792,6 +800,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
   unitsArray.forEach((unit) => {
     data.push({
       'Egység': unit.unitName,
+      'Létszám': unit.guestCount || 0,
       'Novo': unit.totalSoftware,
       'Pénztárgép KP': unit.cashRegisterCash,
       'Pénztárgép kártya': unit.cashRegisterCard,
@@ -803,6 +812,7 @@ async function fetchFullMonthlyAllUnitsExport(startDate, endDate) {
 
   data.push({
     'Egység': 'Egységek összesen',
+    'Létszám': unitsTotals.guestCount || 0,
     'Novo': unitsTotals.totalSoftware,
     'Pénztárgép KP': unitsTotals.cashRegisterCash,
     'Pénztárgép kártya': unitsTotals.cashRegisterCard,
@@ -1856,7 +1866,7 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
     for (let col = 0; col <= finalRange.e.c; col++) {
       const cell = XLSX.utils.encode_cell({ r: row, c: col });
       if (ws[cell] && typeof ws[cell].v === 'number') {
-        ws[cell].z = '#,##0 Ft';
+        ws[cell].z = COUNT_HEADERS.has(headers[col]) ? '#,##0' : '#,##0 Ft';
       }
     }
   }
@@ -1936,21 +1946,16 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
   }
 
   // Format data for PDF table - sanitize all strings
-  const tableData = data.map((row) =>
-    headers.map((h) => {
-      const val = row[h];
-      if (typeof val === 'number') return formatCurrency(val);
-      return sanitizeForPdf(val);
-    })
-  );
+  const formatPdfVal = (h, val) => {
+    if (typeof val !== 'number') return sanitizeForPdf(val);
+    return COUNT_HEADERS.has(h) ? val.toLocaleString('hu-HU') : formatCurrency(val);
+  };
+
+  const tableData = data.map((row) => headers.map((h) => formatPdfVal(h, row[h])));
 
   // Add totals row (skip for cash_register_all_detailed, full_monthly_all, and monthly_table since they have their own grandTotal rows)
   if (reportType !== 'cash_register_all_detailed' && reportType !== 'full_monthly_all' && reportType !== 'monthly_table') {
-    const totalsPdfRow = headers.map((h) => {
-      const val = totalsRow[h];
-      if (typeof val === 'number') return formatCurrency(val);
-      return sanitizeForPdf(val);
-    });
+    const totalsPdfRow = headers.map((h) => formatPdfVal(h, totalsRow[h]));
     tableData.push(totalsPdfRow);
   }
 

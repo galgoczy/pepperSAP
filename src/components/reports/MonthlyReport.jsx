@@ -278,6 +278,7 @@ async function fetchFullMonthlyData(startDate, endDate, unitId) {
     reserveRevenue: data.reduce((sum, r) => sum + r.reserveRevenue, 0),
     invoiceExpenses: data.reduce((sum, r) => sum + r.invoiceExpenses, 0),
     dailyResult: data.reduce((sum, r) => sum + r.dailyResult, 0),
+    guestCount: data.reduce((sum, r) => sum + (parseInt(r.guest_count, 10) || 0), 0),
   };
 
   return { data, totals };
@@ -567,6 +568,7 @@ async function fetchFullMonthlyAllUnits(startDate, endDate) {
         reserveRevenue: 0,
         invoiceExpenses: 0,
         dailyResult: 0,
+        guestCount: 0,
         days: 0,
       };
     }
@@ -580,6 +582,7 @@ async function fetchFullMonthlyAllUnits(startDate, endDate) {
     unitData[unitId].cashRegisterCash += cashRegisterCash;
     unitData[unitId].cashRegisterCard += cashRegisterCard;
     unitData[unitId].cashRegisterTotal += cashRegisterTotal;
+    unitData[unitId].guestCount += parseInt(row.guest_count, 10) || 0;
     unitData[unitId].days += 1;
   });
 
@@ -615,6 +618,7 @@ async function fetchFullMonthlyAllUnits(startDate, endDate) {
     reserveRevenue: data.reduce((sum, r) => sum + r.reserveRevenue, 0),
     invoiceExpenses: data.reduce((sum, r) => sum + r.invoiceExpenses, 0),
     dailyResult: data.reduce((sum, r) => sum + r.dailyResult, 0),
+    guestCount: data.reduce((sum, r) => sum + (r.guestCount || 0), 0),
   };
 
   // Process events data
@@ -1120,6 +1124,7 @@ function FullMonthlyReport({ data, totals, unitName, startDate, endDate }) {
             <tr>
               <th className="px-2 py-2 text-left w-8"></th>
               <th className="px-3 py-2 text-left">Dátum</th>
+              <th className="px-3 py-2 text-right">Létszám</th>
               <th className="px-3 py-2 text-right">Novo</th>
               <th className="px-3 py-2 text-right">KP</th>
               <th className="px-3 py-2 text-right">Kártya</th>
@@ -1146,6 +1151,7 @@ function FullMonthlyReport({ data, totals, unitName, startDate, endDate }) {
                   <td className="px-3 py-2 cursor-pointer" onClick={() => navigate(`/daily?date=${row.date}&unit=${row.unit_id}`)}>
                     {formatDate(row.date)}
                   </td>
+                  <td className="px-3 py-2 text-right text-gray-700">{row.guest_count || 0}</td>
                   <td className="px-3 py-2 text-right">{formatCurrency(row.totalSoftware)}</td>
                   <td className="px-3 py-2 text-right text-green-600">{formatCurrency(row.cashRegisterCash)}</td>
                   <td className="px-3 py-2 text-right text-blue-600">{formatCurrency(row.cashRegisterCard)}</td>
@@ -1156,7 +1162,7 @@ function FullMonthlyReport({ data, totals, unitName, startDate, endDate }) {
                 </tr>
                 {expandedDays[row.date] && row.expenses?.length > 0 && (
                   <tr className="bg-red-50">
-                    <td colSpan={7} className="px-4 py-2">
+                    <td colSpan={8} className="px-4 py-2">
                       <div className="pl-8 space-y-1">
                         <p className="text-xs font-medium text-gray-500 mb-2">Napi költségek:</p>
                         {row.expenses.map((exp) => (
@@ -1174,6 +1180,7 @@ function FullMonthlyReport({ data, totals, unitName, startDate, endDate }) {
             <tr className="bg-gray-100 font-bold">
               <td className="px-2 py-2"></td>
               <td className="px-3 py-2">Összesen</td>
+              <td className="px-3 py-2 text-right text-gray-900">{totals.guestCount || 0}</td>
               <td className="px-3 py-2 text-right">{formatCurrency(totals.totalSoftware)}</td>
               <td className="px-3 py-2 text-right text-green-700">{formatCurrency(totals.cashRegisterCash)}</td>
               <td className="px-3 py-2 text-right text-blue-700">{formatCurrency(totals.cashRegisterCard)}</td>
@@ -1486,6 +1493,7 @@ function FullMonthlyAllUnitsReport({ data, totals, eventsData, eventsTotals, eve
             <thead className="bg-pepper-red bg-opacity-10">
               <tr>
                 <th className="px-3 py-2 text-left">Egység</th>
+                <th className="px-3 py-2 text-right">Létszám</th>
                 <th className="px-3 py-2 text-right">Novo</th>
                 <th className="px-3 py-2 text-right">KP</th>
                 <th className="px-3 py-2 text-right">Kártya</th>
@@ -1497,6 +1505,7 @@ function FullMonthlyAllUnitsReport({ data, totals, eventsData, eventsTotals, eve
               {data.map((row) => (
                 <tr key={row.unitName} className="hover:bg-gray-50">
                   <td className="px-3 py-2 font-medium">{row.unitName}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{row.guestCount || 0}</td>
                   <td className="px-3 py-2 text-right">{formatCurrency(row.totalSoftware)}</td>
                   <td className="px-3 py-2 text-right text-green-600">{formatCurrency(row.cashRegisterCash)}</td>
                   <td className="px-3 py-2 text-right text-blue-600">{formatCurrency(row.cashRegisterCard)}</td>
@@ -1508,6 +1517,7 @@ function FullMonthlyAllUnitsReport({ data, totals, eventsData, eventsTotals, eve
               ))}
               <tr className="bg-gray-100 font-bold">
                 <td className="px-3 py-2">Egységek összesen</td>
+                <td className="px-3 py-2 text-right text-gray-900">{totals.guestCount || 0}</td>
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.totalSoftware)}</td>
                 <td className="px-3 py-2 text-right text-green-700">{formatCurrency(totals.cashRegisterCash)}</td>
                 <td className="px-3 py-2 text-right text-blue-700">{formatCurrency(totals.cashRegisterCard)}</td>
