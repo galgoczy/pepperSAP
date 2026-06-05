@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Modal, Select } from '../components/common';
 import ExpenseList from '../components/expenses/ExpenseList';
+import ReceivedInvoicesList from '../components/expenses/ReceivedInvoicesList';
 import ExpenseForm from '../components/expenses/ExpenseForm';
 import EfoPaymentForm from '../components/expenses/EfoPaymentForm';
 import WagePaymentForm from '../components/expenses/WagePaymentForm';
@@ -35,6 +36,7 @@ export default function ExpensesPage() {
   const [startDate, setStartDate] = useState(getFirstDayOfMonth());
   const [endDate, setEndDate] = useState(getLastDayOfMonth());
   const [refreshKey, setRefreshKey] = useState(0);
+  const [activeTab, setActiveTab] = useState('expenses');
 
   const refreshList = () => setRefreshKey((k) => k + 1);
 
@@ -128,20 +130,58 @@ export default function ExpensesPage() {
         </Button>
       </div>
 
-      {/* Expense list */}
+      {/* Tabs (admin only) */}
+      {isAdmin && (
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex gap-6">
+            <button
+              onClick={() => setActiveTab('expenses')}
+              className={`whitespace-nowrap border-b-2 px-1 py-2 text-sm font-medium transition-colors ${
+                activeTab === 'expenses'
+                  ? 'border-pepper-red text-pepper-red'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Kifizetések
+            </button>
+            <button
+              onClick={() => setActiveTab('received')}
+              className={`whitespace-nowrap border-b-2 px-1 py-2 text-sm font-medium transition-colors ${
+                activeTab === 'received'
+                  ? 'border-pepper-red text-pepper-red'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Beérkezett számlák
+            </button>
+          </nav>
+        </div>
+      )}
+
+      {/* Content */}
       <Card>
-        <ExpenseList
-          key={refreshKey}
-          unitId={filterUnitId}
-          onEdit={handleEdit}
-          isAdmin={isAdmin}
-          startDate={startDate}
-          endDate={endDate}
-          onDateChange={(start, end) => {
-            setStartDate(start);
-            setEndDate(end);
-          }}
-        />
+        {isAdmin && activeTab === 'received' ? (
+          <ReceivedInvoicesList
+            key={`received-${refreshKey}`}
+            unitId={filterUnitId}
+            isAdmin={isAdmin}
+            startDate={startDate}
+            endDate={endDate}
+          />
+        ) : (
+          <ExpenseList
+            key={refreshKey}
+            unitId={filterUnitId}
+            onEdit={handleEdit}
+            isAdmin={isAdmin}
+            startDate={startDate}
+            endDate={endDate}
+            onDateChange={(start, end) => {
+              setStartDate(start);
+              setEndDate(end);
+            }}
+          />
+        )}
       </Card>
 
       {/* New expense form modal */}
