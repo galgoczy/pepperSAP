@@ -45,7 +45,12 @@ export function useActiveCashRegisters(unitId, date) {
         seen.add(reg.id);
         if (reg.status === 'active') registers.push(reg);
       }
-      registers.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+      // Sort by the unit's configured display order, falling back to creation
+      // time for any register without an explicit order.
+      const orderVal = (r) => (r.display_order == null ? Number.MAX_SAFE_INTEGER : r.display_order);
+      registers.sort(
+        (a, b) => orderVal(a) - orderVal(b) || (a.created_at || '').localeCompare(b.created_at || '')
+      );
       setCashRegisters(registers);
     } catch (error) {
       console.error('Error fetching cash registers:', error);

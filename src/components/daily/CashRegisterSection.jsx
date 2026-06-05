@@ -388,7 +388,7 @@ export default function CashRegisterSection({
             </div>
             <div className="mt-3">
               <Input
-                label="Göngyölt forgalom"
+                label="Göngyölt forgalom (pénztárgép zárás alján)"
                 type="number"
                 step="0.01"
                 value={formData.cumulative_revenue}

@@ -153,6 +153,7 @@ export function useCashRegisters(unitId) {
         .from('cash_registers')
         .select('*')
         .eq('unit_id', unitId)
+        .order('display_order', { ascending: true, nullsFirst: false })
         .order('created_at', { ascending: true });
 
       if (error) throw error;

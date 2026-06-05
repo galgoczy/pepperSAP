@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { User, Lock, Bell, Shield, Eye, Settings2, Star, Building, Landmark, Radio, PartyPopper } from 'lucide-react';
+import { User, Lock, Bell, Shield, Eye, Settings2, Star, Building, Landmark, Radio, PartyPopper, Calculator } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { useAllUnitRevenueSettings } from '../hooks/useUnitRevenueSettings';
 import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Input, Select, LoadingSpinner } from '../components/common';
+import CashRegisterOrderCard from '../components/units/CashRegisterOrderCard';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 
@@ -17,12 +18,13 @@ const REVENUE_TYPES = [
 ];
 
 export default function SettingsPage() {
-  const { user, profile, isAdmin, refetchProfile } = useAuth();
+  const { user, profile, isAdmin, unitId, refetchProfile } = useAuth();
   const { settings, updateSetting } = useAppSettings();
   const { allSettings, loading: settingsLoading, updateSettings } = useAllUnitRevenueSettings();
   const { units } = useUnits();
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || '');
+  const [orderUnitId, setOrderUnitId] = useState('');
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
@@ -100,6 +102,42 @@ export default function SettingsPage() {
           </div>
         </form>
       </Card>
+
+      {/* Cash register display order (unit users for their own unit; admin per unit) */}
+      {(isAdmin || profile?.role === 'unit') && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-gray-400" />
+              Pénztárgépek sorrendje
+            </div>
+          }
+        >
+          {isAdmin ? (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500">
+                Válaszd ki az egységet, majd állítsd be a pénztárgépek sorrendjét a
+                napi jelentéshez.
+              </p>
+              <Select
+                label="Egység"
+                value={orderUnitId}
+                onChange={(e) => setOrderUnitId(e.target.value)}
+                options={[
+                  { value: '', label: 'Válassz egységet...' },
+                  ...units
+                    .filter((u) => u.type === 'restaurant')
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((u) => ({ value: u.id, label: u.name })),
+                ]}
+              />
+              {orderUnitId && <CashRegisterOrderCard unitId={orderUnitId} />}
+            </div>
+          ) : (
+            <CashRegisterOrderCard unitId={unitId} />
+          )}
+        </Card>
+      )}
 
       {/* Password Section - disabled: accounts use Microsoft 365 sign-in */}
       <Card
