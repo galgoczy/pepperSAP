@@ -83,9 +83,12 @@ export default function WorkspacePage() {
 
   // Fetch users for mentions and assignees
   const fetchUsers = useCallback(async () => {
+    // NOTE: user_profiles has no email column (email lives on auth.users), so
+    // selecting it would error out the whole query and leave every author as
+    // "Ismeretlen". Only request columns that exist.
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('id, full_name, email, role');
+      .select('id, full_name, role');
 
     const usersMap = {};
     if (error) {
@@ -170,23 +173,34 @@ export default function WorkspacePage() {
       .select('*')
       .eq('channel_id', selectedChannel.id)
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
-    setSubscription(data);
+    // Remember where the user left off so we can mark the first unseen message.
+    setUnreadSince(data?.last_read_at || null);
 
-    // Remember where the user left off so we can mark the first unseen message,
-    // then advance last_read_at to now.
+    // Advance last_read_at to now. If there is no subscription row yet, create
+    // one — otherwise opening the channel would never clear its unread badge.
+    const nowIso = new Date().toISOString();
     if (data) {
-      setUnreadSince(data.last_read_at);
+      setSubscription(data);
       await supabase
         .from('workspace_subscriptions')
-        .update({ last_read_at: new Date().toISOString() })
+        .update({ last_read_at: nowIso })
         .eq('id', data.id);
-      // Clear the unread badge for this channel once it has been opened
-      setUnreadCounts((prev) => ({ ...prev, [selectedChannel.id]: 0 }));
     } else {
-      setUnreadSince(null);
+      const { data: created } = await supabase
+        .from('workspace_subscriptions')
+        .upsert(
+          { channel_id: selectedChannel.id, user_id: user.id, last_read_at: nowIso },
+          { onConflict: 'channel_id,user_id' }
+        )
+        .select()
+        .single();
+      setSubscription(created || null);
     }
+
+    // Clear the unread badge for this channel once it has been opened.
+    setUnreadCounts((prev) => ({ ...prev, [selectedChannel.id]: 0 }));
   }, [selectedChannel, user]);
 
   // Toggle email notifications
