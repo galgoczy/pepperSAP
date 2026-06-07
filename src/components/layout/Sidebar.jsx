@@ -77,7 +77,7 @@ export default function Sidebar({ isOpen, onClose }) {
           show: noProfileYet || isAdmin,
         },
         {
-          label: 'Kifizetések',
+          label: 'Számlák',
           icon: Receipt,
           to: '/expenses',
           show: noProfileYet || (!isEvents && !isAccountant),
