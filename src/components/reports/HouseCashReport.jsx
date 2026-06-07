@@ -3,6 +3,7 @@ import { Printer, ChevronDown, ChevronRight } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { Card, Button, LoadingSpinner } from '../common';
 import { useAppSettings } from '../../hooks/useAppSettings';
+import { useAuth } from '../../hooks/useAuth';
 import { fetchHouseCashSeries } from '../../lib/houseCashSeries';
 import { formatCurrency, formatDate } from '../../lib/utils';
 
@@ -178,7 +179,9 @@ function UnitSection({ unitName, cashRows, reserveRows, showReserve }) {
 
 export default function HouseCashReport({ unitId, units, startDate, endDate }) {
   const { settings } = useAppSettings();
-  const showReserve = settings.showReserve;
+  const { isAccountant } = useAuth();
+  // Accountants only get the reserve-less version of the house cash report.
+  const showReserve = settings.showReserve && !isAccountant;
   const [loading, setLoading] = useState(true);
   const [sections, setSections] = useState([]); // [{ unitId, unitName, cashRows, reserveRows }]
 

@@ -147,7 +147,7 @@ export default function Sidebar({ isOpen, onClose }) {
           label: 'Ügyfelek',
           icon: Contact,
           to: '/contacts',
-          show: true,
+          show: !isAccountant,
         },
         {
           label: 'Dealek',
@@ -183,7 +183,7 @@ export default function Sidebar({ isOpen, onClose }) {
           label: 'Készletek',
           icon: Package,
           to: '/inventory',
-          show: true,
+          show: !isAccountant,
         },
       ],
     },
@@ -213,7 +213,7 @@ export default function Sidebar({ isOpen, onClose }) {
           label: 'Támogatás',
           icon: LifeBuoy,
           to: '/support',
-          show: true,
+          show: !isAccountant,
         },
         {
           label: 'Beállítások',

@@ -116,16 +116,21 @@ export default function ReportsPage() {
     }
 
     if (isAccountant && !selectedUnit) {
-      // Accountant with "all units" selected - show only cash register reports
+      // Accountant with "all units" selected - cash register reports + house cash
+      // (reserve-less; the reserve is hidden for accountants in the report).
       return [
         { value: 'cash_register_all_simple', label: 'Pénztárgép forgalom - összes egység (egyszerű)' },
         { value: 'cash_register_all_detailed', label: 'Pénztárgép forgalom - összes egység (részletes)' },
+        { value: 'house_cash', label: 'Házipénztár - összes egység (tartalék nélkül)' },
       ];
     }
 
     if (isAccountant && selectedUnit) {
-      // Accountant with specific unit - show only cash register report
-      return [{ value: 'cash_register', label: 'Pénztárgép jelentés' }];
+      // Accountant with specific unit - cash register report + house cash
+      return [
+        { value: 'cash_register', label: 'Pénztárgép jelentés' },
+        { value: 'house_cash', label: 'Házipénztár (tartalék nélkül)' },
+      ];
     }
 
     if (isAdmin && !selectedUnit) {
