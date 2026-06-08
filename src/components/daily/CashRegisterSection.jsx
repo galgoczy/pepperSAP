@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp, Printer, Plus, Trash2 } from 'lucide-react';
+import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp, Printer, Plus, Trash2, Save } from 'lucide-react';
 import { Card, Input, Select, Button } from '../common';
 import { Textarea } from '../common/Input';
 import { formatCurrency, formatDate } from '../../lib/utils';
@@ -84,6 +84,8 @@ export default function CashRegisterSection({
   closureLabel = null,
   onRemove = null,
   validation = null,
+  onSave = null,
+  saving = false,
 }) {
   const [formData, setFormData] = useState(() => computeFormData(existingData));
   const prevExistingDataRef = useRef(existingData);
@@ -193,6 +195,14 @@ export default function CashRegisterSection({
     doc.save(filename);
   };
 
+  // Save the daily data AND download the discrepancy protocol PDF. Both the
+  // "Mentés" button and the printer button do the same thing (intentionally
+  // duplicated — different people reach for different buttons).
+  const saveWithProtocol = async () => {
+    generateDiscrepancyProtocol();
+    if (onSave) await onSave();
+  };
+
   const handleChange = (field, value) => {
     const newData = { ...formData, [field]: value };
     setFormData(newData);
@@ -233,6 +243,9 @@ export default function CashRegisterSection({
   );
 
   const hasDiscrepancy = !cardValidation.isValid;
+  // Whether this closure has any kind of discrepancy (terminal/card mismatch or a
+  // recorded elütés) — used to flag a collapsed register box in the background.
+  const hasAnyDiscrepancy = hasDiscrepancy || (formData.discrepancies || []).length > 0;
 
   return (
     <Card className="border-2 border-pepper-red border-opacity-30">
@@ -240,7 +253,9 @@ export default function CashRegisterSection({
       <button
         type="button"
         onClick={onToggleExpand}
-        className="w-full flex items-center justify-between p-4 -m-4 hover:bg-gray-50 rounded-lg transition-colors"
+        className={`w-full flex items-center justify-between p-4 -m-4 rounded-lg transition-colors ${
+          !expanded && hasAnyDiscrepancy ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'
+        }`}
       >
         <div className="flex items-center gap-3">
           <div className="p-2 bg-pepper-red bg-opacity-10 rounded-lg">
@@ -416,13 +431,25 @@ export default function CashRegisterSection({
                 )}
               </h4>
               <div className="flex gap-2">
+                {(formData.discrepancies || []).length > 0 && onSave && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={saveWithProtocol}
+                    loading={saving}
+                    title="Mentés és jegyzőkönyv letöltése"
+                  >
+                    <Save className="h-4 w-4" />
+                    Mentés + jegyzőkönyv
+                  </Button>
+                )}
                 {(formData.discrepancies || []).length > 0 && (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={generateDiscrepancyProtocol}
-                    title="Jegyzőkönyv nyomtatása"
+                    onClick={saveWithProtocol}
+                    title="Mentés és jegyzőkönyv nyomtatása"
                   >
                     <Printer className="h-4 w-4" />
                   </Button>

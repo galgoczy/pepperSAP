@@ -37,7 +37,7 @@ export default function DailyReport({ date, unitId }) {
 
   // Extract calculated data with defaults to prevent NaN
   const {
-    officialExpenses = 0,
+    officialCashExpenses = 0,
     nonOfficialExpenses = 0,
     totalCashRegisterCash = 0,
     totalCashRegisterCard = 0,
@@ -45,6 +45,9 @@ export default function DailyReport({ date, unitId }) {
     softwareRevenue = 0,
     totalDiscrepancies = 0,
     adjustedCash = 0,
+    efoPaymentsTotal = 0,
+    wagePaymentsTotal = 0,
+    wageTypeExtra = 0,
   } = calculatedData || {};
 
   // Use aggregated cash register totals from the hook (tips not included)
@@ -54,20 +57,21 @@ export default function DailyReport({ date, unitId }) {
     (cashRegisterTotals.vat_18_percent || 0) +
     (cashRegisterTotals.vat_27_percent || 0);
 
-  // Payment methods total (cash + card only, no SZÉP)
-  const paymentMethodsTotal = totalCashRegisterCash + totalCashRegisterCard;
+  // Payment methods: cash is shown net of discrepancies (elütés is not actual
+  // revenue), so the cash figure here equals the corrected cash (adjustedCash).
+  const paymentMethodsTotal = adjustedCash + totalCashRegisterCard;
 
   // Calculate house cash values
-  const efoPayments = parseFloat(houseCash?.official_employment_expenses) || 0;
   const changeAmount = parseFloat(houseCash?.change_amount) || 0;
   const extraIncome = parseFloat(houseCash?.other_extra_income) || 0;
 
-  // Pénztár zseb összesen: korrigált készpénz (készpénz - elütések) - hivatalos kifizetések - EFO
-  const officialTotal = adjustedCash - officialExpenses - efoPayments;
+  // Pénztár zseb összesen: korrigált készpénz (készpénz - elütések) mínusz az
+  // összes hivatalos KÉSZPÉNZES kifizetés: hivatalos kp számlák, az EFO és a bér
+  // hivatalos része (ezek mozgatják ténylegesen a pénztár zsebet).
+  const officialTotal = adjustedCash - officialCashExpenses - efoPaymentsTotal - wagePaymentsTotal;
 
   // Tartalék: szoftver-pénztárgép különbség + extra bevétel - nem számlás kifizetések
-  // - bér jellegű (nem hivatalos) kifizetések
-  const wageTypeExtra = calculatedData?.wageTypeExtra || 0;
+  // - az EFO és a bér NEM hivatalos része.
   const revenueDifference = softwareRevenue - totalCashRegisterRevenue;
   const reserveTotal = revenueDifference + extraIncome - nonOfficialExpenses - wageTypeExtra;
 
@@ -287,8 +291,10 @@ export default function DailyReport({ date, unitId }) {
               <h4 className="font-medium text-gray-700 mb-2">Fizetési módok</h4>
               <div className="grid grid-cols-3 gap-2 text-sm">
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
-                  <span className="text-gray-500">Készpénz:</span>
-                  <span>{formatCurrency(totalCashRegisterCash)}</span>
+                  <span className="text-gray-500">
+                    Készpénz{totalDiscrepancies > 0 ? ' (elütés levonva)' : ''}:
+                  </span>
+                  <span>{formatCurrency(adjustedCash)}</span>
                 </div>
                 <div className="flex justify-between p-2 bg-gray-50 rounded">
                   <span className="text-gray-500">Bankkártya:</span>
@@ -353,12 +359,16 @@ export default function DailyReport({ date, unitId }) {
                 </div>
               )}
               <div className="flex justify-between text-red-600">
-                <span>Hivatalos kifizetések:</span>
-                <span>-{formatCurrency(officialExpenses)}</span>
+                <span>Hivatalos kp számlák:</span>
+                <span>-{formatCurrency(officialCashExpenses)}</span>
               </div>
               <div className="flex justify-between text-red-600">
-                <span>EFO kifizetések:</span>
-                <span>-{formatCurrency(efoPayments)}</span>
+                <span>EFO (hivatalos rész):</span>
+                <span>-{formatCurrency(efoPaymentsTotal)}</span>
+              </div>
+              <div className="flex justify-between text-red-600">
+                <span>Bér (hivatalos rész):</span>
+                <span>-{formatCurrency(wagePaymentsTotal)}</span>
               </div>
               <div className="flex justify-between font-bold pt-2 border-t">
                 <span className="text-green-700">Összesen:</span>
@@ -394,6 +404,10 @@ export default function DailyReport({ date, unitId }) {
               <div className="flex justify-between text-red-600">
                 <span>Nem számlás kifizetések:</span>
                 <span>-{formatCurrency(nonOfficialExpenses)}</span>
+              </div>
+              <div className="flex justify-between text-red-600">
+                <span>EFO / bér (nem hivatalos rész):</span>
+                <span>-{formatCurrency(wageTypeExtra)}</span>
               </div>
               <div className="flex justify-between font-bold pt-2 border-t">
                 <span className="text-blue-700">Összesen:</span>

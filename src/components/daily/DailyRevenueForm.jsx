@@ -395,8 +395,10 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       };
     });
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  // Save everything (daily revenue + closures). Callable both from the form's
+  // submit buttons and from inside a cash register box (so the user doesn't have
+  // to scroll down to save).
+  const saveAll = async () => {
     if (!unitId) return;
 
     setSaving(true);
@@ -430,6 +432,11 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await saveAll();
   };
 
   const totalCashRegisterRevenue = closureList.reduce(
@@ -618,6 +625,8 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
                     closureLabel={multiple ? `${c.closureNumber}. zárás` : null}
                     onRemove={c.closureNumber > 1 ? () => removeClosure(register.id, c.closureNumber) : null}
                     validation={closureValidations[c.key]}
+                    onSave={saveAll}
+                    saving={saving}
                   />
                 ))}
                 {multiClosuresEnabled && (
@@ -633,6 +642,15 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
               </div>
             );
           })}
+
+          {/* Save/refresh right after the register boxes, so there's no need to
+              scroll to the bottom of the form. */}
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" onClick={saveAll} loading={saving}>
+              <Save className="h-4 w-4" />
+              {revenue ? 'Frissítés' : 'Mentés'}
+            </Button>
+          </div>
         </div>
       )}
 
