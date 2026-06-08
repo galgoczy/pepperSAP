@@ -1,8 +1,21 @@
-import { Wallet, Banknote } from 'lucide-react';
+import { Wallet, Banknote, Clock } from 'lucide-react';
 import { Card } from '../common';
 import { formatCurrency } from '../../lib/utils';
 
-export default function BalanceCard({ title, cash, reserve, pocketsTotal, loading, showReserve = true, onSelectPocket, compact = false }) {
+// Small marker shown next to a pocket when it has a pending (not yet approved)
+// transfer that is therefore not included in the balance.
+function PendingMark() {
+  return (
+    <span
+      className="inline-flex items-center text-amber-500"
+      title="Jóváhagyásra váró átküldés – még nincs beleszámolva az egyenlegbe"
+    >
+      <Clock className="h-4 w-4" />
+    </span>
+  );
+}
+
+export default function BalanceCard({ title, cash, reserve, pocketsTotal, loading, showReserve = true, onSelectPocket, compact = false, pendingCash = false, pendingReserve = false }) {
   if (loading) {
     return (
       <Card>
@@ -33,6 +46,7 @@ export default function BalanceCard({ title, cash, reserve, pocketsTotal, loadin
           <div className="flex items-center gap-2 text-green-700 mb-2">
             <Banknote className="h-5 w-5" />
             <span className="text-sm font-medium">Készpénz</span>
+            {pendingCash && <PendingMark />}
           </div>
           <p className={`${amountSize} font-bold ${cash >= 0 ? 'text-green-700' : 'text-red-600'}`}>
             {formatCurrency(cash)}
@@ -51,6 +65,7 @@ export default function BalanceCard({ title, cash, reserve, pocketsTotal, loadin
             <div className="flex items-center gap-2 text-blue-700 mb-2">
               <Wallet className="h-5 w-5" />
               <span className="text-sm font-medium">Tartalék</span>
+              {pendingReserve && <PendingMark />}
             </div>
             <p className={`${amountSize} font-bold ${reserve >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
               {formatCurrency(reserve)}

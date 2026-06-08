@@ -23,6 +23,17 @@ import BalanceBreakdownModal from '../components/cash/BalanceBreakdownModal';
 import OpeningBalanceRevisionsPanel from '../components/cash/OpeningBalanceRevisionsPanel';
 import { formatCurrency, formatDate, getToday } from '../lib/utils';
 
+// Pending (not yet approved) transfers per pocket, so a balance card can flag
+// amounts not yet included in the balance. `match` selects the transfers that
+// belong to the entity (a unit or central).
+function pendingPockets(transfers, match) {
+  const pending = (transfers || []).filter((t) => t.status === 'pending' && match(t));
+  return {
+    pendingCash: pending.some((t) => t.transfer_type === 'cash'),
+    pendingReserve: pending.some((t) => t.transfer_type === 'reserve'),
+  };
+}
+
 export default function CashManagementPage() {
   const { isAdmin, unitId, profile } = useAuth();
   const { units } = useUnits();
@@ -118,6 +129,7 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
         loading={balanceLoading}
         showReserve={showReserve}
         onSelectPocket={setBreakdownPocket}
+        {...pendingPockets(transfers, () => true)}
       />
 
       <BalanceBreakdownModal
@@ -181,6 +193,7 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
 // own clickable cash/reserve breakdown.
 function UnitBalanceMini({ unit, showReserve }) {
   const { balance, loading } = useUnitBalance(unit.id);
+  const { transfers } = useTransfers(unit.id);
   const [breakdownPocket, setBreakdownPocket] = useState(null);
 
   return (
@@ -193,6 +206,7 @@ function UnitBalanceMini({ unit, showReserve }) {
         showReserve={showReserve}
         compact
         onSelectPocket={setBreakdownPocket}
+        {...pendingPockets(transfers, () => true)}
       />
       <BalanceBreakdownModal
         isOpen={!!breakdownPocket}
@@ -334,6 +348,7 @@ function AdminCashView({ units }) {
             showReserve={settings.showReserve}
             compact
             onSelectPocket={() => setSelectedUnitId(null)}
+            {...pendingPockets(transfers, (t) => t.source_type === 'central' || t.destination_type === 'central')}
           />
           {/* Each unit */}
           {restaurantUnits.map((u) => (
@@ -418,6 +433,7 @@ function AdminCashView({ units }) {
             pocketsTotal={pocketsTotal}
             loading={centralLoading}
             showReserve={settings.showReserve}
+            {...pendingPockets(transfers, (t) => t.source_type === 'central' || t.destination_type === 'central')}
           />
 
           {/* Quick actions */}
