@@ -210,6 +210,7 @@ function AdminCashView({ units }) {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
   const [showTransferForm, setShowTransferForm] = useState(false);
+  const [showBankWithdrawal, setShowBankWithdrawal] = useState(false);
 
   const restaurantUnits = units.filter(u => u.type === 'restaurant');
 
@@ -361,6 +362,9 @@ function AdminCashView({ units }) {
             <Button variant="secondary" onClick={() => setShowRevisionModal(true)}>
               Revízió
             </Button>
+            <Button variant="secondary" onClick={() => setShowBankWithdrawal(true)}>
+              Készpénzfelvét (bank)
+            </Button>
           </div>
 
           {/* Pending transfers to central */}
@@ -469,6 +473,18 @@ function AdminCashView({ units }) {
         onSubmit={async (data) => {
           await createPayment(data);
           refetchCentral();
+        }}
+      />
+
+      {/* Bank cash withdrawal (auto-approved transfer) */}
+      <BankWithdrawalModal
+        isOpen={showBankWithdrawal}
+        onClose={() => setShowBankWithdrawal(false)}
+        units={restaurantUnits}
+        onSubmit={async (data) => {
+          await createTransfer(data);
+          refetchCentral();
+          refetchTransfers();
         }}
       />
 
@@ -807,6 +823,85 @@ function CentralPaymentModal({ isOpen, onClose, onSubmit }) {
         <div className="flex justify-end gap-3 pt-4">
           <Button type="button" variant="secondary" onClick={onClose}>Mégse</Button>
           <Button type="submit" loading={loading}>Mentés</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// Bank cash withdrawal: recorded as an auto-approved transfer from the bank
+// ('bank' source) into a chosen unit, or directly into Központ. No approval step.
+function BankWithdrawalModal({ isOpen, onClose, onSubmit, units }) {
+  const [loading, setLoading] = useState(false);
+  const initial = { amount: '', transfer_date: getToday(), destination: 'central', notes: '' };
+  const [formData, setFormData] = useState(initial);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const toCentral = formData.destination === 'central';
+      await onSubmit({
+        source_type: 'bank',
+        source_unit_id: null,
+        destination_type: toCentral ? 'central' : 'unit',
+        destination_unit_id: toCentral ? null : formData.destination,
+        amount: parseFloat(formData.amount),
+        transfer_date: formData.transfer_date,
+        transfer_type: 'cash',
+        notes: formData.notes,
+        status: 'approved',
+      });
+      onClose();
+      setFormData(initial);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Készpénzfelvét (bankból)" size="md">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <p className="text-sm text-gray-500">
+          A bankból felvett készpénz átküldésként kerül rögzítésre, jóváhagyás nélkül.
+          A célhely pénztára (egység vagy Központ) a felvett összeggel nő.
+        </p>
+        <Input
+          label="Összeg"
+          type="number"
+          step="1"
+          min="1"
+          value={formData.amount}
+          onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+          suffix="Ft"
+          required
+        />
+        <Select
+          label="Hová kerül"
+          value={formData.destination}
+          onChange={(e) => setFormData(prev => ({ ...prev, destination: e.target.value }))}
+          options={[
+            { value: 'central', label: 'Központ' },
+            ...units.map(u => ({ value: u.id, label: u.name })),
+          ]}
+        />
+        <Input
+          label="Dátum"
+          type="date"
+          value={formData.transfer_date}
+          onChange={(e) => setFormData(prev => ({ ...prev, transfer_date: e.target.value }))}
+          max={getToday()}
+          required
+        />
+        <Textarea
+          label="Megjegyzés"
+          value={formData.notes}
+          onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+          rows={2}
+        />
+        <div className="flex justify-end gap-3 pt-4">
+          <Button type="button" variant="secondary" onClick={onClose}>Mégse</Button>
+          <Button type="submit" loading={loading}>Rögzítés</Button>
         </div>
       </form>
     </Modal>

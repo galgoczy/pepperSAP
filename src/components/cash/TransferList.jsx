@@ -62,6 +62,7 @@ export default function TransferList({
   };
 
   const getSourceName = (transfer) => {
+    if (transfer.source_type === 'bank') return 'Bank';
     if (transfer.source_type === 'central') return 'Központ';
     return transfer.source_unit?.name || 'Ismeretlen';
   };

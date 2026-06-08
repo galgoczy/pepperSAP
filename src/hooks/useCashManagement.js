@@ -259,11 +259,18 @@ export function useTransfers(unitId, direction = 'all') {
 
   const createTransfer = async (transferData) => {
     try {
+      const userId = (await supabase.auth.getUser()).data.user?.id;
+      // Auto-approved transfers (e.g. bank cash withdrawals) need approval
+      // metadata set at insert time, since they skip the approval step.
+      const approvalFields = transferData.status === 'approved'
+        ? { approved_by: userId, approved_at: new Date().toISOString() }
+        : {};
       const { data, error } = await supabase
         .from('cash_transfers')
         .insert([{
           ...transferData,
-          initiated_by: (await supabase.auth.getUser()).data.user?.id,
+          ...approvalFields,
+          initiated_by: userId,
         }])
         .select()
         .single();
