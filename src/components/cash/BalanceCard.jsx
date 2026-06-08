@@ -35,7 +35,7 @@ export default function BalanceCard({ title, cash, reserve, pocketsTotal, loadin
     <Card>
       <h3 className={`font-semibold text-gray-900 ${compact ? 'text-base mb-3' : 'text-lg mb-4'}`}>{title}</h3>
 
-      <div className={`grid gap-4 ${showReserve ? 'md:grid-cols-2' : ''}`}>
+      <div className={`grid gap-4 ${showReserve && !compact ? 'md:grid-cols-2' : ''}`}>
         {/* Cash balance */}
         <button
           type="button"

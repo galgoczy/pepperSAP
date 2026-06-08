@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Send, Building2, Wallet, Edit2, Trash2, History } from 'lucide-react';
+import { Send, Building2, Wallet, Edit2, Trash2, History, LayoutGrid } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { useAppSettings } from '../hooks/useAppSettings';
@@ -221,10 +221,11 @@ function UnitBalanceMini({ unit, showReserve }) {
 
 // Admin/Central view
 function AdminCashView({ units }) {
-  const [activeTab, setActiveTab] = useState('central');
-  // 'all' = overview of Központ + every unit (default), null = Központ (tabs),
-  // a unit id = that single unit's house cash view.
-  const [selectedUnitId, setSelectedUnitId] = useState('all');
+  // Default tab is the all-units overview; the other tabs (central management,
+  // transfers, payments, revisions, pockets) stay available.
+  const [activeTab, setActiveTab] = useState('overview');
+  // null = central/tabbed admin view, a unit id = that single unit's view.
+  const [selectedUnitId, setSelectedUnitId] = useState(null);
   const { settings } = useAppSettings();
   const { balance: centralBalance, pocketsTotal, loading: centralLoading, refetch: refetchCentral } = useCentralBalance();
   const {
@@ -304,6 +305,7 @@ function AdminCashView({ units }) {
   };
 
   const tabs = [
+    { id: 'overview', label: 'Áttekintés', icon: LayoutGrid },
     { id: 'central', label: 'Központ', icon: Building2 },
     { id: 'transfers', label: `Átküldések${pendingTransfers.length > 0 ? ` (${pendingTransfers.length})` : ''}` },
     { id: 'payments', label: 'Kifizetések' },
@@ -312,52 +314,11 @@ function AdminCashView({ units }) {
   ];
 
   const unitOptions = [
-    { value: 'all', label: 'Minden egység' },
     { value: '', label: 'Központ' },
     ...restaurantUnits.map(u => ({ value: u.id, label: u.name })),
   ];
 
   const selectedUnit = restaurantUnits.find(u => u.id === selectedUnitId);
-
-  // Default overview: Központ + every unit's house cash, stacked and compact,
-  // each clickable for the breakdown details.
-  if (selectedUnitId === 'all') {
-    return (
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Házipénztárak</h1>
-            <p className="text-gray-500 mt-1">Központ és az összes egység házipénztára</p>
-          </div>
-          <Select
-            value="all"
-            onChange={(e) => handleUnitChange(e.target.value)}
-            options={unitOptions}
-            className="w-48"
-          />
-        </div>
-
-        <div className="space-y-4">
-          {/* Központ */}
-          <BalanceCard
-            title="Központ"
-            cash={centralBalance.cash}
-            reserve={centralBalance.reserve}
-            pocketsTotal={pocketsTotal}
-            loading={centralLoading}
-            showReserve={settings.showReserve}
-            compact
-            onSelectPocket={() => setSelectedUnitId(null)}
-            {...pendingPockets(transfers, (t) => t.source_type === 'central' || t.destination_type === 'central')}
-          />
-          {/* Each unit */}
-          {restaurantUnits.map((u) => (
-            <UnitBalanceMini key={u.id} unit={u} showReserve={settings.showReserve} />
-          ))}
-        </div>
-      </div>
-    );
-  }
 
   // If a unit is selected, show UnitCashView for that unit
   if (selectedUnitId) {
@@ -424,6 +385,50 @@ function AdminCashView({ units }) {
       </div>
 
       {/* Tab content */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          {/* Központ - a bit larger than the units */}
+          <BalanceCard
+            title="Központ"
+            cash={centralBalance.cash}
+            reserve={centralBalance.reserve}
+            pocketsTotal={pocketsTotal}
+            loading={centralLoading}
+            showReserve={settings.showReserve}
+            onSelectPocket={() => setActiveTab('central')}
+            {...pendingPockets(transfers, (t) => t.source_type === 'central' || t.destination_type === 'central')}
+          />
+
+          {/* Units - small boxes, several per row */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {restaurantUnits.map((u) => (
+              <UnitBalanceMini key={u.id} unit={u} showReserve={settings.showReserve} />
+            ))}
+          </div>
+
+          {/* Recent transfers */}
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">Legutóbbi átküldések</h2>
+            <TransferList
+              transfers={transfers.slice(0, 8)}
+              loading={transfersLoading}
+              onApprove={handleApprove}
+              onModify={handleModify}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              isAdmin={true}
+              showActions={true}
+            />
+          </div>
+
+          {/* Recent transactions */}
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">Legutóbbi tranzakciók</h2>
+            <CashHistoryList history={history} loading={historyLoading} showReserve={settings.showReserve} />
+          </div>
+        </div>
+      )}
+
       {activeTab === 'central' && (
         <div className="space-y-6">
           <BalanceCard
