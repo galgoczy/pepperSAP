@@ -220,6 +220,138 @@ export async function fetchHouseCashSeries(unitId, endDate) {
   return { byDate, orderedDates };
 }
 
+// Computes the Központ (central) daily house-cash series, mirroring the unit
+// series shape (cashOpening/cashRevenue/cashExpenses/cashTransfers/cashClosing
+// and reserve equivalents) so it can be rendered with the same table.
+//
+// Central cash movement matches useCentralBalance:
+//   cash    = transfers IN (to central) - transfers OUT (from central)
+//             - central payments - active pockets + revisions
+// Mapped into the unit row shape:
+//   revenue   = transfers IN
+//   expenses  = central payments + active pockets
+//   transfers = -(transfers OUT) + revisions   (signed)
+export async function fetchCentralHouseCashSeries(endDate) {
+  const dateFilter = (q, col) => (endDate ? q.lte(col, endDate) : q);
+
+  const [inRes, outRes, payRes, revRes, pocketRes] = await Promise.all([
+    dateFilter(
+      supabase
+        .from('cash_transfers')
+        .select('amount, transfer_type, transfer_date, source_type, source_unit_id')
+        .eq('destination_type', 'central')
+        .eq('status', 'approved'),
+      'transfer_date'
+    ),
+    dateFilter(
+      supabase
+        .from('cash_transfers')
+        .select('amount, transfer_type, transfer_date, destination_unit_id')
+        .eq('source_type', 'central')
+        .eq('status', 'approved'),
+      'transfer_date'
+    ),
+    dateFilter(
+      supabase
+        .from('central_payments')
+        .select('amount, payment_type, payment_date, supplier_name, item_description'),
+      'payment_date'
+    ),
+    dateFilter(
+      supabase
+        .from('cash_revisions')
+        .select('discrepancy_amount, revision_type, revision_date, notes'),
+      'revision_date'
+    ),
+    supabase
+      .from('cash_pockets')
+      .select('current_amount, status, created_at, name')
+      .eq('status', 'active'),
+  ]);
+
+  const byDate = new Map();
+  const ensure = (d) => {
+    if (!byDate.has(d)) {
+      byDate.set(d, {
+        date: d,
+        cashRevenue: 0, cashDiscrepancies: 0, cashExpenses: 0, cashTransfers: 0, cashPaymentItems: [],
+        reserveRevenue: 0, reserveExpenses: 0, reserveTransfers: 0, reservePaymentItems: [],
+      });
+    }
+    return byDate.get(d);
+  };
+
+  // Transfers IN -> revenue
+  (inRes.data || []).forEach((t) => {
+    const amount = parseFloat(t.amount) || 0;
+    const row = ensure(t.transfer_date);
+    if (t.transfer_type === 'reserve') row.reserveRevenue += amount;
+    else row.cashRevenue += amount;
+  });
+
+  // Transfers OUT -> negative transfers
+  (outRes.data || []).forEach((t) => {
+    const amount = parseFloat(t.amount) || 0;
+    const row = ensure(t.transfer_date);
+    if (t.transfer_type === 'reserve') row.reserveTransfers -= amount;
+    else row.cashTransfers -= amount;
+  });
+
+  // Central payments -> expenses
+  (payRes.data || []).forEach((p) => {
+    const amount = parseFloat(p.amount) || 0;
+    const row = ensure(p.payment_date);
+    const label = (p.supplier_name || p.item_description || 'Kifizetés');
+    if (p.payment_type === 'reserve') {
+      row.reserveExpenses += amount;
+      row.reservePaymentItems.push({ label, amount });
+    } else {
+      row.cashExpenses += amount;
+      row.cashPaymentItems.push({ label, amount });
+    }
+  });
+
+  // Revisions -> signed adjustment into transfers bucket
+  (revRes.data || []).forEach((r) => {
+    const amount = parseFloat(r.discrepancy_amount) || 0;
+    const row = ensure(r.revision_date);
+    if (r.revision_type === 'reserve') row.reserveTransfers += amount;
+    else row.cashTransfers += amount;
+  });
+
+  // Active pockets -> cash expenses on creation date (current_amount still held)
+  (pocketRes.data || []).forEach((p) => {
+    const amount = parseFloat(p.current_amount) || 0;
+    if (amount === 0) return;
+    const d = (p.created_at || '').slice(0, 10);
+    if (!d) return;
+    const row = ensure(d);
+    row.cashExpenses += amount;
+    row.cashPaymentItems.push({ label: `Zseb${p.name ? ` - ${p.name}` : ''}`, amount });
+  });
+
+  // Running balances (central starts from zero, no anchors).
+  const orderedDates = Array.from(byDate.keys()).sort((a, b) => a.localeCompare(b));
+  let cashRunning = 0;
+  let reserveRunning = 0;
+  orderedDates.forEach((d) => {
+    const row = byDate.get(d);
+    const cashMovement = row.cashRevenue - row.cashDiscrepancies - row.cashExpenses + row.cashTransfers;
+    row.cashOpening = cashRunning;
+    row.cashMovement = cashMovement;
+    row.cashClosing = cashRunning + cashMovement;
+    cashRunning = row.cashClosing;
+
+    const reserveMovement = row.reserveRevenue - row.reserveExpenses + row.reserveTransfers;
+    row.reserveOpening = reserveRunning;
+    row.reserveMovement = reserveMovement;
+    row.reserveClosing = reserveRunning + reserveMovement;
+    reserveRunning = row.reserveClosing;
+  });
+
+  return { byDate, orderedDates };
+}
+
 // Opening balances for a given date.
 // If the date itself has a series row, its computed opening is returned — this
 // already accounts for any approved opening-balance revision anchored on that

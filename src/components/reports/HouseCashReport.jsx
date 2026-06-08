@@ -4,7 +4,7 @@ import { jsPDF } from 'jspdf';
 import { Card, Button, LoadingSpinner } from '../common';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { useAuth } from '../../hooks/useAuth';
-import { fetchHouseCashSeries } from '../../lib/houseCashSeries';
+import { fetchHouseCashSeries, fetchCentralHouseCashSeries } from '../../lib/houseCashSeries';
 import { formatCurrency, formatDate } from '../../lib/utils';
 
 function sanitizeForPdf(text) {
@@ -205,6 +205,17 @@ export default function HouseCashReport({ unitId, units, startDate, endDate }) {
           };
         })
       );
+      // In the all-units view, include Központ as its own daily series.
+      if (!unitId) {
+        const centralSeries = await fetchCentralHouseCashSeries(endDate);
+        const centralRows = rowsInRange(centralSeries, startDate, endDate);
+        results.unshift({
+          unitId: 'central',
+          unitName: 'Központ',
+          cashRows: centralRows,
+          reserveRows: centralRows,
+        });
+      }
       setSections(results);
     } catch (e) {
       console.error('Error loading house cash report:', e);
@@ -335,7 +346,7 @@ export default function HouseCashReport({ unitId, units, startDate, endDate }) {
         sections.map((sec) => (
           <Card key={sec.unitId}>
             <UnitSection
-              unitName={targetUnits.length > 1 ? sec.unitName : null}
+              unitName={sections.length > 1 ? sec.unitName : null}
               cashRows={sec.cashRows}
               reserveRows={sec.reserveRows}
               showReserve={showReserve}
