@@ -245,7 +245,10 @@ export function useTransfers(unitId, direction = 'all') {
     }
   };
 
-  const modifyTransfer = async (transferId, newAmount) => {
+  const modifyTransfer = async (transferId, changes) => {
+    // Backward compatible: a bare number is treated as the new amount.
+    const { amount, transfer_date, transfer_type } =
+      typeof changes === 'object' && changes !== null ? changes : { amount: changes };
     try {
       // Get current transfer to save original amount
       const { data: current } = await supabase
@@ -254,15 +257,19 @@ export function useTransfers(unitId, direction = 'all') {
         .eq('id', transferId)
         .single();
 
+      const update = {
+        amount,
+        original_amount: current.original_amount || current.amount,
+        status: 'modified',
+        approved_by: (await supabase.auth.getUser()).data.user?.id,
+        approved_at: new Date().toISOString(),
+      };
+      if (transfer_date) update.transfer_date = transfer_date;
+      if (transfer_type) update.transfer_type = transfer_type;
+
       const { error } = await supabase
         .from('cash_transfers')
-        .update({
-          amount: newAmount,
-          original_amount: current.original_amount || current.amount,
-          status: 'modified',
-          approved_by: (await supabase.auth.getUser()).data.user?.id,
-          approved_at: new Date().toISOString(),
-        })
+        .update(update)
         .eq('id', transferId);
 
       if (error) throw error;
@@ -277,11 +284,18 @@ export function useTransfers(unitId, direction = 'all') {
   };
 
   // Edit a still-pending transfer's amount (before approval). Keeps it pending.
-  const editPendingTransfer = async (transferId, newAmount) => {
+  const editPendingTransfer = async (transferId, changes) => {
+    // Backward compatible: a bare number is treated as the new amount.
+    const { amount, transfer_date, transfer_type } =
+      typeof changes === 'object' && changes !== null ? changes : { amount: changes };
     try {
+      const update = { amount };
+      if (transfer_date) update.transfer_date = transfer_date;
+      if (transfer_type) update.transfer_type = transfer_type;
+
       const { error } = await supabase
         .from('cash_transfers')
-        .update({ amount: newAmount })
+        .update(update)
         .eq('id', transferId)
         .eq('status', 'pending');
 

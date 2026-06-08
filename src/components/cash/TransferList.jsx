@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import { Check, Edit2, ArrowRight, Clock, CheckCircle, XCircle, Trash2 } from 'lucide-react';
-import { Card, Button, Badge, Modal, Input } from '../common';
-import { formatCurrency, formatDate } from '../../lib/utils';
+import { Card, Button, Badge, Modal, Input, Select } from '../common';
+import { formatCurrency, formatDate, getToday } from '../../lib/utils';
+
+const TYPE_OPTIONS = [
+  { value: 'cash', label: 'Készpénz' },
+  { value: 'reserve', label: 'Tartalék' },
+];
 
 const STATUS_BADGES = {
   pending: { variant: 'warning', label: 'Függőben', icon: Clock },
@@ -24,8 +29,12 @@ export default function TransferList({
 }) {
   const [modifyModal, setModifyModal] = useState(null);
   const [newAmount, setNewAmount] = useState('');
+  const [modifyDate, setModifyDate] = useState('');
+  const [modifyType, setModifyType] = useState('cash');
   const [editModal, setEditModal] = useState(null);
   const [editAmount, setEditAmount] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editType, setEditType] = useState('cash');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   if (loading) {
@@ -51,11 +60,17 @@ export default function TransferList({
   const handleModifyClick = (transfer) => {
     setModifyModal(transfer);
     setNewAmount(transfer.amount.toString());
+    setModifyDate(transfer.transfer_date || getToday());
+    setModifyType(transfer.transfer_type || 'cash');
   };
 
   const handleModifySubmit = () => {
     if (modifyModal && newAmount) {
-      onModify(modifyModal.id, parseFloat(newAmount));
+      onModify(modifyModal.id, {
+        amount: parseFloat(newAmount),
+        transfer_date: modifyDate,
+        transfer_type: modifyType,
+      });
       setModifyModal(null);
       setNewAmount('');
     }
@@ -75,11 +90,17 @@ export default function TransferList({
   const handleEditClick = (transfer) => {
     setEditModal(transfer);
     setEditAmount(transfer.amount.toString());
+    setEditDate(transfer.transfer_date || getToday());
+    setEditType(transfer.transfer_type || 'cash');
   };
 
   const handleEditSubmit = () => {
     if (editModal && editAmount) {
-      onEdit(editModal.id, parseFloat(editAmount));
+      onEdit(editModal.id, {
+        amount: parseFloat(editAmount),
+        transfer_date: editDate,
+        transfer_type: editType,
+      });
       setEditModal(null);
       setEditAmount('');
     }
@@ -224,7 +245,7 @@ export default function TransferList({
       <Modal
         isOpen={!!modifyModal}
         onClose={() => setModifyModal(null)}
-        title="Összeg módosítása"
+        title="Átküldés módosítása"
         size="sm"
       >
         <div className="space-y-4">
@@ -240,6 +261,19 @@ export default function TransferList({
             onChange={(e) => setNewAmount(e.target.value)}
             suffix="Ft"
             required
+          />
+          <Input
+            label="Dátum"
+            type="date"
+            value={modifyDate}
+            onChange={(e) => setModifyDate(e.target.value)}
+            required
+          />
+          <Select
+            label="Típus"
+            value={modifyType}
+            onChange={(e) => setModifyType(e.target.value)}
+            options={TYPE_OPTIONS}
           />
           <div className="flex justify-end gap-3 pt-4">
             <Button variant="secondary" onClick={() => setModifyModal(null)}>
@@ -261,7 +295,7 @@ export default function TransferList({
       >
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
-            Jóváhagyás előtt módosíthatod az összeget. Az átküldés továbbra is függőben marad.
+            Jóváhagyás előtt módosíthatod az összeget, a dátumot és a típust. Az átküldés továbbra is függőben marad.
           </p>
           <Input
             label="Összeg"
@@ -272,6 +306,19 @@ export default function TransferList({
             onChange={(e) => setEditAmount(e.target.value)}
             suffix="Ft"
             required
+          />
+          <Input
+            label="Dátum"
+            type="date"
+            value={editDate}
+            onChange={(e) => setEditDate(e.target.value)}
+            required
+          />
+          <Select
+            label="Típus"
+            value={editType}
+            onChange={(e) => setEditType(e.target.value)}
+            options={TYPE_OPTIONS}
           />
           <div className="flex justify-end gap-3 pt-4">
             <Button variant="secondary" onClick={() => setEditModal(null)}>
