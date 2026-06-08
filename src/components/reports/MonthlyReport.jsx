@@ -876,10 +876,52 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
   return { data, totals };
 }
 
+// Threshold/tolerance constants for auto-detecting cash-register discrepancies,
+// kept in sync with the daily form (validateCardPayments / recomputeDerived).
+const TERMINAL_DISCREPANCY_THRESHOLD = 100; // Ft
+const CUMULATIVE_TOLERANCE = 1; // Ft
+
+// Auto-mark each closure (day row) in the detailed report: whether a discrepancy
+// exists and whether a protocol ("jegyzőkönyv") was recorded for it.
+//  - terminal/card discrepancy: |card - terminal| over threshold; considered
+//    handled when a terminal discrepancy note was entered.
+//  - cumulative ("göngyölt") discrepancy: the Z-report cumulative does not match
+//    the previous cumulative + this closure's turnover; considered handled when
+//    an elütés (discrepancies[]) entry was recorded.
+// Sets day.protocolMark to 'ok' (discrepancy, every protocol present), 'missing'
+// (discrepancy, at least one protocol missing) or null (no discrepancy).
+function computeRegisterProtocolMarks(days) {
+  // Evaluate the cumulative chain in the order the closures were recorded.
+  const ordered = [...days].sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return (a.closureSeq ?? 0) - (b.closureSeq ?? 0);
+  });
+  let prevCumulative = null;
+  ordered.forEach((day) => {
+    const termDisc = Math.abs(day.discrepancy) > TERMINAL_DISCREPANCY_THRESHOLD;
+    const termHandled = day.terminalNote.length > 0;
+
+    let cumDisc = false;
+    if (prevCumulative != null && prevCumulative > 0 && day.cumulative > 0) {
+      const expected = prevCumulative + day.turnover;
+      cumDisc = Math.abs(day.cumulative - expected) > CUMULATIVE_TOLERANCE;
+    }
+    const cumHandled = day.discrepancyCount > 0;
+    if (day.cumulative > 0) prevCumulative = day.cumulative;
+
+    if (!termDisc && !cumDisc) {
+      day.protocolMark = null;
+    } else {
+      const allHandled = (!termDisc || termHandled) && (!cumDisc || cumHandled);
+      day.protocolMark = allHandled ? 'ok' : 'missing';
+    }
+  });
+}
+
 async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, terminal_discrepancy_note, discrepancies, cumulative_revenue, closure_number, closure_sequence, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: true });
@@ -928,9 +970,18 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
         cash: parseFloat(cr.cash_payment) || 0,
         card: parseFloat(cr.card_payment) || 0,
         terminal_card: parseFloat(cr.terminal_card) || 0,
+        // Closure-level fields used to auto-detect discrepancies and whether a
+        // protocol ("jegyzőkönyv") was recorded for them (see computeProtocolMark).
+        terminalNote: (cr.terminal_discrepancy_note || '').trim(),
+        discrepancyCount: Array.isArray(cr.discrepancies) ? cr.discrepancies.length : 0,
+        cumulative: parseFloat(cr.cumulative_revenue) || 0,
+        closureSeq: cr.closure_sequence ?? cr.closure_number ?? null,
       };
       dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27 + dayData.tips;
       dayData.discrepancy = dayData.card - dayData.terminal_card;
+      // Turnover that the cumulative (göngyölt) Z-report increments by: VAT
+      // buckets only, tips excluded (matches the daily form's validation).
+      dayData.turnover = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27;
 
       unitData[unitId].registers[apNumber].days.push(dayData);
 
@@ -968,12 +1019,13 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
     },
   })).sort((a, b) => (a.unitName || '').localeCompare(b.unitName || ''));
 
-  // Add discrepancy to register totals
+  // Add discrepancy to register totals and auto-mark protocol status per closure
   data.forEach((unit) => {
     (unit.registers || []).forEach((reg) => {
       if (reg.totals) {
         reg.totals.discrepancy = reg.totals.card - reg.totals.terminal_card;
       }
+      computeRegisterProtocolMarks(reg.days || []);
     });
   });
 
@@ -1781,6 +1833,11 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
   return (
     <Card title="Pénztárgép forgalom - összes egység (részletes)">
       <div className="space-y-6">
+        <p className="text-xs text-gray-500">
+          <span className="font-semibold">Jkv.</span> oszlop: eltérés esetén (terminál/kártya vagy göngyölt) automatikus jelölés –{' '}
+          <span className="text-green-600 font-bold">✓</span> jegyzőkönyv elkészült,{' '}
+          <span className="text-red-600 font-bold">✗</span> hiányzó jegyzőkönyv. Üres = nincs eltérés.
+        </p>
         {data.map((unit, unitIdx) => (
           <div key={`unit-${unitIdx}-${unit.unitName}`} className="border border-gray-200 rounded-lg overflow-hidden">
             <div className="bg-pepper-red bg-opacity-10 px-4 py-2 font-bold text-gray-900">
@@ -1801,6 +1858,7 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                     <th className="px-3 py-2 text-right">Kártya</th>
                     <th className="px-3 py-2 text-right">Term.</th>
                     <th className="px-3 py-2 text-right">Elt.</th>
+                    <th className="px-3 py-2 text-center" title="Eltérés esetén: van-e jegyzőkönyv">Jkv.</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -1808,7 +1866,7 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                     <React.Fragment key={`reg-${unitIdx}-${regIdx}-${reg.ap_number}`}>
                       {/* Register header row */}
                       <tr className="bg-blue-50">
-                        <td className="px-3 py-2 font-bold text-blue-800" colSpan={11}>
+                        <td className="px-3 py-2 font-bold text-blue-800" colSpan={12}>
                           Pénztárgép: {reg.ap_number} {reg.name && `(${reg.name})`}
                         </td>
                       </tr>
@@ -1828,6 +1886,14 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                           <td className={`px-3 py-2 text-right ${day.discrepancy !== 0 ? 'text-orange-600 font-medium' : ''}`}>
                             {formatCurrency(day.discrepancy)}
                           </td>
+                          <td className="px-3 py-2 text-center">
+                            {day.protocolMark === 'ok' && (
+                              <span className="text-green-600 font-bold" title="Eltérés – jegyzőkönyv elkészült">✓</span>
+                            )}
+                            {day.protocolMark === 'missing' && (
+                              <span className="text-red-600 font-bold" title="Eltérés – hiányzó jegyzőkönyv">✗</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                       {/* Register subtotal row */}
@@ -1845,6 +1911,7 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                         <td className={`px-3 py-2 text-right ${reg.totals?.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
                           {formatCurrency(reg.totals?.discrepancy)}
                         </td>
+                        <td className="px-3 py-2"></td>
                       </tr>
                     </React.Fragment>
                   ))}
@@ -1863,6 +1930,7 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                     <td className={`px-3 py-2 text-right ${unit.totals?.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
                       {formatCurrency(unit.totals?.discrepancy)}
                     </td>
+                    <td className="px-3 py-2"></td>
                   </tr>
                 </tbody>
               </table>
