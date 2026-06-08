@@ -177,10 +177,40 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
   );
 }
 
+// Compact balance card for one unit in the "Minden egység" overview, with its
+// own clickable cash/reserve breakdown.
+function UnitBalanceMini({ unit, showReserve }) {
+  const { balance, loading } = useUnitBalance(unit.id);
+  const [breakdownPocket, setBreakdownPocket] = useState(null);
+
+  return (
+    <>
+      <BalanceCard
+        title={unit.name}
+        cash={balance.cash}
+        reserve={balance.reserve}
+        loading={loading}
+        showReserve={showReserve}
+        compact
+        onSelectPocket={setBreakdownPocket}
+      />
+      <BalanceBreakdownModal
+        isOpen={!!breakdownPocket}
+        onClose={() => setBreakdownPocket(null)}
+        unitId={unit.id}
+        pocket={breakdownPocket || 'cash'}
+        title={breakdownPocket === 'reserve' ? `${unit.name} – Tartalék összetétel` : `${unit.name} – Készpénz összetétel`}
+      />
+    </>
+  );
+}
+
 // Admin/Central view
 function AdminCashView({ units }) {
   const [activeTab, setActiveTab] = useState('central');
-  const [selectedUnitId, setSelectedUnitId] = useState(null);
+  // 'all' = overview of Központ + every unit (default), null = Központ (tabs),
+  // a unit id = that single unit's house cash view.
+  const [selectedUnitId, setSelectedUnitId] = useState('all');
   const { settings } = useAppSettings();
   const { balance: centralBalance, pocketsTotal, loading: centralLoading, refetch: refetchCentral } = useCentralBalance();
   const {
@@ -268,11 +298,51 @@ function AdminCashView({ units }) {
   ];
 
   const unitOptions = [
+    { value: 'all', label: 'Minden egység' },
     { value: '', label: 'Központ' },
     ...restaurantUnits.map(u => ({ value: u.id, label: u.name })),
   ];
 
   const selectedUnit = restaurantUnits.find(u => u.id === selectedUnitId);
+
+  // Default overview: Központ + every unit's house cash, stacked and compact,
+  // each clickable for the breakdown details.
+  if (selectedUnitId === 'all') {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Házipénztárak</h1>
+            <p className="text-gray-500 mt-1">Központ és az összes egység házipénztára</p>
+          </div>
+          <Select
+            value="all"
+            onChange={(e) => handleUnitChange(e.target.value)}
+            options={unitOptions}
+            className="w-48"
+          />
+        </div>
+
+        <div className="space-y-4">
+          {/* Központ */}
+          <BalanceCard
+            title="Központ"
+            cash={centralBalance.cash}
+            reserve={centralBalance.reserve}
+            pocketsTotal={pocketsTotal}
+            loading={centralLoading}
+            showReserve={settings.showReserve}
+            compact
+            onSelectPocket={() => setSelectedUnitId(null)}
+          />
+          {/* Each unit */}
+          {restaurantUnits.map((u) => (
+            <UnitBalanceMini key={u.id} unit={u} showReserve={settings.showReserve} />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   // If a unit is selected, show UnitCashView for that unit
   if (selectedUnitId) {

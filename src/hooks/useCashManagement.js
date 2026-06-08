@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { fetchHouseCashSeries } from '../lib/houseCashSeries';
 
 /**
  * Hook for calculating running balances for a unit
@@ -17,86 +18,21 @@ export function useUnitBalance(unitId) {
     }
 
     try {
-      // Fetch all relevant data in parallel
-      const [
-        revenuesResult,
-        expensesResult,
-        transfersOutResult,
-        transfersInResult,
-      ] = await Promise.all([
-        // Daily revenues with cash register data
-        supabase
-          .from('daily_revenue')
-          .select('id, total_revenue, cash_register_revenue(cash_payment, card_payment, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips)')
-          .eq('unit_id', unitId),
-        // Expenses
-        supabase
-          .from('expenses')
-          .select('amount, is_official, payment_method')
-          .eq('unit_id', unitId),
-        // Transfers OUT (approved)
-        supabase
-          .from('cash_transfers')
-          .select('amount, transfer_type')
-          .eq('source_unit_id', unitId)
-          .eq('status', 'approved'),
-        // Transfers IN (approved)
-        supabase
-          .from('cash_transfers')
-          .select('amount, transfer_type')
-          .eq('destination_unit_id', unitId)
-          .eq('status', 'approved'),
-      ]);
-
-      // Calculate cash register totals
-      let totalCash = 0;
-      let totalCashRegisterRevenue = 0;
-      (revenuesResult.data || []).forEach(rev => {
-        (rev.cash_register_revenue || []).forEach(cr => {
-          totalCash += parseFloat(cr.cash_payment) || 0;
-          totalCashRegisterRevenue +=
-            (parseFloat(cr.vat_0_percent) || 0) +
-            (parseFloat(cr.vat_5_percent) || 0) +
-            (parseFloat(cr.vat_18_percent) || 0) +
-            (parseFloat(cr.vat_27_percent) || 0) +
-            (parseFloat(cr.tips) || 0);
-        });
-      });
-
-      // Calculate software revenue total
-      const totalSoftwareRevenue = (revenuesResult.data || []).reduce(
-        (sum, r) => sum + (parseFloat(r.total_revenue) || 0),
-        0
-      );
-
-      // Calculate expenses
-      const expenses = expensesResult.data || [];
-      const officialCashExpenses = expenses
-        .filter(e => e.is_official && e.payment_method === 'cash')
-        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      const nonOfficialExpenses = expenses
-        .filter(e => !e.is_official)
-        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-
-      // Calculate transfers
-      const transfersOutCash = (transfersOutResult.data || [])
-        .filter(t => t.transfer_type === 'cash')
-        .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
-      const transfersOutReserve = (transfersOutResult.data || [])
-        .filter(t => t.transfer_type === 'reserve')
-        .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
-      const transfersInCash = (transfersInResult.data || [])
-        .filter(t => t.transfer_type === 'cash')
-        .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
-      const transfersInReserve = (transfersInResult.data || [])
-        .filter(t => t.transfer_type === 'reserve')
-        .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
-
-      // Calculate balances
-      const cashBalance = totalCash - officialCashExpenses - transfersOutCash + transfersInCash;
-      const reserveBalance = (totalSoftwareRevenue - totalCashRegisterRevenue) - nonOfficialExpenses - transfersOutReserve + transfersInReserve;
-
-      setBalance({ cash: cashBalance, reserve: reserveBalance });
+      // Single source of truth: the live daily house-cash series. Its latest
+      // closing is the current balance and already accounts for register cash,
+      // HUF discrepancies (elütés), official cash expenses, the official part of
+      // EFO/wage payments (cash) and the non-official part (reserve), manual
+      // incomes, approved transfers, and approved opening-balance revisions.
+      // This keeps the főoldal balance consistent with the breakdown and the
+      // daily report.
+      const series = await fetchHouseCashSeries(unitId, null);
+      const dates = series.orderedDates;
+      if (dates.length > 0) {
+        const last = series.byDate.get(dates[dates.length - 1]);
+        setBalance({ cash: last.cashClosing, reserve: last.reserveClosing });
+      } else {
+        setBalance({ cash: 0, reserve: 0 });
+      }
     } catch (error) {
       console.error('Error fetching unit balance:', error);
       toast.error('Hiba az egyenleg betöltésekor');
