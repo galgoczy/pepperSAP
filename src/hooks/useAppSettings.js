@@ -12,6 +12,9 @@ const DEFAULT_SETTINGS = {
   defaultUnitId: '',
   // Updated automatically as the user switches units (for 'remember' mode)
   lastUnitId: '',
+  // Admin Házipénztár "Áttekintés": whether the all-units section is expanded
+  // (collapsed by default; the admin's choice is remembered in this browser).
+  allUnitsOpen: false,
 };
 
 // Resolve which unit should be pre-selected, given the settings and the list

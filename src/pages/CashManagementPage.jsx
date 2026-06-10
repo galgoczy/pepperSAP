@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Send, Building2, Wallet, Edit2, Trash2, History, LayoutGrid } from 'lucide-react';
+import { Send, Building2, Wallet, Edit2, Trash2, History, LayoutGrid, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { useAppSettings } from '../hooks/useAppSettings';
@@ -226,7 +226,7 @@ function AdminCashView({ units }) {
   const [activeTab, setActiveTab] = useState('overview');
   // null = central/tabbed admin view, a unit id = that single unit's view.
   const [selectedUnitId, setSelectedUnitId] = useState(null);
-  const { settings } = useAppSettings();
+  const { settings, updateSetting } = useAppSettings();
   const { balance: centralBalance, pocketsTotal, loading: centralLoading, refetch: refetchCentral } = useCentralBalance();
   const {
     transfers,
@@ -399,11 +399,27 @@ function AdminCashView({ units }) {
             {...pendingPockets(transfers, (t) => t.source_type === 'central' || t.destination_type === 'central')}
           />
 
-          {/* Units - small boxes, several per row */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {restaurantUnits.map((u) => (
-              <UnitBalanceMini key={u.id} unit={u} showReserve={settings.showReserve} />
-            ))}
+          {/* Collapsible: all units' house cash (collapsed by default; the
+              admin's choice is remembered in this browser). "Egyéb" goes last. */}
+          <div>
+            <button
+              type="button"
+              onClick={() => updateSetting('allUnitsOpen', !settings.allUnitsOpen)}
+              className="flex items-center gap-2 text-lg font-semibold text-gray-900 hover:text-pepper-red transition-colors"
+            >
+              {settings.allUnitsOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+              Összes egység házipénztár
+            </button>
+            {settings.allUnitsOpen && (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {[
+                  ...restaurantUnits.filter((u) => !/egyéb/i.test(u.name || '')),
+                  ...restaurantUnits.filter((u) => /egyéb/i.test(u.name || '')),
+                ].map((u) => (
+                  <UnitBalanceMini key={u.id} unit={u} showReserve={settings.showReserve} />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Recent transfers */}
