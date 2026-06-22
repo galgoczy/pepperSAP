@@ -172,10 +172,14 @@ export function useDailyRevenue(unitId, date) {
         if (error) throw error;
         result = data;
       } else {
-        // Insert new
+        // Upsert on the natural key (unit_id, date). A blind INSERT threw a
+        // duplicate-key error whenever a row for this unit+date already existed
+        // but the form's `revenue` state was still null (e.g. created by
+        // ensureRevenueExists, another tab, or a retried save) — which made the
+        // save fail and the form revert, losing the entry.
         const { data, error } = await supabase
           .from('daily_revenue')
-          .insert([dataToSave])
+          .upsert(dataToSave, { onConflict: 'unit_id,date' })
           .select()
           .single();
 

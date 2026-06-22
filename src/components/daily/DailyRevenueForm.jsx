@@ -207,7 +207,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       const base = baselines[registerId];
       let predecessor = base ? { sequence: base.sequence, cumulative: base.cumulative } : null;
 
-      closures.forEach((c) => {
+      closures.forEach((c, idx) => {
         const data = mergedForKey(c.key);
         software += parseFloat(data.software_revenue) || 0;
         guests += parseInt(data.guest_count, 10) || 0;
@@ -223,20 +223,31 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
             ? null
             : parseFloat(data.cumulative_revenue);
 
+        // The first closure of the day is checked against the previous day's
+        // baseline (crossDay). Across a day boundary the strict "+1" / "previous
+        // cumulative + this turnover" assumptions break whenever a day has no
+        // recorded closure (the physical Z-counter still advanced), which caused
+        // false warnings. So across days we only flag a number that did NOT
+        // increase (a repeat or a step backwards = a likely typo); within the
+        // same day's chain we keep the strict checks (we have every closure).
+        const crossDay = idx === 0;
+
         let sequenceWarning = null;
         let expectedSequence = null;
-        if (predecessor && predecessor.sequence != null) {
+        if (predecessor && predecessor.sequence != null && seq != null) {
           expectedSequence = predecessor.sequence + 1;
-          if (seq != null && seq !== expectedSequence) sequenceWarning = expectedSequence;
+          const bad = crossDay ? seq <= predecessor.sequence : seq !== expectedSequence;
+          if (bad) sequenceWarning = expectedSequence;
         }
 
         let cumulativeWarning = null;
         let expectedCumulative = null;
-        if (predecessor && predecessor.cumulative != null) {
+        if (predecessor && predecessor.cumulative != null && cum != null) {
           expectedCumulative = predecessor.cumulative + turnover;
-          if (cum != null && Math.abs(cum - expectedCumulative) > CUMULATIVE_TOLERANCE) {
-            cumulativeWarning = expectedCumulative;
-          }
+          const bad = crossDay
+            ? cum < predecessor.cumulative - CUMULATIVE_TOLERANCE
+            : Math.abs(Math.round(cum) - Math.round(expectedCumulative)) > CUMULATIVE_TOLERANCE;
+          if (bad) cumulativeWarning = expectedCumulative;
         }
 
         validations[c.key] = {

@@ -215,13 +215,8 @@ export function useAllCashRegisterRevenue(dailyRevenueId) {
         supabase.from('cash_register_revenue').delete().eq('id', r.id)
       );
 
-      const upsertPromises = list.map(async (closure) => {
+      const upsertPromises = list.map((closure) => {
         const { cash_register_id, closure_number = 1, ...data } = closure;
-        const existingRevenue = revenues.find(
-          (r) =>
-            r.cash_register_id === cash_register_id &&
-            (r.closure_number ?? 1) === closure_number
-        );
 
         // Clean data - convert empty strings to null for numeric fields
         const cleanedData = Object.fromEntries(
@@ -235,17 +230,13 @@ export function useAllCashRegisterRevenue(dailyRevenueId) {
           closure_number,
         };
 
-        if (existingRevenue?.id) {
-          return supabase
-            .from('cash_register_revenue')
-            .update(dataToSave)
-            .eq('id', existingRevenue.id)
-            .select()
-            .single();
-        }
+        // Upsert on the natural key so a stale `revenues` state (e.g. right after
+        // the daily_revenue was just created) can't turn an update into a blind
+        // INSERT that violates the (daily_revenue_id, cash_register_id,
+        // closure_number) unique constraint and fails the whole save.
         return supabase
           .from('cash_register_revenue')
-          .insert([dataToSave])
+          .upsert(dataToSave, { onConflict: 'daily_revenue_id,cash_register_id,closure_number' })
           .select()
           .single();
       });
