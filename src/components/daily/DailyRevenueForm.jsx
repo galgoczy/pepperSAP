@@ -217,7 +217,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         const seq =
           data.closure_sequence === '' || data.closure_sequence == null
             ? null
-            : parseInt(data.closure_sequence, 10);
+            : parseFloat(data.closure_sequence);
         const cum =
           data.cumulative_revenue === '' || data.cumulative_revenue == null
             ? null
@@ -232,12 +232,14 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         // same day's chain we keep the strict checks (we have every closure).
         const crossDay = idx === 0;
 
+        // Closure sequence: always warn when it isn't the previous + 1 (this is
+        // an important check, also across day boundaries). A 0.1 tolerance absorbs
+        // any fractional artifact, since the Z-report counter is otherwise whole.
         let sequenceWarning = null;
         let expectedSequence = null;
         if (predecessor && predecessor.sequence != null && seq != null) {
           expectedSequence = predecessor.sequence + 1;
-          const bad = crossDay ? seq <= predecessor.sequence : seq !== expectedSequence;
-          if (bad) sequenceWarning = expectedSequence;
+          if (Math.abs(seq - expectedSequence) > 0.1) sequenceWarning = expectedSequence;
         }
 
         let cumulativeWarning = null;
