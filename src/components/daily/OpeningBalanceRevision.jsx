@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { Button, Input, Textarea, Modal } from '../common';
 import { formatCurrency } from '../../lib/utils';
-import { approveOpeningBalanceRevision, rejectOpeningBalanceRevision } from '../../lib/openingBalanceRevisions';
+import { approveOpeningBalanceRevision, rejectOpeningBalanceRevision, revokeOpeningBalanceRevision } from '../../lib/openingBalanceRevisions';
 import toast from 'react-hot-toast';
 
 export default function OpeningBalanceRevision({ unitId, date, currentBalance, onRevisionApproved, pocket = 'official' }) {
@@ -130,29 +130,23 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
     }
   };
 
-  // Request reverting an approved revision back to its original value. Like any
-  // opening-balance change, this also needs admin approval.
-  const handleRevert = async () => {
+  // Fully revoke an approved revision (admin only): removes the anchor so the
+  // balance recomputes from history again, instead of pinning a fixed value.
+  const handleRevoke = async () => {
     if (!approvedRevision) return;
+    if (!window.confirm(
+      `Biztosan visszavonod ezt a jóváhagyott ${pocketLabel.toLowerCase()} revíziót? `
+      + 'Ezután az egyenleg ismét automatikusan, a történetből számolódik.'
+    )) return;
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('opening_balance_revisions')
-        .insert([{
-          unit_id: unitId,
-          target_date: date,
-          pocket,
-          current_opening_balance: currentBalance || 0,
-          proposed_opening_balance: approvedRevision.current_opening_balance,
-          reason: `${pocketLabel} visszaállítása ${formatCurrency(approvedRevision.current_opening_balance)} értékre`,
-          requested_by: user?.id,
-        }]);
-      if (error) throw error;
-      toast.success('Visszaállítási kérelem elküldve! Jóváhagyásra vár.');
+      await revokeOpeningBalanceRevision(approvedRevision, user?.id);
+      toast.success('Revízió visszavonva – az egyenleg újraszámolódik.');
+      onRevisionApproved?.();
       fetchPendingRevision();
     } catch (error) {
-      console.error('Error submitting revert request:', error);
-      toast.error('Hiba a visszaállítási kérelem küldésekor');
+      console.error('Error revoking revision:', error);
+      toast.error('Hiba a revízió visszavonásakor');
     } finally {
       setSaving(false);
     }
@@ -168,14 +162,15 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
         Módosítva <span className="font-semibold">{formatCurrency(approvedRevision.current_opening_balance)}</span> összegről
         {' '}(jóváhagyott)
       </p>
-      {!pendingRevision && (
+      {!pendingRevision && isAdmin && (
         <button
           type="button"
-          onClick={handleRevert}
+          onClick={handleRevoke}
           disabled={saving}
           className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50"
+          title="A revízió teljes visszavonása – az egyenleg ismét a történetből számolódik"
         >
-          Visszaállítás
+          Revízió visszavonása
         </button>
       )}
     </div>
