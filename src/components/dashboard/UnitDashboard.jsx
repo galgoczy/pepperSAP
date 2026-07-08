@@ -13,6 +13,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useAnimatedNumber } from '../../hooks/useAnimatedNumber';
 import { Card, Button, LoadingSpinner } from '../common';
 import { supabase } from '../../lib/supabase';
+import { fetchHouseCashSeries } from '../../lib/houseCashSeries';
 import { formatCurrency, formatDate, getToday } from '../../lib/utils';
 
 // Color options for marking
@@ -70,8 +71,7 @@ export default function UnitDashboard() {
         // Fetch all data in parallel for better performance
         const [
           previousDayRevenueResult,
-          allCashRevenuesResult,
-          cashExpensesResult,
+          houseCashSeries,
           weeklyRevenuesResult,
           recentExpensesResult,
           recentEntriesResult,
@@ -83,18 +83,11 @@ export default function UnitDashboard() {
             .eq('unit_id', unitId)
             .eq('date', yesterdayStr)
             .maybeSingle(),
-          // All cash revenues for running house cash calculation
-          supabase
-            .from('daily_revenue')
-            .select('cash_payment')
-            .eq('unit_id', unitId)
-            .lte('date', today),
-          // All cash expenses for running house cash calculation
-          supabase
-            .from('expenses')
-            .select('amount')
-            .eq('unit_id', unitId)
-            .eq('payment_method', 'cash'),
+          // Authoritative house-cash series (same source as the Házipénztár page /
+          // daily report): its latest closing is the current balance, and already
+          // accounts for register cash, discrepancies, official + non-official
+          // expenses (EFO/wage too), incomes, transfers and revisions.
+          fetchHouseCashSeries(unitId, today),
           // Weekly revenue (Monday to yesterday - not including today)
           supabase
             .from('daily_revenue')
@@ -123,16 +116,12 @@ export default function UnitDashboard() {
           0
         );
 
-        // Calculate running house cash: sum of cash revenues - cash expenses
-        const totalCashRevenue = (allCashRevenuesResult.data || []).reduce(
-          (sum, r) => sum + (parseFloat(r.cash_payment) || 0),
-          0
-        );
-        const totalCashExpenses = (cashExpensesResult.data || []).reduce(
-          (sum, r) => sum + (parseFloat(r.amount) || 0),
-          0
-        );
-        const runningHouseCash = totalCashRevenue - totalCashExpenses;
+        // House cash balance = latest closing of the series (cash + reserve).
+        const dates = houseCashSeries.orderedDates;
+        const lastRow = dates.length ? houseCashSeries.byDate.get(dates[dates.length - 1]) : null;
+        const runningHouseCash = lastRow
+          ? (lastRow.cashClosing + lastRow.reserveClosing)
+          : 0;
 
         setStats({
           previousDayRevenue: previousDayRevenueResult.data,
@@ -218,6 +207,7 @@ export default function UnitDashboard() {
               <p className="text-xl font-bold text-blue-800 break-words">
                 <AnimatedCurrency value={stats.runningHouseCash} />
               </p>
+              <p className="text-xs text-blue-500">Készpénz + tartalék</p>
             </div>
           </div>
         </Card>
