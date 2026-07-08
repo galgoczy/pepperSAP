@@ -15,7 +15,15 @@ import WagePaymentForm from '../components/expenses/WagePaymentForm';
 import PaymentEditModal from '../components/expenses/PaymentEditModal';
 import { getToday, formatCurrency, formatDate, PAYMENT_METHODS } from '../lib/utils';
 import { supabase } from '../lib/supabase';
-import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote } from 'lucide-react';
+import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote } from 'lucide-react';
+
+// Shift a YYYY-MM-DD date string by whole days, using local date components so
+// there is no timezone drift.
+function shiftDate(dateStr, days) {
+  const [y, m, d] = (dateStr || getToday()).split('-').map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
 
 // Helper to sanitize Hungarian characters for PDF
 function sanitizeForPdf(text) {
@@ -64,7 +72,7 @@ export default function DailyEntryPage() {
   const { isAdmin, unitId } = useAuth();
   const { units, loading: unitsLoading } = useUnits();
   const { settings, updateSetting } = useAppSettings();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('all');
   const [selectedDate, setSelectedDate] = useState(searchParams.get('date') || getToday());
   // Initialize selected unit from URL param (for admin), or user's unit
@@ -105,6 +113,18 @@ export default function DailyEntryPage() {
 
   // Get selected unit name
   const selectedUnitName = units.find(u => u.id === effectiveUnitId)?.name || '';
+
+  // Change the selected date and keep the URL's date param in sync, so the
+  // render-time URL→state sync doesn't revert it (used by the date picker and
+  // the prev/next-day arrows).
+  const today = getToday();
+  const changeDate = (newDate) => {
+    if (!newDate) return;
+    setSelectedDate(newDate);
+    const next = new URLSearchParams(searchParams);
+    next.set('date', newDate);
+    setSearchParams(next, { replace: true });
+  };
 
   // Generate Daily Report PDF
   const generateDailyReportPdf = async () => {
@@ -766,14 +786,31 @@ export default function DailyEntryPage() {
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <CalendarDays className="h-5 w-5 text-gray-400" />
+            <button
+              type="button"
+              onClick={() => changeDate(shiftDate(selectedDate, -1))}
+              title="Előző nap"
+              className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
             <DateInput
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              max={getToday()}
+              onChange={(e) => changeDate(e.target.value)}
+              max={today}
               className="w-44"
             />
+            <button
+              type="button"
+              onClick={() => changeDate(shiftDate(selectedDate, 1))}
+              disabled={selectedDate >= today}
+              title="Következő nap"
+              className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-500"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
           </div>
 
           {activeTab === 'report' && (
