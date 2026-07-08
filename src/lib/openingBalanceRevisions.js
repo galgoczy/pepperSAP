@@ -59,12 +59,26 @@ export async function rejectOpeningBalanceRevision(revision, reviewerId) {
   if (error) throw error;
 }
 
-// Fully revoke an already-approved revision. Setting the status to 'reverted'
-// removes it from the approved anchors, so the house-cash series recomputes the
-// opening balance from history again (instead of staying pinned to a fixed
-// value). We also restore the previous day's stored closing (the legacy
-// house_cash column that approval overwrote) back to its pre-revision value.
+// Fully revoke the opening-balance revision(s) for a day/pocket. There can be
+// several approved revisions stacked on the SAME target date over time; revoking
+// only the latest would leave an earlier one as the anchor (so an older pinned
+// value would reappear). So we revoke ALL approved revisions for this
+// unit/date/pocket — removing every anchor — and the house-cash series recomputes
+// the opening balance from history again. We also restore the previous day's
+// stored closing (the legacy house_cash column that approval overwrote) back to
+// the ORIGINAL, pre-any-revision value (the earliest revision's captured value).
 export async function revokeOpeningBalanceRevision(revision, reviewerId) {
+  // All still-approved revisions for this day/pocket, oldest first — the earliest
+  // one's current_opening_balance is the true pre-revision (calculated) value.
+  const { data: approved } = await supabase
+    .from('opening_balance_revisions')
+    .select('current_opening_balance, created_at')
+    .eq('unit_id', revision.unit_id)
+    .eq('target_date', revision.target_date)
+    .eq('pocket', revision.pocket)
+    .eq('status', 'approved')
+    .order('created_at', { ascending: true });
+
   const { error } = await supabase
     .from('opening_balance_revisions')
     .update({
@@ -72,10 +86,16 @@ export async function revokeOpeningBalanceRevision(revision, reviewerId) {
       reviewed_by: reviewerId,
       reviewed_at: new Date().toISOString(),
     })
-    .eq('id', revision.id);
+    .eq('unit_id', revision.unit_id)
+    .eq('target_date', revision.target_date)
+    .eq('pocket', revision.pocket)
+    .eq('status', 'approved');
   if (error) throw error;
 
   const column = revision.pocket === 'reserve' ? 'other_total' : 'official_total';
+  const originalValue = approved && approved.length
+    ? approved[0].current_opening_balance
+    : revision.current_opening_balance;
 
   const { data: prevRow, error: prevError } = await supabase
     .from('house_cash')
@@ -94,7 +114,7 @@ export async function revokeOpeningBalanceRevision(revision, reviewerId) {
 
   const { error: updateError } = await supabase
     .from('house_cash')
-    .update({ [column]: revision.current_opening_balance })
+    .update({ [column]: originalValue })
     .eq('id', prevRow.id);
 
   if (updateError) {
