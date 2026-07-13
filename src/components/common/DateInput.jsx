@@ -106,7 +106,10 @@ export default function DateInput({
       >
         <Calendar className="h-5 w-5" />
       </button>
-      {/* Hidden native picker (anchors the popup near the icon). */}
+      {/* Hidden native picker. Anchored to the full box width (left edge) so the
+          browser positions the popup over the field and can flip it left when it
+          would overflow the viewport on the right — instead of anchoring to a
+          tiny element at the right edge, which pushed the calendar off-screen. */}
       <input
         ref={nativeRef}
         type="date"
@@ -114,7 +117,7 @@ export default function DateInput({
         min={min}
         max={max}
         onChange={(e) => emit(e.target.value)}
-        className="absolute right-0 bottom-0 w-8 h-0 opacity-0 pointer-events-none"
+        className="absolute left-0 bottom-0 w-full h-0 opacity-0 pointer-events-none"
         tabIndex={-1}
         aria-hidden="true"
       />

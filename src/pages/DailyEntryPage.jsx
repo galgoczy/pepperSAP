@@ -787,7 +787,6 @@ export default function DailyEntryPage() {
 
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1">
-            <CalendarDays className="h-5 w-5 text-gray-400" />
             <button
               type="button"
               onClick={() => changeDate(shiftDate(selectedDate, -1))}
@@ -796,12 +795,15 @@ export default function DailyEntryPage() {
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
-            <DateInput
-              value={selectedDate}
-              onChange={(e) => changeDate(e.target.value)}
-              max={today}
-              className="w-44"
-            />
+            <button
+              type="button"
+              onClick={() => changeDate(today)}
+              disabled={selectedDate === today}
+              title="Mai nap"
+              className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-gray-500"
+            >
+              <span className="block h-2.5 w-2.5 rounded-full bg-current" />
+            </button>
             <button
               type="button"
               onClick={() => changeDate(shiftDate(selectedDate, 1))}
@@ -811,6 +813,12 @@ export default function DailyEntryPage() {
             >
               <ChevronRight className="h-5 w-5" />
             </button>
+            <DateInput
+              value={selectedDate}
+              onChange={(e) => changeDate(e.target.value)}
+              max={today}
+              className="w-44"
+            />
           </div>
 
           {activeTab === 'report' && (

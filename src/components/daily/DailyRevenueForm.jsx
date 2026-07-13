@@ -615,6 +615,26 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
             </div>
           </div>
 
+          {/* Warn when the day has extra closures but the toggle is off, so they
+              would otherwise be hidden (e.g. viewing an older recorded day). */}
+          {!multiClosuresEnabled && closureList.some((c) => c.closureNumber > 1) && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-amber-800 flex-1">
+                <span className="font-medium">Ezen a napon több zárás van rögzítve</span> egy vagy több
+                pénztárgéphez, de a „Több zárás / nap" kapcsoló ki van kapcsolva, ezért csak az első
+                zárás látszik.
+                <button
+                  type="button"
+                  onClick={() => updateRevenueSettings({ multiple_closures_enabled: true })}
+                  className="ml-1 underline font-medium hover:text-amber-900"
+                >
+                  Több zárás megjelenítése
+                </button>
+              </div>
+            </div>
+          )}
+
           {cashRegisters.map((register) => {
             const registerClosures = closureList.filter((c) => c.register.id === register.id);
             // When the toggle is off, only the first closure is shown; any extra
