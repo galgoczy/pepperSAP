@@ -390,7 +390,8 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     'vat_0_percent', 'vat_5_percent', 'vat_18_percent', 'vat_27_percent',
     'tips', 'discrepancies',
     'cash_payment', 'card_payment', 'szep_card_payment',
-    'terminal_card', 'terminal_szep', 'terminal_discrepancy_note',
+    'terminal_card', 'terminal_card_total', 'terminal_card_tip', 'terminal_tip_withdrawn',
+    'terminal_szep', 'terminal_discrepancy_note',
     'closure_sequence', 'cumulative_revenue',
   ];
 

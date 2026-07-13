@@ -130,3 +130,7 @@ export const debounce = (func, wait) => {
     timeout = setTimeout(later, wait);
   };
 };
+
+// Share of a withdrawn bankkártya (terminal) tip that is booked as a reserve
+// (tartalék) cost at day end.
+export const TERMINAL_TIP_WITHDRAW_RATE = 0.6;

@@ -13,7 +13,7 @@ import ExpenseForm from '../components/expenses/ExpenseForm';
 import EfoPaymentForm from '../components/expenses/EfoPaymentForm';
 import WagePaymentForm from '../components/expenses/WagePaymentForm';
 import PaymentEditModal from '../components/expenses/PaymentEditModal';
-import { getToday, formatCurrency, formatDate, PAYMENT_METHODS } from '../lib/utils';
+import { getToday, formatCurrency, formatDate, PAYMENT_METHODS, TERMINAL_TIP_WITHDRAW_RATE } from '../lib/utils';
 import { supabase } from '../lib/supabase';
 import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote } from 'lucide-react';
 
@@ -266,7 +266,12 @@ export default function DailyEntryPage() {
       const adjustedCash = totalCashRegisterCash - totalDiscrepancies;
       const officialTotal = adjustedCash - officialExpenses - efoPayments;
       const revenueDifference = softwareRevenue - totalCashRegisterRevenue;
-      const reserveTotal = revenueDifference + extraIncome - nonOfficialExpenses;
+      // Withdrawn bankkártya tip -> 60% is a reserve (tartalék) cost.
+      const terminalTipReserveCost = cashRegisterDetails.reduce(
+        (s, cr) => s + (cr.terminal_tip_withdrawn ? (parseFloat(cr.terminal_card_tip) || 0) * TERMINAL_TIP_WITHDRAW_RATE : 0),
+        0
+      );
+      const reserveTotal = revenueDifference + extraIncome - nonOfficialExpenses - terminalTipReserveCost;
       // Closings (opening + daily movement) for the report/PDF
       const cashClosing = openingBalance + officialTotal;
       const reserveClosing = reserveOpening + reserveTotal;
@@ -525,8 +530,13 @@ export default function DailyEntryPage() {
         doc.setTextColor(180, 0, 0);
         doc.text(sanitizeForPdf('Nem számlás kifizetések:'), 25, y);
         doc.text('-' + formatPdfCurrency(nonOfficialExpenses), rightMargin, y, { align: 'right' });
-        doc.setTextColor(0, 0, 0);
         y += 5;
+        if (terminalTipReserveCost > 0) {
+          doc.text(sanitizeForPdf('Bankkártyás borravaló kivét (60%):'), 25, y);
+          doc.text('-' + formatPdfCurrency(terminalTipReserveCost), rightMargin, y, { align: 'right' });
+          y += 5;
+        }
+        doc.setTextColor(0, 0, 0);
         doc.setFont('helvetica', 'bold');
         doc.text(sanitizeForPdf('Összesen:'), 25, y);
         if (reserveTotal >= 0) {

@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { TERMINAL_TIP_WITHDRAW_RATE } from './utils';
 
 // Computes a unit's daily house-cash series (Pénztár zseb + Tartalék) live from
 // raw data, from zero through full history. This is the single source of truth
@@ -21,6 +22,7 @@ function sumRegister(crRows) {
   let cash = 0;
   let revenue = 0;
   let discrepancies = 0;
+  let tipReserveCost = 0;
   (crRows || []).forEach((cr) => {
     cash += parseFloat(cr.cash_payment) || 0;
     revenue +=
@@ -35,8 +37,12 @@ function sumRegister(crRows) {
     } else if (cr.discrepancy_amount && cr.discrepancy_currency === 'HUF') {
       discrepancies += parseFloat(cr.discrepancy_amount) || 0;
     }
+    // Withdrawn bankkártya tip: a share is booked as a reserve (tartalék) cost.
+    if (cr.terminal_tip_withdrawn) {
+      tipReserveCost += (parseFloat(cr.terminal_card_tip) || 0) * TERMINAL_TIP_WITHDRAW_RATE;
+    }
   });
-  return { cash, revenue, discrepancies };
+  return { cash, revenue, discrepancies, tipReserveCost };
 }
 
 export async function fetchHouseCashSeries(unitId, endDate) {
@@ -49,7 +55,7 @@ export async function fetchHouseCashSeries(unitId, endDate) {
     dateFilter(
       supabase
         .from('daily_revenue')
-        .select('date, total_revenue, cash_register_revenue(cash_payment, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, discrepancies, discrepancy_amount, discrepancy_currency)')
+        .select('date, total_revenue, cash_register_revenue(cash_payment, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, discrepancies, discrepancy_amount, discrepancy_currency, terminal_card_tip, terminal_tip_withdrawn)')
         .eq('unit_id', unitId),
       'date'
     ),
@@ -118,10 +124,14 @@ export async function fetchHouseCashSeries(unitId, endDate) {
   // Daily revenue -> register cash / revenue / discrepancies
   (revRes.data || []).forEach((rev) => {
     const row = ensure(rev.date);
-    const { cash, revenue, discrepancies } = sumRegister(rev.cash_register_revenue);
+    const { cash, revenue, discrepancies, tipReserveCost } = sumRegister(rev.cash_register_revenue);
     row.cashRevenue += cash;
     row.cashDiscrepancies += discrepancies;
     row.reserveRevenue += (parseFloat(rev.total_revenue) || 0) - revenue;
+    if (tipReserveCost) {
+      row.reserveExpenses += tipReserveCost;
+      row.reservePaymentItems.push({ label: 'Bankkártyás borravaló kivét (60%)', amount: tipReserveCost });
+    }
   });
 
   // House cash manual incomes

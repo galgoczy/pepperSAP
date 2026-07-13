@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp, Printer, Plus, Trash2, Save } from 'lucide-react';
 import { Card, Input, Select, Button } from '../common';
 import { Textarea } from '../common/Input';
-import { formatCurrency, formatDate } from '../../lib/utils';
+import { formatCurrency, formatDate, TERMINAL_TIP_WITHDRAW_RATE } from '../../lib/utils';
 import { validateCardPayments } from '../../lib/validations';
 import { jsPDF } from 'jspdf';
 
@@ -26,6 +26,9 @@ const DEFAULT_FORM_DATA = {
   card_payment: '',
   szep_card_payment: '',
   terminal_card: '',
+  terminal_card_total: '',
+  terminal_card_tip: '',
+  terminal_tip_withdrawn: false,
   terminal_szep: '',
   terminal_discrepancy_note: '',
 };
@@ -58,6 +61,12 @@ function computeFormData(existingData) {
     card_payment: existingData.card_payment || '',
     szep_card_payment: existingData.szep_card_payment || '',
     terminal_card: existingData.terminal_card || '',
+    // Backward compatible: older rows only have terminal_card (already the
+    // "borravaló nélkül" value) — treat it as the total with no tip.
+    terminal_card_total:
+      existingData.terminal_card_total ?? existingData.terminal_card ?? '',
+    terminal_card_tip: existingData.terminal_card_tip ?? '',
+    terminal_tip_withdrawn: existingData.terminal_tip_withdrawn ?? false,
     terminal_szep: existingData.terminal_szep || '',
     terminal_discrepancy_note: existingData.terminal_discrepancy_note || '',
   };
@@ -209,6 +218,19 @@ export default function CashRegisterSection({
     onChange(newData);
   };
 
+  // Terminal card: the user enters the full terminal amount and the card tip; we
+  // store the "borravaló nélkül" value (total - tip) in terminal_card, which
+  // every existing calculation and report keeps using unchanged.
+  const handleTerminalChange = (field, value) => {
+    const newData = { ...formData, [field]: value };
+    const totalStr = field === 'terminal_card_total' ? value : newData.terminal_card_total;
+    const tipStr = field === 'terminal_card_tip' ? value : newData.terminal_card_tip;
+    const bothEmpty = (totalStr === '' || totalStr == null) && (tipStr === '' || tipStr == null);
+    newData.terminal_card = bothEmpty ? '' : (parseFloat(totalStr) || 0) - (parseFloat(tipStr) || 0);
+    setFormData(newData);
+    onChange(newData);
+  };
+
   // Discrepancy management functions
   const addDiscrepancy = () => {
     const newDiscrepancies = [...(formData.discrepancies || []), { ...DEFAULT_DISCREPANCY }];
@@ -246,6 +268,13 @@ export default function CashRegisterSection({
   // Whether this closure has any kind of discrepancy (terminal/card mismatch or a
   // recorded elütés) — used to flag a collapsed register box in the background.
   const hasAnyDiscrepancy = hasDiscrepancy || (formData.discrepancies || []).length > 0;
+
+  // Terminal card breakdown (display + reserve tip cost)
+  const terminalCardTip = parseFloat(formData.terminal_card_tip) || 0;
+  const terminalCardNet = parseFloat(formData.terminal_card) || 0;
+  const tipWithdrawnAmount = formData.terminal_tip_withdrawn
+    ? terminalCardTip * TERMINAL_TIP_WITHDRAW_RATE
+    : 0;
 
   return (
     <Card className="border-2 border-pepper-red border-opacity-30">
@@ -572,16 +601,25 @@ export default function CashRegisterSection({
                 </span>
               )}
             </h4>
-            <div className={`grid gap-3 ${SHOW_SZEP_FIELDS ? 'md:grid-cols-2' : ''}`}>
+            <div className="grid gap-3 md:grid-cols-2">
               <Input
-                label="Bankkártya (terminál - borravaló nélkül)"
+                label="Bankkártya terminál (teljes összeg)"
                 type="number"
                 step="0.01"
-                value={formData.terminal_card}
-                onChange={(e) => handleChange('terminal_card', e.target.value)}
+                value={formData.terminal_card_total}
+                onChange={(e) => handleTerminalChange('terminal_card_total', e.target.value)}
                 suffix="Ft"
                 size="sm"
                 className={!cardValidation.isValid ? 'ring-2 ring-red-300' : ''}
+              />
+              <Input
+                label="Borravaló (bankkártya)"
+                type="number"
+                step="0.01"
+                value={formData.terminal_card_tip}
+                onChange={(e) => handleTerminalChange('terminal_card_tip', e.target.value)}
+                suffix="Ft"
+                size="sm"
               />
               {/* SZÉP terminal - hidden for now */}
               {SHOW_SZEP_FIELDS && (
@@ -595,6 +633,34 @@ export default function CashRegisterSection({
                   size="sm"
                 />
               )}
+            </div>
+
+            {/* Card tip: optionally taken out of the register (60% booked as a
+                reserve cost at day end). */}
+            <label className="mt-3 flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!formData.terminal_tip_withdrawn}
+                onChange={(e) => handleChange('terminal_tip_withdrawn', e.target.checked)}
+                className="h-4 w-4 mt-0.5 text-pepper-red rounded border-gray-300 focus:ring-pepper-red"
+              />
+              <span className="text-sm text-gray-700">
+                Kivettük a kasszából
+                <span className="text-gray-500"> (a bankkártyás borravaló 60%-a tartalék költség)</span>
+              </span>
+            </label>
+            {formData.terminal_tip_withdrawn && terminalCardTip > 0 && (
+              <p className="mt-1 text-xs text-amber-700">
+                Kivett összeg (60%): <span className="font-medium">{formatCurrency(tipWithdrawnAmount)}</span> — a nap
+                végén tartalék költségként számoljuk.
+              </p>
+            )}
+
+            {/* Computed: terminal amount without the tip — used in every
+                calculation, exactly as the single field was before. */}
+            <div className="mt-3 p-2 bg-gray-50 rounded-lg flex justify-between items-center text-sm">
+              <span className="text-gray-600">Bankkártya terminál (borravaló nélkül):</span>
+              <span className="font-bold">{formatCurrency(terminalCardNet)}</span>
             </div>
 
             {/* Discrepancy warning */}

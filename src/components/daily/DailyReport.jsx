@@ -48,6 +48,7 @@ export default function DailyReport({ date, unitId }) {
     efoPaymentsTotal = 0,
     wagePaymentsTotal = 0,
     wageTypeExtra = 0,
+    terminalTipReserveCost = 0,
   } = calculatedData || {};
 
   // Use aggregated cash register totals from the hook (tips not included)
@@ -73,7 +74,7 @@ export default function DailyReport({ date, unitId }) {
   // Tartalék: szoftver-pénztárgép különbség + extra bevétel - nem számlás kifizetések
   // - az EFO és a bér NEM hivatalos része.
   const revenueDifference = softwareRevenue - totalCashRegisterRevenue;
-  const reserveTotal = revenueDifference + extraIncome - nonOfficialExpenses - wageTypeExtra;
+  const reserveTotal = revenueDifference + extraIncome - nonOfficialExpenses - wageTypeExtra - terminalTipReserveCost;
 
   // Openings (from previous day's closings) and closings for the report
   const openingBalance = previousDayClosing || 0;
@@ -409,6 +410,12 @@ export default function DailyReport({ date, unitId }) {
                 <span>EFO / bér (nem hivatalos rész):</span>
                 <span>-{formatCurrency(wageTypeExtra)}</span>
               </div>
+              {terminalTipReserveCost > 0 && (
+                <div className="flex justify-between text-red-600">
+                  <span>Bankkártyás borravaló kivét (60%):</span>
+                  <span>-{formatCurrency(terminalTipReserveCost)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-bold pt-2 border-t">
                 <span className="text-blue-700">Összesen:</span>
                 <span className={reserveTotal >= 0 ? 'text-blue-800' : 'text-red-600'}>

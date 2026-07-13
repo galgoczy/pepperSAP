@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { fetchHouseCashSeries, openingForDate } from '../lib/houseCashSeries';
+import { TERMINAL_TIP_WITHDRAW_RATE } from '../lib/utils';
 import toast from 'react-hot-toast';
 
 export function useDailyRevenue(unitId, date) {
@@ -356,6 +357,7 @@ export function useHouseCash(unitId, date) {
             cash_payment, card_payment,
             vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips,
             discrepancies, discrepancy_amount, discrepancy_currency, discrepancy_note,
+            terminal_card_tip, terminal_tip_withdrawn,
             cash_registers (ap_number, name)
           `)
           .eq('daily_revenue_id', dailyRevenueResult.data.id);
@@ -440,6 +442,12 @@ export function useHouseCash(unitId, date) {
       );
       const wageTypeExtra = efoExtraTotal + wageExtraTotal;
 
+      // Withdrawn bankkártya tip -> 60% is a reserve (tartalék) cost.
+      const terminalTipReserveCost = cashRegisterRevenues.reduce(
+        (sum, cr) => sum + (cr.terminal_tip_withdrawn ? (parseFloat(cr.terminal_card_tip) || 0) * TERMINAL_TIP_WITHDRAW_RATE : 0),
+        0
+      );
+
       setHouseCash(currentResult.data || null);
       setPreviousDayClosing(opening.cash || 0);
       setPreviousDayReserveClosing(opening.reserve || 0);
@@ -457,6 +465,7 @@ export function useHouseCash(unitId, date) {
         efoPaymentsTotal,
         wagePaymentsTotal,
         wageTypeExtra,
+        terminalTipReserveCost,
         officialCashExpenses,
         cashTransfersToday,
         reserveTransfersToday,
