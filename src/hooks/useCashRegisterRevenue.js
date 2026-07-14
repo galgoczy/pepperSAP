@@ -217,10 +217,6 @@ export function useAllCashRegisterRevenue(dailyRevenueId) {
       const toDelete = revenues.filter(
         (r) => removed.has(`${r.cash_register_id}#${r.closure_number ?? 1}`)
       );
-      const deletePromises = toDelete.map((r) =>
-        supabase.from('cash_register_revenue').delete().eq('id', r.id)
-      );
-
       const upsertPromises = list.map((closure) => {
         const { cash_register_id, closure_number = 1, ...data } = closure;
 
@@ -247,13 +243,24 @@ export function useAllCashRegisterRevenue(dailyRevenueId) {
           .single();
       });
 
-      const results = await Promise.all([...deletePromises, ...upsertPromises]);
-
-      // Check for errors
+      // Upserts FIRST. If any fails (e.g. a missing DB column when a migration
+      // hasn't been applied), we throw BEFORE deleting anything — so a failed
+      // save can never leave committed deletions behind (which previously wiped
+      // data when deletes and upserts ran together).
+      const results = await Promise.all(upsertPromises);
       const errors = results.filter((r) => r.error);
       if (errors.length > 0) {
         console.error('Errors saving revenues:', errors);
         throw new Error('Hiba a pénztárgép adatok mentésekor');
+      }
+
+      // Only now delete the explicitly-removed closures.
+      const deleteResults = await Promise.all(
+        toDelete.map((r) => supabase.from('cash_register_revenue').delete().eq('id', r.id))
+      );
+      const deleteErrors = deleteResults.filter((r) => r.error);
+      if (deleteErrors.length > 0) {
+        console.error('Errors deleting removed closures:', deleteErrors);
       }
 
       // Refetch to get updated data (only if we have the original ID)
