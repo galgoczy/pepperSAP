@@ -434,7 +434,9 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       });
 
       if (closureList.length > 0 && savedRevenue?.id) {
-        await saveAllRevenues(buildClosuresToSave(), savedRevenue.id);
+        // Pass the explicitly-removed closure keys so only those are deleted —
+        // never inferred from the (possibly partial) submitted list.
+        await saveAllRevenues(buildClosuresToSave(), savedRevenue.id, removedKeys);
         // Added / removed closures are now reflected in the refetched data.
         setExtraClosures([]);
         setRemovedKeys(new Set());

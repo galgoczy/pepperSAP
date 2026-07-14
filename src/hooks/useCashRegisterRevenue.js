@@ -189,11 +189,13 @@ export function useAllCashRegisterRevenue(dailyRevenueId) {
 
   // Save all cash register closures at once.
   // `closures` is an array of objects, each carrying cash_register_id +
-  // closure_number + the editable field data. Existing DB rows that are not in
-  // the submitted set (matched by register + closure_number) are deleted, so
-  // removing a closure in the UI also removes it here.
+  // closure_number + the editable field data. `removedKeys` is the set of
+  // "<cash_register_id>#<closure_number>" the user EXPLICITLY removed in the UI —
+  // only those are deleted. (We must NOT infer deletions by diffing against the
+  // submitted list: when the active-registers list is momentarily empty/partial,
+  // that would silently wipe a whole day's register data.)
   // Can pass overrideDailyRevenueId for newly created daily_revenue entries.
-  const saveAllRevenues = async (closures, overrideDailyRevenueId = null) => {
+  const saveAllRevenues = async (closures, overrideDailyRevenueId = null, removedKeys = null) => {
     const effectiveId = overrideDailyRevenueId || dailyRevenueId;
     if (!effectiveId) {
       console.error('No dailyRevenueId available for saving cash register revenues');
@@ -201,15 +203,19 @@ export function useAllCashRegisterRevenue(dailyRevenueId) {
     }
 
     const list = Array.isArray(closures) ? closures : [];
+    const removed = removedKeys instanceof Set ? removedKeys : new Set();
+
+    // Nothing to upsert and nothing explicitly removed → do nothing. This guards
+    // against an empty/incomplete submit (e.g. the active-registers list not yet
+    // loaded) ever touching existing data.
+    if (list.length === 0 && removed.size === 0) {
+      return [];
+    }
 
     try {
-      const submittedKeys = new Set(
-        list.map((c) => `${c.cash_register_id}#${c.closure_number ?? 1}`)
-      );
-
-      // Delete DB rows that are no longer present in the submitted set.
+      // Delete ONLY the closures the user explicitly removed.
       const toDelete = revenues.filter(
-        (r) => !submittedKeys.has(`${r.cash_register_id}#${r.closure_number ?? 1}`)
+        (r) => removed.has(`${r.cash_register_id}#${r.closure_number ?? 1}`)
       );
       const deletePromises = toDelete.map((r) =>
         supabase.from('cash_register_revenue').delete().eq('id', r.id)
