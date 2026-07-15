@@ -7,6 +7,7 @@ import {
   CalendarDays,
   Receipt,
   PartyPopper,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Target,
@@ -27,6 +28,122 @@ import { MiniTrendChart } from '../charts/RevenueTrendChart';
 function AnimatedCurrency({ value }) {
   const animatedValue = useAnimatedNumber(value || 0, 1200);
   return formatCurrency(animatedValue);
+}
+
+// "Fordított szervízdíj" (reverse service fee): the net cash-register revenue of a
+// unit for a month, reduced by 18.5% (i.e. 81.5% of the net). Net = the gross VAT
+// buckets converted to net per rate. Only Knorr 105 for now.
+const REVERSE_SERVICE_FEE_RATE = 0.185;
+const RSF_UNITS = ['Knorr 105'];
+const RSF_MONTH_NAMES = [
+  'Január', 'Február', 'Március', 'Április', 'Május', 'Június',
+  'Július', 'Augusztus', 'Szeptember', 'Október', 'November', 'December',
+];
+
+function currentYearMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+function shiftYearMonth(ym, delta) {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function monthRange(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return { start: `${ym}-01`, end: `${ym}-${String(last).padStart(2, '0')}` };
+}
+function monthLabel(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${y}. ${RSF_MONTH_NAMES[m - 1]}`;
+}
+
+// Card shown on the admin dashboard next to the "missing data" block.
+function ReverseServiceFeeCard() {
+  const [ym, setYm] = useState(currentYearMonth());
+  const [value, setValue] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const current = currentYearMonth();
+  // Single unit for now; the name is shown at the bottom.
+  const unitName = RSF_UNITS[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const { data: unit } = await supabase
+          .from('units').select('id').eq('name', unitName).maybeSingle();
+        if (!unit?.id) { if (!cancelled) setValue(0); return; }
+        const { start, end } = monthRange(ym);
+        const { data } = await supabase
+          .from('daily_revenue')
+          .select('cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent)')
+          .eq('unit_id', unit.id)
+          .gte('date', start)
+          .lte('date', end);
+        let net = 0;
+        (data || []).forEach((dr) => (dr.cash_register_revenue || []).forEach((cr) => {
+          net += (parseFloat(cr.vat_0_percent) || 0)
+            + (parseFloat(cr.vat_5_percent) || 0) / 1.05
+            + (parseFloat(cr.vat_18_percent) || 0) / 1.18
+            + (parseFloat(cr.vat_27_percent) || 0) / 1.27;
+        }));
+        if (!cancelled) setValue(net * (1 - REVERSE_SERVICE_FEE_RATE));
+      } catch (e) {
+        console.error('Error loading reverse service fee:', e);
+        if (!cancelled) setValue(0);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [ym, unitName]);
+
+  const atCurrent = ym >= current;
+
+  return (
+    <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm text-indigo-700 font-medium">Fordított szervízdíj a hónapban</p>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setYm((p) => shiftYearMonth(p, -1))}
+            title="Előző hónap"
+            className="p-1 rounded text-indigo-500 hover:bg-indigo-200/60"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setYm(current)}
+            disabled={ym === current}
+            title="Aktuális hónap"
+            className="p-1.5 rounded text-indigo-500 hover:bg-indigo-200/60 disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            <span className="block h-2 w-2 rounded-full bg-current" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setYm((p) => shiftYearMonth(p, 1))}
+            disabled={atCurrent}
+            title="Következő hónap"
+            className="p-1 rounded text-indigo-500 hover:bg-indigo-200/60 disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+      <p className="text-xs text-indigo-600 mt-1">{monthLabel(ym)}</p>
+      <p className="text-2xl font-bold text-indigo-900 mt-1 break-words">
+        {loading ? '…' : <AnimatedCurrency value={value} />}
+      </p>
+      <p className="text-xs text-indigo-400 mt-1">({unitName})</p>
+    </Card>
+  );
 }
 
 // Color options for marking
@@ -680,26 +797,31 @@ export default function AdminDashboard() {
       })()}
 
       {/* Warnings */}
-      {stats.missingData.length > 0 && (
-        <Card className="border-yellow-200 bg-yellow-50">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
-            <div>
-              <h3 className="font-medium text-yellow-800">Hiányzó előző napi adatok</h3>
-              <p className="text-sm text-yellow-700 mt-1">
-                Az alábbi egységeknél még nem rögzítettek előző napi forgalmi adatokat:
-              </p>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {stats.missingData.map((unit) => (
-                  <Badge key={unit.id} variant="warning">
-                    {unit.name}
-                  </Badge>
-                ))}
+      {/* Reverse service fee (new) next to the missing-data block; on mobile the
+          fee card stacks above the missing-data block. */}
+      <div className="grid gap-6 md:grid-cols-2 items-start">
+        <ReverseServiceFeeCard />
+        {stats.missingData.length > 0 && (
+          <Card className="border-yellow-200 bg-yellow-50">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
+              <div>
+                <h3 className="font-medium text-yellow-800">Hiányzó előző napi adatok</h3>
+                <p className="text-sm text-yellow-700 mt-1">
+                  Az alábbi egységeknél még nem rögzítettek előző napi forgalmi adatokat:
+                </p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {stats.missingData.map((unit) => (
+                    <Badge key={unit.id} variant="warning">
+                      {unit.name}
+                    </Badge>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        </Card>
-      )}
+          </Card>
+        )}
+      </div>
 
       {/* Unit revenues */}
       <div className="grid gap-6 lg:grid-cols-2">
