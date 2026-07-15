@@ -460,6 +460,12 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     0
   );
 
+  // Non-critical check: the per-register software revenue sum should match the
+  // Teljes forgalom. Flagged (not blocked) — a mismatch may be intentional.
+  const softwareSumMismatch =
+    perRegisterSoftwareSum > 0 &&
+    Math.abs(perRegisterSoftwareSum - (parseFloat(formData.total_revenue) || 0)) > 1;
+
   const loading = revenueLoading || registersLoading || settingsLoading;
 
   if (!unitId) {
@@ -536,6 +542,16 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
             {perRegisterSoftwareSum > 0 && formData.software_revenue_manual_override && (
               <p className="text-xs text-gray-500 mt-1">
                 Pénztárgépek összege: {formatCurrency(perRegisterSoftwareSum)}
+              </p>
+            )}
+            {softwareSumMismatch && (
+              <p className="text-xs text-amber-700 mt-1 flex items-start gap-1">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                <span>
+                  A pénztárgépek szoftver-forgalmának összege ({formatCurrency(perRegisterSoftwareSum)})
+                  eltér a Teljes forgalomtól. Ha szándékos, hagyd; egyébként ellenőrizd (pl. „Kézi
+                  megadás" ki-be a újraszámoláshoz).
+                </span>
               </p>
             )}
           </div>

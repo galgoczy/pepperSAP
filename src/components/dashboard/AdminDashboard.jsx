@@ -30,10 +30,11 @@ function AnimatedCurrency({ value }) {
   return formatCurrency(animatedValue);
 }
 
-// "Fordított szervízdíj" (reverse service fee): the net cash-register revenue of a
-// unit for a month, reduced by 18.5% (i.e. 81.5% of the net). Net = the gross VAT
-// buckets converted to net per rate. Only Knorr 105 for now.
-const REVERSE_SERVICE_FEE_RATE = 0.185;
+// "Fordított szervízdíj" (reverse service fee) for a month: 20% of the unit's net
+// cash-register revenue, and 18.5% of THAT — i.e. net * 0.20 * 0.185. Net = the
+// gross VAT buckets converted to net per rate. Only Knorr 105 for now.
+const RSF_NET_SHARE = 0.20;   // 20% of the net revenue
+const RSF_FEE_RATE = 0.185;   // then 18.5% of that
 const RSF_UNITS = ['Knorr 105'];
 const RSF_MONTH_NAMES = [
   'Január', 'Február', 'Március', 'Április', 'Május', 'Június',
@@ -90,7 +91,7 @@ function ReverseServiceFeeCard() {
             + (parseFloat(cr.vat_18_percent) || 0) / 1.18
             + (parseFloat(cr.vat_27_percent) || 0) / 1.27;
         }));
-        if (!cancelled) setValue(net * (1 - REVERSE_SERVICE_FEE_RATE));
+        if (!cancelled) setValue(net * RSF_NET_SHARE * RSF_FEE_RATE);
       } catch (e) {
         console.error('Error loading reverse service fee:', e);
         if (!cancelled) setValue(0);

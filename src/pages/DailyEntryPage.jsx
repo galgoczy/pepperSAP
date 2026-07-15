@@ -1306,6 +1306,9 @@ function RecentEntriesList({ unitId, onSelectDate }) {
 function IncompleteEntriesList({ unitId, onSelectDate }) {
   const [incompleteEntries, setIncompleteEntries] = useState([]);
   const [completeEntries, setCompleteEntries] = useState([]);
+  // Days where the sum of the per-register software revenue differs from the
+  // total (non-critical: may be intentional, so flagged in a soft colour).
+  const [mismatchEntries, setMismatchEntries] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Generate protocol PDF
@@ -1424,6 +1427,7 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
 
         const incomplete = [];
         const complete = [];
+        const mismatch = [];
 
         for (const entry of revenueData || []) {
           const { data: crData } = await supabase
@@ -1504,11 +1508,21 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
             if (completedProtocols.length > 0) {
               complete.push({ ...entry, protocols: completedProtocols });
             }
+
+            // Non-critical check: does the per-register software revenue sum
+            // match the day's total? Only flag when the registers actually carry
+            // software revenue (so pure manual-entry days aren't flagged).
+            const softwareSum = crData.reduce((s, cr) => s + (parseFloat(cr.software_revenue) || 0), 0);
+            const totalRev = parseFloat(entry.total_revenue) || 0;
+            if (softwareSum > 0 && Math.abs(softwareSum - totalRev) > 1) {
+              mismatch.push({ ...entry, softwareSum, totalRev, diff: totalRev - softwareSum });
+            }
           }
         }
 
         setIncompleteEntries(incomplete);
         setCompleteEntries(complete);
+        setMismatchEntries(mismatch);
       } catch (error) {
         console.error('Error fetching entries:', error);
       } finally {
@@ -1529,7 +1543,7 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
     );
   }
 
-  const hasAny = incompleteEntries.length > 0 || completeEntries.length > 0;
+  const hasAny = incompleteEntries.length > 0 || completeEntries.length > 0 || mismatchEntries.length > 0;
 
   if (!hasAny) {
     return (
@@ -1582,6 +1596,48 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
                     </div>
                   </div>
                   <ChevronRight className="h-5 w-5 text-red-400 mt-1" />
+                </div>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Software revenue sum mismatch - amber (non-critical) */}
+      {mismatchEntries.length > 0 && (
+        <Card>
+          <div className="flex items-center gap-3 mb-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
+            <AlertTriangle className="h-6 w-6 text-amber-500 flex-shrink-0" />
+            <div>
+              <p className="font-semibold text-amber-800">
+                {mismatchEntries.length} nap, ahol a pénztárgépek szoftver-forgalma ≠ Teljes forgalom
+              </p>
+              <p className="text-sm text-amber-700">
+                Nem kritikus – lehet szándékos (kézi megadás), de érdemes ellenőrizni.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {mismatchEntries.map((entry) => (
+              <button
+                key={entry.id}
+                onClick={() => onSelectDate(entry.date)}
+                className="w-full p-4 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors text-left"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertTriangle className="h-5 w-5 text-amber-500" />
+                      <p className="font-semibold text-gray-900">{formatDate(entry.date)}</p>
+                    </div>
+                    <div className="text-sm text-gray-600 space-y-0.5">
+                      <div>Pénztárgépek szoftver-forgalma: <span className="font-medium">{formatCurrency(entry.softwareSum)}</span></div>
+                      <div>Teljes forgalom: <span className="font-medium">{formatCurrency(entry.totalRev)}</span></div>
+                      <div className="text-amber-700">Eltérés: <span className="font-mono">{formatCurrency(entry.diff)}</span></div>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-amber-400 mt-1" />
                 </div>
               </button>
             ))}
