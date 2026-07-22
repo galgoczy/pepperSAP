@@ -6,6 +6,9 @@ import autoTable from 'jspdf-autotable';
 import { Modal, Button } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatDate, formatCurrency } from '../../lib/utils';
+import { fetchHouseCashSeries, fetchCentralHouseCashSeries } from '../../lib/houseCashSeries';
+import { useAuth } from '../../hooks/useAuth';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import toast from 'react-hot-toast';
 
 // Report type labels
@@ -20,6 +23,7 @@ const reportTypeLabels = {
   cash_register_all_detailed: 'Pénztárgép forgalom - összes egység (részletes)',
   events_all: 'Rendezvény összesítő - összes egység',
   monthly_table: 'Havi tábla (költség-bevétel)',
+  house_cash: 'Házipénztár',
 };
 
 // Columns that hold plain counts (e.g. guest headcount), not money — these must
@@ -42,6 +46,10 @@ function formatYearMonthDisplay(yearMonth) {
 export default function ExportModal({ isOpen, onClose, startDate, endDate, unitId, reportType, selectedYearMonth }) {
   const [format, setFormat] = useState('xlsx');
   const [loading, setLoading] = useState(false);
+  const { isAccountant } = useAuth();
+  const { settings } = useAppSettings();
+  // Mirror the house cash report: accountants only get the reserve-less version.
+  const houseCashShowReserve = settings.showReserve && !isAccountant;
 
   const handleExport = async () => {
     setLoading(true);
@@ -141,6 +149,25 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         data = result.data;
         headers = result.headers;
         filename = `havi_tabla_${selectedYearMonth}`;
+      } else if (reportType === 'house_cash') {
+        const result = await fetchHouseCashExport(startDate, endDate, unitId, houseCashShowReserve);
+        data = result.data;
+        headers = result.headers;
+        unitName = result.unitName || '';
+        const unitSlug = sanitizeFilename(unitName);
+        filename = unitSlug
+          ? `hazipenztar_${unitSlug}_${startDate}_${endDate}`
+          : `hazipenztar_osszes_egyseg_${startDate}_${endDate}`;
+        // Sum only the flow columns (opening/closing are running balances).
+        const sum = (key) => data.reduce((s, r) => s + (parseFloat(r[key]) || 0), 0);
+        customTotals = {
+          'Egység': 'Összesen', 'Dátum': '', 'Zseb': '', 'Nyitó': '',
+          'Bevétel': sum('Bevétel'),
+          'Kifizetés': sum('Kifizetés'),
+          'Átküldés': sum('Átküldés'),
+          'Zárás': '',
+          _rowType: 'grandTotal',
+        };
       }
 
       if (data.length === 0) {
@@ -1724,6 +1751,61 @@ function calculateTotalsRow(data, headers) {
     }
   });
   return totalsRow;
+}
+
+// House cash export: one row per (unit/central, day, pocket) with opening,
+// revenue, expenses, transfers and closing — built from the same live series as
+// the on-screen Házipénztár report. When unitId is empty, all restaurant units
+// plus Központ are included. Reserve rows are omitted when reserve is hidden.
+async function fetchHouseCashExport(startDate, endDate, unitId, showReserve) {
+  const headers = ['Egység', 'Dátum', 'Zseb', 'Nyitó', 'Bevétel', 'Kifizetés', 'Átküldés', 'Zárás'];
+  const inRange = (d) => (!startDate || d >= startDate) && (!endDate || d <= endDate);
+  const data = [];
+  let unitName = '';
+
+  const sections = [];
+  if (unitId) {
+    const { data: u } = await supabase.from('units').select('name').eq('id', unitId).maybeSingle();
+    unitName = u?.name || '';
+    sections.push({ name: unitName, series: await fetchHouseCashSeries(unitId, endDate) });
+  } else {
+    const { data: units } = await supabase
+      .from('units').select('id, name').eq('type', 'restaurant').order('name');
+    sections.push({ name: 'Központ', series: await fetchCentralHouseCashSeries(endDate) });
+    for (const u of units || []) {
+      sections.push({ name: u.name, series: await fetchHouseCashSeries(u.id, endDate) });
+    }
+  }
+
+  sections.forEach((sec) => {
+    sec.series.orderedDates.filter(inRange).forEach((d) => {
+      const r = sec.series.byDate.get(d);
+      data.push({
+        'Egység': sec.name,
+        'Dátum': formatDate(d),
+        'Zseb': 'Pénztár',
+        'Nyitó': r.cashOpening,
+        'Bevétel': r.cashRevenue - r.cashDiscrepancies,
+        'Kifizetés': r.cashExpenses,
+        'Átküldés': r.cashTransfers,
+        'Zárás': r.cashClosing,
+      });
+      if (showReserve) {
+        data.push({
+          'Egység': sec.name,
+          'Dátum': formatDate(d),
+          'Zseb': 'Tartalék',
+          'Nyitó': r.reserveOpening,
+          'Bevétel': r.reserveRevenue,
+          'Kifizetés': r.reserveExpenses,
+          'Átküldés': r.reserveTransfers,
+          'Zárás': r.reserveClosing,
+        });
+      }
+    });
+  });
+
+  return { data, headers, unitName };
 }
 
 function exportToExcel(data, headers, totalsRow, filename, reportType) {
