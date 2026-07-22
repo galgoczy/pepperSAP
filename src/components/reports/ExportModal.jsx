@@ -24,6 +24,7 @@ const reportTypeLabels = {
   events_all: 'Rendezvény összesítő - összes egység',
   monthly_table: 'Havi tábla (költség-bevétel)',
   house_cash: 'Házipénztár',
+  full_traffic: 'Teljes forgalmi jelentés (forgalom + házipénztár)',
 };
 
 // Columns that hold plain counts (e.g. guest headcount), not money — these must
@@ -168,6 +169,29 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
           'Zárás': '',
           _rowType: 'grandTotal',
         };
+      } else if (reportType === 'full_traffic') {
+        // Combined report: the monthly revenue AND the house cash, exported as two
+        // sheets (Excel) / two sections (PDF) / two blocks (CSV).
+        const forgalom = unitId
+          ? await fetchFullMonthlyExport(startDate, endDate, unitId)
+          : await fetchFullMonthlyAllUnitsExport(startDate, endDate);
+        const hazi = await fetchHouseCashExport(startDate, endDate, unitId, houseCashShowReserve);
+        unitName = forgalom.unitName || '';
+        const unitSlug = sanitizeFilename(unitName);
+        const fname = unitSlug
+          ? `teljes_forgalmi_${unitSlug}_${startDate}_${endDate}`
+          : `teljes_forgalmi_osszes_egyseg_${startDate}_${endDate}`;
+        await exportCombined(
+          [
+            { name: 'Forgalom', data: forgalom.data, headers: forgalom.headers },
+            { name: 'Házipénztár', data: hazi.data, headers: hazi.headers },
+          ],
+          fname,
+          format,
+        );
+        toast.success('Export sikeres!');
+        onClose();
+        return;
       }
 
       if (data.length === 0) {
@@ -1806,6 +1830,61 @@ async function fetchHouseCashExport(startDate, endDate, unitId, showReserve) {
   });
 
   return { data, headers, unitName };
+}
+
+// Combined multi-section export (used by the "Teljes forgalmi jelentés"): each
+// section becomes its own Excel sheet / PDF page / CSV block.
+async function exportCombined(sections, filename, format) {
+  if (format === 'xlsx') {
+    const wb = XLSX.utils.book_new();
+    sections.forEach((sec) => {
+      const aoa = [sec.headers];
+      sec.data.forEach((r) => aoa.push(sec.headers.map((h) => (r[h] ?? ''))));
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(wb, ws, sec.name.substring(0, 31));
+    });
+    XLSX.writeFile(wb, `${filename}.xlsx`);
+    return;
+  }
+
+  if (format === 'pdf') {
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    let first = true;
+    sections.forEach((sec) => {
+      if (!first) doc.addPage();
+      first = false;
+      doc.setFontSize(13);
+      doc.text(sec.name, 14, 15);
+      autoTable(doc, {
+        startY: 20,
+        head: [sec.headers],
+        body: sec.data.map((r) =>
+          sec.headers.map((h) => {
+            const v = r[h];
+            return typeof v === 'number' ? formatCurrency(v) : (v ?? '');
+          })
+        ),
+        styles: { fontSize: 7 },
+        headStyles: { fillColor: [211, 47, 47] },
+      });
+    });
+    doc.save(`${filename}.pdf`);
+    return;
+  }
+
+  // CSV: sections separated by a blank line, each prefixed with its name.
+  const parts = sections.map((sec) => {
+    const lines = [sec.name, sec.headers.join(';')];
+    sec.data.forEach((r) => lines.push(sec.headers.map((h) => (r[h] ?? '')).join(';')));
+    return lines.join('\n');
+  });
+  const blob = new Blob(['﻿' + parts.join('\n\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${filename}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function exportToExcel(data, headers, totalsRow, filename, reportType) {

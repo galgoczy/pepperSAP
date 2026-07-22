@@ -20,6 +20,7 @@ const MONTH_NAMES = [
 // Base report types for all users
 const baseReportTypes = [
   { value: 'full_monthly', label: 'Teljes havi forgalom' },
+  { value: 'full_traffic', label: 'Teljes forgalmi jelentés (forgalom + házipénztár)' },
   { value: 'cash_revenue', label: 'Készpénz bevételek' },
   { value: 'cash_register', label: 'Pénztárgép jelentés' },
   { value: 'house_cash', label: 'Házipénztár' },
@@ -30,6 +31,7 @@ const baseReportTypes = [
 const adminAggregateReportTypes = [
   { value: 'monthly_table', label: '📊 Havi tábla (költség-bevétel)' },
   { value: 'full_monthly_all', label: 'Teljes havi forgalom - összes egység' },
+  { value: 'full_traffic', label: 'Teljes forgalmi jelentés - összes egység' },
   { value: 'cash_revenue_all', label: 'Készpénz bevételek - összes egység' },
   { value: 'cash_register_all_simple', label: 'Pénztárgép forgalom - összes egység (egyszerű)' },
   { value: 'cash_register_all_detailed', label: 'Pénztárgép forgalom - összes egység (részletes)' },
@@ -346,6 +348,21 @@ export default function ReportsPage() {
           startDate={startDate}
           endDate={endDate}
         />
+      ) : reportType === 'full_traffic' ? (
+        <div className="space-y-8">
+          <MonthlyReport
+            startDate={startDate}
+            endDate={endDate}
+            reportType={effectiveUnitId ? 'full_monthly' : 'full_monthly_all'}
+            unitId={effectiveUnitId}
+          />
+          <HouseCashReport
+            unitId={effectiveUnitId}
+            units={units}
+            startDate={startDate}
+            endDate={endDate}
+          />
+        </div>
       ) : (
         <MonthlyReport
           startDate={startDate}
