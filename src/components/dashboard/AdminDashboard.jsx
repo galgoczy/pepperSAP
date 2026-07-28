@@ -30,10 +30,10 @@ function AnimatedCurrency({ value }) {
   return formatCurrency(animatedValue);
 }
 
-// "Fordított szervízdíj" (reverse service fee) for a month: 20% of the unit's net
-// cash-register revenue, reduced by 18.5% (i.e. 81.5% of it) — net * 0.20 * 0.815.
-// Net = the gross VAT buckets converted to net per rate. Only Knorr 105 for now.
-const RSF_NET_SHARE = 0.20;       // 20% of the net revenue
+// "Fordított szervízdíj" (reverse service fee) for a month: 20% of the unit's
+// GROSS cash-register revenue, reduced by 18.5% (i.e. 81.5% of it) —
+// gross * 0.20 * 0.815. Gross = the VAT buckets summed as-is. Only Knorr 105 now.
+const RSF_GROSS_SHARE = 0.20;     // 20% of the gross revenue
 const RSF_RETAINED_RATE = 0.815;  // reduced by 18.5% -> 81.5% retained
 const RSF_UNITS = ['Knorr 105'];
 const RSF_MONTH_NAMES = [
@@ -84,14 +84,14 @@ function ReverseServiceFeeCard() {
           .eq('unit_id', unit.id)
           .gte('date', start)
           .lte('date', end);
-        let net = 0;
+        let gross = 0;
         (data || []).forEach((dr) => (dr.cash_register_revenue || []).forEach((cr) => {
-          net += (parseFloat(cr.vat_0_percent) || 0)
-            + (parseFloat(cr.vat_5_percent) || 0) / 1.05
-            + (parseFloat(cr.vat_18_percent) || 0) / 1.18
-            + (parseFloat(cr.vat_27_percent) || 0) / 1.27;
+          gross += (parseFloat(cr.vat_0_percent) || 0)
+            + (parseFloat(cr.vat_5_percent) || 0)
+            + (parseFloat(cr.vat_18_percent) || 0)
+            + (parseFloat(cr.vat_27_percent) || 0);
         }));
-        if (!cancelled) setValue(net * RSF_NET_SHARE * RSF_RETAINED_RATE);
+        if (!cancelled) setValue(gross * RSF_GROSS_SHARE * RSF_RETAINED_RATE);
       } catch (e) {
         console.error('Error loading reverse service fee:', e);
         if (!cancelled) setValue(0);
