@@ -32,7 +32,9 @@ function AnimatedCurrency({ value }) {
 
 // "Fordított szervízdíj" (reverse service fee) for a month: 20% of the unit's
 // GROSS cash-register revenue, reduced by 18.5% (i.e. 81.5% of it) —
-// gross * 0.20 * 0.815. Gross = the VAT buckets summed as-is. Only Knorr 105 now.
+// gross * 0.20 * 0.815. Gross = the 5/18/27% VAT buckets summed as-is; the 0%
+// bucket is EXCLUDED (typically göngyöleg — only food & drink counts).
+// Only Knorr 105 for now.
 const RSF_GROSS_SHARE = 0.20;     // 20% of the gross revenue
 const RSF_RETAINED_RATE = 0.815;  // reduced by 18.5% -> 81.5% retained
 const RSF_UNITS = ['Knorr 105'];
@@ -80,14 +82,14 @@ function ReverseServiceFeeCard() {
         const { start, end } = monthRange(ym);
         const { data } = await supabase
           .from('daily_revenue')
-          .select('cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent)')
+          .select('cash_register_revenue(vat_5_percent, vat_18_percent, vat_27_percent)')
           .eq('unit_id', unit.id)
           .gte('date', start)
           .lte('date', end);
         let gross = 0;
         (data || []).forEach((dr) => (dr.cash_register_revenue || []).forEach((cr) => {
-          gross += (parseFloat(cr.vat_0_percent) || 0)
-            + (parseFloat(cr.vat_5_percent) || 0)
+          // 0% (göngyöleg) intentionally excluded — only food & drink counts.
+          gross += (parseFloat(cr.vat_5_percent) || 0)
             + (parseFloat(cr.vat_18_percent) || 0)
             + (parseFloat(cr.vat_27_percent) || 0);
         }));
