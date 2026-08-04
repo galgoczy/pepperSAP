@@ -26,6 +26,8 @@ const STATES = [
     key: 'received',
     label: 'Beérkezett',
     dot: 'bg-[#FA8072] border-[#FA8072]',
+    // Faint version shown before the mark is set, so the colour still identifies it.
+    dotIdle: 'bg-[#FA8072]/25 border-[#FA8072]/50 hover:bg-[#FA8072]/50',
     row: 'bg-[#FA8072]/10',
     text: 'text-[#B4483C]',
     atField: 'received_at',
@@ -35,6 +37,7 @@ const STATES = [
     key: 'scanned',
     label: 'Szkennelt',
     dot: 'bg-green-500 border-green-500',
+    dotIdle: 'bg-green-500/25 border-green-500/50 hover:bg-green-500/50',
     row: 'bg-green-500/10',
     text: 'text-green-700',
     atField: 'scanned_at',
@@ -44,6 +47,7 @@ const STATES = [
     key: 'paid',
     label: 'Fizetett',
     dot: 'bg-yellow-400 border-yellow-400',
+    dotIdle: 'bg-yellow-400/25 border-yellow-400/50 hover:bg-yellow-400/50',
     row: 'bg-yellow-400/10',
     text: 'text-yellow-700',
     atField: 'paid_at',
@@ -215,7 +219,7 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
                           >
                             <span
                               className={`h-3 w-3 rounded-full border transition-colors ${
-                                active ? s.dot : 'bg-white border-gray-300 hover:border-gray-500'
+                                active ? s.dot : s.dotIdle
                               }`}
                             />
                             {active && (
