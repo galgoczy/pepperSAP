@@ -364,6 +364,22 @@ async function fetchCashRevenueData(startDate, endDate, unitId) {
   return { data, totals };
 }
 
+// From a register's closures in the period: the first and last closure number
+// (chronologically) and the cumulative ("göngyölt") revenue of the last one.
+function closureSummary(closures) {
+  const ordered = [...(closures || [])].sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return (a.closure_number ?? 0) - (b.closure_number ?? 0);
+  });
+  const withSeq = ordered.filter((c) => c.sequence != null);
+  const withCum = ordered.filter((c) => c.cumulative != null);
+  return {
+    firstSequence: withSeq.length ? withSeq[0].sequence : null,
+    lastSequence: withSeq.length ? withSeq[withSeq.length - 1].sequence : null,
+    lastCumulative: withCum.length ? withCum[withCum.length - 1].cumulative : null,
+  };
+}
+
 async function fetchCashRegisterData(startDate, endDate, unitId) {
   // Fetch daily revenue with cash register data, including cash register info
   let query = supabase
@@ -395,12 +411,23 @@ async function fetchCashRegisterData(startDate, endDate, unitId) {
           ap_number: apNumber,
           name: registerName,
           days: [],
+          // Every closure of the period, so the first/last closure number and the
+          // last cumulative ("göngyölt") figure can be reported.
+          closures: [],
           totals: {
             vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
-            cash: 0, card: 0, terminal_card: 0, total: 0,
+            cash: 0, card: 0, terminal_card: 0, total: 0, software: 0,
           },
         };
       }
+
+      registerData[apNumber].closures.push({
+        date: row.date,
+        closure_number: cr.closure_number ?? 1,
+        sequence: cr.closure_sequence == null || cr.closure_sequence === '' ? null : Number(cr.closure_sequence),
+        cumulative: cr.cumulative_revenue == null || cr.cumulative_revenue === '' ? null : Number(cr.cumulative_revenue),
+      });
+      registerData[apNumber].totals.software += parseFloat(cr.software_revenue) || 0;
 
       const dayData = {
         date: row.date,
@@ -430,9 +457,10 @@ async function fetchCashRegisterData(startDate, endDate, unitId) {
     });
   });
 
-  // Calculate card discrepancy for each register
+  // Calculate card discrepancy + closure summary for each register
   Object.values(registerData).forEach((reg) => {
     reg.totals.cardDiscrepancy = reg.totals.card - reg.totals.terminal_card;
+    Object.assign(reg, closureSummary(reg.closures));
   });
 
   const data = Object.values(registerData).sort((a, b) => a.ap_number.localeCompare(b.ap_number));
@@ -806,7 +834,7 @@ async function fetchCashRevenueAllUnits(startDate, endDate) {
 async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, software_revenue, closure_number, closure_sequence, cumulative_revenue, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate);
 
@@ -840,6 +868,9 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
           cash: 0,
           card: 0,
           terminal_card: 0,
+          vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
+          software: 0,
+          closures: [],
         };
       }
 
@@ -848,6 +879,20 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
         (parseFloat(cr.vat_18_percent) || 0) +
         (parseFloat(cr.vat_27_percent) || 0) +
         (parseFloat(cr.tips) || 0);
+
+      const reg = unitData[unitId].registers[registerId];
+      reg.vat_0 += parseFloat(cr.vat_0_percent) || 0;
+      reg.vat_5 += parseFloat(cr.vat_5_percent) || 0;
+      reg.vat_18 += parseFloat(cr.vat_18_percent) || 0;
+      reg.vat_27 += parseFloat(cr.vat_27_percent) || 0;
+      reg.tips += parseFloat(cr.tips) || 0;
+      reg.software += parseFloat(cr.software_revenue) || 0;
+      reg.closures.push({
+        date: row.date,
+        closure_number: cr.closure_number ?? 1,
+        sequence: cr.closure_sequence == null || cr.closure_sequence === '' ? null : Number(cr.closure_sequence),
+        cumulative: cr.cumulative_revenue == null || cr.cumulative_revenue === '' ? null : Number(cr.cumulative_revenue),
+      });
 
       unitData[unitId].registers[registerId].total += total;
       unitData[unitId].registers[registerId].cash += parseFloat(cr.cash_payment) || 0;
@@ -863,7 +908,13 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
 
   const data = Object.values(unitData).map((unit) => ({
     ...unit,
-    registers: Object.values(unit.registers),
+    registers: Object.values(unit.registers).map((reg) => ({
+      ...reg,
+      // Closure summary: first/last closure number + last cumulative revenue.
+      ...closureSummary(reg.closures),
+      // Same shape the summary component expects for the novo figure.
+      totals: { software: reg.software },
+    })),
   })).sort((a, b) => a.unitName.localeCompare(b.unitName));
 
   const totals = {
@@ -1346,6 +1397,24 @@ function CashRevenueReport({ data, totals, unitName }) {
   );
 }
 
+// Closure/novo summary shown under a register's heading in the reports.
+function RegisterClosureSummary({ register }) {
+  const val = (v) => (v == null ? '-' : v);
+  return (
+    <div className="text-xs font-normal text-gray-600 flex flex-wrap gap-x-4 gap-y-0.5 mt-0.5">
+      <span>Első zárás: <span className="font-medium">{val(register.firstSequence)}</span></span>
+      <span>Utolsó zárás: <span className="font-medium">{val(register.lastSequence)}</span></span>
+      <span>
+        Utolsó göngyölt:{' '}
+        <span className="font-medium">
+          {register.lastCumulative == null ? '-' : formatCurrency(register.lastCumulative)}
+        </span>
+      </span>
+      <span>Novo forgalom: <span className="font-medium">{formatCurrency(register.totals?.software || 0)}</span></span>
+    </div>
+  );
+}
+
 function CashRegisterReport({ data, totals, unitName }) {
   const navigate = useNavigate();
 
@@ -1353,15 +1422,19 @@ function CashRegisterReport({ data, totals, unitName }) {
     <Card title={unitName ? `Pénztárgép jelentés - ${unitName}` : 'Pénztárgép jelentés'}>
       <p className="text-sm text-gray-500 mb-3">Kattints egy sorra a szerkesztéshez</p>
 
-      <div className="space-y-6">
+      {/* One scroll container for every register, so the register heading and the
+          column headers stay pinned while scrolling and hand over to the next
+          register when its block reaches the top. */}
+      <div className="max-h-[75vh] overflow-auto space-y-6 print:max-h-none print:overflow-visible">
         {data.map((register, regIdx) => (
-          <div key={`register-${regIdx}-${register.ap_number}`} className="border border-gray-200 rounded-lg overflow-hidden">
-            <div className="bg-pepper-red bg-opacity-10 px-4 py-2 font-bold text-gray-900">
-              Pénztárgép: {register.ap_number} {register.name && `(${register.name})`}
+          <div key={`register-${regIdx}-${register.ap_number}`} className="border border-gray-200 rounded-lg">
+            <div className="sticky top-0 z-20 bg-red-50 px-4 py-2 font-bold text-gray-900 border-b border-gray-200">
+              <div>Pénztárgép: {register.ap_number} {register.name && `(${register.name})`}</div>
+              <RegisterClosureSummary register={register} />
             </div>
-            <div className="overflow-x-auto">
+            <div>
               <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
+                <thead className="bg-gray-50 sticky top-[62px] z-10">
                   <tr>
                     <th className="px-3 py-2 text-left">Dátum</th>
                     <th className="px-3 py-2 text-right">0%</th>
@@ -1767,10 +1840,19 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
     <Card title="Pénztárgép forgalom - összes egység (egyszerű)">
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-pepper-red bg-opacity-10">
+          <thead className="bg-red-50 sticky top-0 z-10">
             <tr>
               <th className="px-4 py-2 text-left">Egység / Pénztárgép</th>
+              <th className="px-4 py-2 text-right">0%</th>
+              <th className="px-4 py-2 text-right">5%</th>
+              <th className="px-4 py-2 text-right">18%</th>
+              <th className="px-4 py-2 text-right">27%</th>
+              <th className="px-4 py-2 text-right">Borr.</th>
               <th className="px-4 py-2 text-right">Forgalom</th>
+              <th className="px-4 py-2 text-right">Novo</th>
+              <th className="px-4 py-2 text-right">Első z.</th>
+              <th className="px-4 py-2 text-right">Utolsó z.</th>
+              <th className="px-4 py-2 text-right">Utolsó göngyölt</th>
               <th className="px-4 py-2 text-right">KP</th>
               <th className="px-4 py-2 text-right">Kártya</th>
               <th className="px-4 py-2 text-right">Terminál</th>
@@ -1781,7 +1863,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
             {data.map((unit, unitIdx) => (
               <React.Fragment key={`unit-${unitIdx}-${unit.unitName}`}>
                 <tr className="bg-gray-50 font-medium">
-                  <td className="px-4 py-2" colSpan={6}>{unit.unitName}</td>
+                  <td className="px-4 py-2" colSpan={15}>{unit.unitName}</td>
                 </tr>
                 {(unit.registers || []).map((reg, regIdx) => {
                   const discrepancy = reg.card - (reg.terminal_card || 0);
@@ -1790,7 +1872,18 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
                       <td className="px-4 py-2 pl-8 text-gray-600">
                         {reg.ap_number} {reg.name && `(${reg.name})`}
                       </td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(reg.vat_0 || 0)}</td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(reg.vat_5 || 0)}</td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(reg.vat_18 || 0)}</td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(reg.vat_27 || 0)}</td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(reg.tips || 0)}</td>
                       <td className="px-4 py-2 text-right">{formatCurrency(reg.total)}</td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(reg.software || 0)}</td>
+                      <td className="px-4 py-2 text-right">{reg.firstSequence ?? '-'}</td>
+                      <td className="px-4 py-2 text-right">{reg.lastSequence ?? '-'}</td>
+                      <td className="px-4 py-2 text-right">
+                        {reg.lastCumulative == null ? '-' : formatCurrency(reg.lastCumulative)}
+                      </td>
                       <td className="px-4 py-2 text-right">{formatCurrency(reg.cash)}</td>
                       <td className="px-4 py-2 text-right">{formatCurrency(reg.card)}</td>
                       <td className="px-4 py-2 text-right">{formatCurrency(reg.terminal_card || 0)}</td>
@@ -1802,7 +1895,16 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
                 })}
                 <tr className="bg-gray-100">
                   <td className="px-4 py-2 pl-8 font-medium text-gray-700">{unit.unitName} összesen</td>
+                  {['vat_0', 'vat_5', 'vat_18', 'vat_27', 'tips'].map((k) => (
+                    <td key={k} className="px-4 py-2 text-right font-medium">
+                      {formatCurrency((unit.registers || []).reduce((s, r) => s + (r[k] || 0), 0))}
+                    </td>
+                  ))}
                   <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.cashRegisterTotal)}</td>
+                  <td className="px-4 py-2 text-right font-medium">
+                    {formatCurrency((unit.registers || []).reduce((s, r) => s + (r.software || 0), 0))}
+                  </td>
+                  <td className="px-4 py-2" colSpan={3}></td>
                   <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.cash)}</td>
                   <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.card)}</td>
                   <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.terminal_card)}</td>
@@ -1814,7 +1916,20 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
             ))}
             <tr className="bg-pepper-red bg-opacity-10 font-bold">
               <td className="px-4 py-2">Mindösszesen</td>
+              {['vat_0', 'vat_5', 'vat_18', 'vat_27', 'tips'].map((k) => (
+                <td key={k} className="px-4 py-2 text-right">
+                  {formatCurrency(
+                    data.reduce((s, u) => s + (u.registers || []).reduce((x, r) => x + (r[k] || 0), 0), 0)
+                  )}
+                </td>
+              ))}
               <td className="px-4 py-2 text-right">{formatCurrency(totals.cashRegisterTotal)}</td>
+              <td className="px-4 py-2 text-right">
+                {formatCurrency(
+                  data.reduce((s, u) => s + (u.registers || []).reduce((x, r) => x + (r.software || 0), 0), 0)
+                )}
+              </td>
+              <td className="px-4 py-2" colSpan={3}></td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.cash)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.card)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.terminal_card)}</td>

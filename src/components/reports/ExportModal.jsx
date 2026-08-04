@@ -111,6 +111,10 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
           'Kártya': result.grandTotals.card,
           'Terminál': result.grandTotals.terminal_card,
           'Eltérés': result.grandTotals.cardDiscrepancy,
+          'Novo forgalom': result.grandTotals.software,
+          'Első zárás': '',
+          'Utolsó zárás': '',
+          'Utolsó göngyölt': '',
           _rowType: 'grandTotal',
         };
       } else if (reportType === 'events') {
@@ -440,6 +444,22 @@ async function fetchCashRevenueExport(startDate, endDate, unitId) {
   return { data, headers, unitName };
 }
 
+// First/last closure number and the last cumulative ("göngyölt") revenue of a
+// register in the exported period.
+function exportClosureSummary(closures) {
+  const ordered = [...(closures || [])].sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return (a.closure_number ?? 0) - (b.closure_number ?? 0);
+  });
+  const withSeq = ordered.filter((c) => c.sequence != null);
+  const withCum = ordered.filter((c) => c.cumulative != null);
+  return {
+    firstSequence: withSeq.length ? withSeq[0].sequence : null,
+    lastSequence: withSeq.length ? withSeq[withSeq.length - 1].sequence : null,
+    lastCumulative: withCum.length ? withCum[withCum.length - 1].cumulative : null,
+  };
+}
+
 async function fetchCashRegisterExport(startDate, endDate, unitId) {
   let query = supabase
     .from('daily_revenue')
@@ -470,12 +490,21 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
           ap_number: apNumber,
           name: registerName,
           days: [],
+          closures: [],
           totals: {
             vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
-            cash: 0, card: 0, terminal_card: 0, total: 0,
+            cash: 0, card: 0, terminal_card: 0, total: 0, software: 0,
           },
         };
       }
+
+      registerData[apNumber].closures.push({
+        date: row.date,
+        closure_number: cr.closure_number ?? 1,
+        sequence: cr.closure_sequence == null || cr.closure_sequence === '' ? null : Number(cr.closure_sequence),
+        cumulative: cr.cumulative_revenue == null || cr.cumulative_revenue === '' ? null : Number(cr.cumulative_revenue),
+      });
+      registerData[apNumber].totals.software += parseFloat(cr.software_revenue) || 0;
 
       const dayData = {
         date: row.date,
@@ -504,20 +533,22 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
     });
   });
 
-  // Calculate card discrepancy for each register
+  // Calculate card discrepancy + closure summary for each register
   Object.values(registerData).forEach((reg) => {
     reg.totals.cardDiscrepancy = reg.totals.card - reg.totals.terminal_card;
+    Object.assign(reg, exportClosureSummary(reg.closures));
   });
 
   const registers = Object.values(registerData).sort((a, b) => a.ap_number.localeCompare(b.ap_number));
 
-  // Headers without "Pénztárgép" column - register name will be in header rows
-  const headers = ['Dátum', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Összesen', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés'];
+  // Headers without "Pénztárgép" column - register name will be in header rows.
+  // The last four are per-register figures, filled on the subtotal rows.
+  const headers = ['Dátum', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Összesen', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés', 'Novo forgalom', 'Első zárás', 'Utolsó zárás', 'Utolsó göngyölt'];
 
   const data = [];
   let grandTotals = {
     vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
-    total: 0, cash: 0, card: 0, terminal_card: 0, cardDiscrepancy: 0,
+    total: 0, cash: 0, card: 0, terminal_card: 0, cardDiscrepancy: 0, software: 0,
   };
 
   registers.forEach((reg) => {
@@ -535,6 +566,10 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
       'Kártya': '',
       'Terminál': '',
       'Eltérés': '',
+      'Novo forgalom': '',
+      'Első zárás': '',
+      'Utolsó zárás': '',
+      'Utolsó göngyölt': '',
       _rowType: 'registerHeader',
     });
 
@@ -552,6 +587,10 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
         'Kártya': day.card,
         'Terminál': day.terminal_card,
         'Eltérés': day.cardDiscrepancy,
+        'Novo forgalom': '',
+        'Első zárás': '',
+        'Utolsó zárás': '',
+        'Utolsó göngyölt': '',
         _rowType: 'data',
       });
     });
@@ -569,6 +608,10 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
       'Kártya': reg.totals.card,
       'Terminál': reg.totals.terminal_card,
       'Eltérés': reg.totals.cardDiscrepancy,
+      'Novo forgalom': reg.totals.software,
+      'Első zárás': reg.firstSequence ?? '',
+      'Utolsó zárás': reg.lastSequence ?? '',
+      'Utolsó göngyölt': reg.lastCumulative ?? '',
       _rowType: 'subtotal',
     });
 
@@ -583,6 +626,7 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
     grandTotals.card += reg.totals.card;
     grandTotals.terminal_card += reg.totals.terminal_card;
     grandTotals.cardDiscrepancy += reg.totals.cardDiscrepancy;
+    grandTotals.software += reg.totals.software;
   });
 
   return { data, headers, unitName, grandTotals };
@@ -1134,7 +1178,7 @@ async function fetchCashRevenueAllUnitsExport(startDate, endDate) {
 async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, software_revenue, closure_number, closure_sequence, cumulative_revenue, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate);
 
@@ -1168,6 +1212,9 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
           cash: 0,
           card: 0,
           terminal_card: 0,
+          vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
+          software: 0,
+          closures: [],
         };
       }
 
@@ -1176,6 +1223,20 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
         (parseFloat(cr.vat_18_percent) || 0) +
         (parseFloat(cr.vat_27_percent) || 0) +
         (parseFloat(cr.tips) || 0);
+
+      const regAcc = unitData[unitId].registers[registerId];
+      regAcc.vat_0 += parseFloat(cr.vat_0_percent) || 0;
+      regAcc.vat_5 += parseFloat(cr.vat_5_percent) || 0;
+      regAcc.vat_18 += parseFloat(cr.vat_18_percent) || 0;
+      regAcc.vat_27 += parseFloat(cr.vat_27_percent) || 0;
+      regAcc.tips += parseFloat(cr.tips) || 0;
+      regAcc.software += parseFloat(cr.software_revenue) || 0;
+      regAcc.closures.push({
+        date: row.date,
+        closure_number: cr.closure_number ?? 1,
+        sequence: cr.closure_sequence == null || cr.closure_sequence === '' ? null : Number(cr.closure_sequence),
+        cumulative: cr.cumulative_revenue == null || cr.cumulative_revenue === '' ? null : Number(cr.cumulative_revenue),
+      });
 
       unitData[unitId].registers[registerId].total += total;
       unitData[unitId].registers[registerId].cash += parseFloat(cr.cash_payment) || 0;
@@ -1189,17 +1250,27 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
     });
   });
 
-  const headers = ['Egység', 'Pénztárgép', 'Forgalom', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés'];
+  const headers = ['Egység', 'Pénztárgép', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Forgalom', 'Novo forgalom', 'Első zárás', 'Utolsó zárás', 'Utolsó göngyölt', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés'];
 
   const data = [];
   Object.values(unitData)
     .sort((a, b) => a.unitName.localeCompare(b.unitName))
     .forEach((unit) => {
       Object.values(unit.registers).forEach((reg) => {
+        const summary = exportClosureSummary(reg.closures);
         data.push({
           'Egység': unit.unitName,
           'Pénztárgép': `${reg.ap_number}${reg.name ? ` (${reg.name})` : ''}`,
+          '0% ÁFA': reg.vat_0,
+          '5% ÁFA': reg.vat_5,
+          '18% ÁFA': reg.vat_18,
+          '27% ÁFA': reg.vat_27,
+          'Borravaló': reg.tips,
           'Forgalom': reg.total,
+          'Novo forgalom': reg.software,
+          'Első zárás': summary.firstSequence ?? '',
+          'Utolsó zárás': summary.lastSequence ?? '',
+          'Utolsó göngyölt': summary.lastCumulative ?? '',
           'Készpénz': reg.cash,
           'Kártya': reg.card,
           'Terminál': reg.terminal_card,
