@@ -28,7 +28,7 @@ const STATES = [
     dot: 'bg-[#FA8072] border-[#FA8072]',
     // Faint version shown before the mark is set, so the colour still identifies it.
     dotIdle: 'bg-[#FA8072]/25 border-[#FA8072]/50 hover:bg-[#FA8072]/50',
-    row: 'bg-[#FA8072]/10',
+    row: 'bg-[#FA8072]/25',
     text: 'text-[#B4483C]',
     atField: 'received_at',
     byField: 'received_by',
@@ -38,7 +38,7 @@ const STATES = [
     label: 'Szkennelt',
     dot: 'bg-green-500 border-green-500',
     dotIdle: 'bg-green-500/25 border-green-500/50 hover:bg-green-500/50',
-    row: 'bg-green-500/10',
+    row: 'bg-green-500/25',
     text: 'text-green-700',
     atField: 'scanned_at',
     byField: 'scanned_by',
@@ -48,7 +48,7 @@ const STATES = [
     label: 'Fizetett',
     dot: 'bg-yellow-400 border-yellow-400',
     dotIdle: 'bg-yellow-400/25 border-yellow-400/50 hover:bg-yellow-400/50',
-    row: 'bg-yellow-400/10',
+    row: 'bg-yellow-400/25',
     text: 'text-yellow-700',
     atField: 'paid_at',
     byField: 'paid_by',
@@ -64,6 +64,7 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [stateFilter, setStateFilter] = useState('');
+  const [methodFilter, setMethodFilter] = useState('');
   const [sortKey, setSortKey] = useState('date');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -131,6 +132,7 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
     [...statesFor(item)].reverse().find((s) => item[s.key]) || null;
 
   const visibleItems = items.filter((item) => {
+    if (methodFilter && item.payment_method !== methodFilter) return false;
     if (stateFilter === 'not_received') return !item.received;
     if (stateFilter === 'not_scanned') return !item.scanned;
     if (stateFilter === 'not_paid') return item.payment_method === 'transfer' && !item.paid;
@@ -212,6 +214,19 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
           className="w-64"
         />
 
+        <Select
+          value={methodFilter}
+          onChange={(e) => setMethodFilter(e.target.value)}
+          options={[
+            { value: '', label: 'Minden fizetési mód' },
+            { value: 'transfer', label: 'Átutalás' },
+            { value: 'card', label: 'Bankkártya' },
+            { value: 'mol_card', label: 'MOL kártya' },
+            { value: 'cash', label: 'Készpénz' },
+          ]}
+          className="w-52"
+        />
+
         {/* Legend */}
         <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
           {STATES.map((s) => (
@@ -249,9 +264,11 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
           </TableHead>
           <TableBody>
             {sortedItems.map((item) => {
+              // An active mark tints the whole row; hover is disabled there so
+              // the colour doesn't disappear under the cursor.
               const rs = rowState(item);
               return (
-                <TableRow key={item.id} className={rs ? rs.row : ''}>
+                <TableRow key={item.id} hover={!rs} className={rs ? rs.row : ''}>
                   {/* Status dots: only the dot shows until it is active, then the
                       label appears next to it. Clicking toggles the state. */}
                   <TableCell>
@@ -272,9 +289,6 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
                                 active ? s.dot : s.dotIdle
                               }`}
                             />
-                            {active && (
-                              <span className={`text-xs font-medium ${s.text}`}>{s.label}</span>
-                            )}
                           </button>
                         );
                       })}
@@ -296,8 +310,15 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
                       {PAYMENT_METHODS[item.payment_method] || item.payment_method}
                     </Badge>
                   </TableCell>
-                  <TableCell align="right" className="font-semibold text-red-600">
-                    -{formatCurrency(item.amount, item.currency)}
+                  {/* Invoices show a plain positive amount; a credit note
+                      (jóváíró, negative) keeps its minus sign and is green. */}
+                  <TableCell
+                    align="right"
+                    className={`font-semibold ${
+                      (parseFloat(item.amount) || 0) < 0 ? 'text-green-600' : 'text-gray-900'
+                    }`}
+                  >
+                    {formatCurrency(item.amount, item.currency)}
                   </TableCell>
                 </TableRow>
               );
