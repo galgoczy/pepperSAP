@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Receipt } from 'lucide-react';
+import { Receipt, ChevronUp, ChevronDown } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import {
@@ -64,6 +64,8 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [stateFilter, setStateFilter] = useState('');
+  const [sortKey, setSortKey] = useState('date');
+  const [sortDir, setSortDir] = useState('desc');
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -135,6 +137,54 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
     return true;
   });
 
+  // Sorting: click a header to sort by it, click again to flip the direction.
+  // "Állapot" sorts by how far along the invoice is (fizetett > szkennelt > beérkezett).
+  const SORTABLE = {
+    state: (i) => (i.paid ? 3 : i.scanned ? 2 : i.received ? 1 : 0),
+    name: (i) => (i.supplier_name || '').toLowerCase(),
+    description: (i) => (i.item_description || '').toLowerCase(),
+    unit: (i) => (i.units?.name || '').toLowerCase(),
+    date: (i) => i.invoice_date || '',
+    payment: (i) => PAYMENT_METHODS[i.payment_method] || i.payment_method || '',
+    amount: (i) => parseFloat(i.amount) || 0,
+  };
+
+  const sortedItems = [...visibleItems].sort((a, b) => {
+    const get = SORTABLE[sortKey] || SORTABLE.date;
+    const va = get(a);
+    const vb = get(b);
+    const cmp = typeof va === 'number' && typeof vb === 'number'
+      ? va - vb
+      : String(va).localeCompare(String(vb), 'hu');
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const toggleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'date' || key === 'amount' || key === 'state' ? 'desc' : 'asc');
+    }
+  };
+
+  const SortHeader = ({ sortId, children, align }) => (
+    <TableHeader align={align}>
+      <button
+        type="button"
+        onClick={() => toggleSort(sortId)}
+        className={`inline-flex items-center gap-1 hover:text-gray-900 ${
+          sortKey === sortId ? 'text-gray-900 font-semibold' : ''
+        }`}
+      >
+        {children}
+        {sortKey === sortId && (
+          sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+        )}
+      </button>
+    </TableHeader>
+  );
+
   const notReceivedCount = items.filter((i) => !i.received).length;
   const notPaidCount = items.filter((i) => i.payment_method === 'transfer' && !i.paid).length;
   const totalAmount = visibleItems.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
@@ -188,17 +238,17 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
         <Table>
           <TableHead>
             <TableRow>
-              <TableHeader>Állapot</TableHeader>
-              <TableHeader>Név</TableHeader>
-              <TableHeader>Tétel</TableHeader>
-              {isAdmin && <TableHeader>Egység</TableHeader>}
-              <TableHeader>Dátum</TableHeader>
-              <TableHeader>Fizetés</TableHeader>
-              <TableHeader align="right">Összeg</TableHeader>
+              <SortHeader sortId="state">Állapot</SortHeader>
+              <SortHeader sortId="name">Név</SortHeader>
+              <SortHeader sortId="description">Tétel</SortHeader>
+              {isAdmin && <SortHeader sortId="unit">Egység</SortHeader>}
+              <SortHeader sortId="date">Dátum</SortHeader>
+              <SortHeader sortId="payment">Fizetés</SortHeader>
+              <SortHeader sortId="amount" align="right">Összeg</SortHeader>
             </TableRow>
           </TableHead>
           <TableBody>
-            {visibleItems.map((item) => {
+            {sortedItems.map((item) => {
               const rs = rowState(item);
               return (
                 <TableRow key={item.id} className={rs ? rs.row : ''}>

@@ -106,6 +106,7 @@ export default function ExpensesPage() {
       <div className="flex flex-wrap items-center gap-4">
         {isAdmin && (
           <Select
+            label="Egység"
             value={selectedUnit}
             onChange={(e) => setSelectedUnit(e.target.value)}
             options={unitOptions}
