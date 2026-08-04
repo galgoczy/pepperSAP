@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Receipt, Check } from 'lucide-react';
+import { Receipt } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import {
@@ -12,19 +12,54 @@ import {
   Badge,
   EmptyState,
   LoadingSpinner,
+  Select,
 } from '../common';
 import { formatCurrency, formatDate, PAYMENT_METHODS } from '../../lib/utils';
 import toast from 'react-hot-toast';
 
-// Admin view of official (számlás) cash/card payments, where the physical
-// invoice arrival can be checked off. A "hiányzók mutatása" toggle narrows the
-// list to invoices not yet received.
+// The three admin-side states an official invoice can be marked with. These are
+// bookkeeping flags only — they never affect the units' data entry or the
+// amounts. "paid" only applies to transfer invoices.
+// Colours: received = salmon, scanned = green, paid = yellow.
+const STATES = [
+  {
+    key: 'received',
+    label: 'Beérkezett',
+    dot: 'bg-[#FA8072] border-[#FA8072]',
+    row: 'bg-[#FA8072]/10',
+    text: 'text-[#B4483C]',
+    atField: 'received_at',
+    byField: 'received_by',
+  },
+  {
+    key: 'scanned',
+    label: 'Szkennelt',
+    dot: 'bg-green-500 border-green-500',
+    row: 'bg-green-500/10',
+    text: 'text-green-700',
+    atField: 'scanned_at',
+    byField: 'scanned_by',
+  },
+  {
+    key: 'paid',
+    label: 'Fizetett',
+    dot: 'bg-yellow-400 border-yellow-400',
+    row: 'bg-yellow-400/10',
+    text: 'text-yellow-700',
+    atField: 'paid_at',
+    byField: 'paid_by',
+    transferOnly: true,
+  },
+];
+
+// Admin view of official (számlás) payments, where the invoice's handling can be
+// tracked: received / scanned / paid.
 export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDate }) {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
-  const [missingOnly, setMissingOnly] = useState(false);
+  const [stateFilter, setStateFilter] = useState('');
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -33,7 +68,7 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
         .from('expenses')
         .select('*, units (id, name)')
         .eq('is_official', true)
-        .in('payment_method', ['cash', 'card'])
+        .in('payment_method', ['cash', 'card', 'mol_card', 'transfer'])
         .order('invoice_date', { ascending: false });
 
       if (unitId) query = query.eq('unit_id', unitId);
@@ -55,36 +90,49 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
     fetchItems();
   }, [fetchItems]);
 
-  const toggleReceived = async (item, nextReceived) => {
-    setSavingId(item.id);
-    // Optimistic update.
+  // Toggle one of the three states on an invoice (optimistic, reverts on error).
+  const toggleState = async (item, state, nextValue) => {
+    setSavingId(`${item.id}-${state.key}`);
     setItems((prev) =>
-      prev.map((e) => (e.id === item.id ? { ...e, received: nextReceived } : e))
+      prev.map((e) => (e.id === item.id ? { ...e, [state.key]: nextValue } : e))
     );
     try {
       const { error } = await supabase
         .from('expenses')
         .update({
-          received: nextReceived,
-          received_at: nextReceived ? new Date().toISOString() : null,
-          received_by: nextReceived ? user?.id || null : null,
+          [state.key]: nextValue,
+          [state.atField]: nextValue ? new Date().toISOString() : null,
+          [state.byField]: nextValue ? user?.id || null : null,
         })
         .eq('id', item.id);
       if (error) throw error;
     } catch (error) {
-      console.error('Error updating received state:', error);
-      toast.error('Hiba a beérkezés mentésekor');
-      // Revert.
+      console.error('Error updating invoice state:', error);
+      toast.error('Hiba a jelölés mentésekor');
       setItems((prev) =>
-        prev.map((e) => (e.id === item.id ? { ...e, received: !nextReceived } : e))
+        prev.map((e) => (e.id === item.id ? { ...e, [state.key]: !nextValue } : e))
       );
     } finally {
       setSavingId(null);
     }
   };
 
-  const visibleItems = missingOnly ? items.filter((i) => !i.received) : items;
-  const missingCount = items.filter((i) => !i.received).length;
+  const statesFor = (item) =>
+    STATES.filter((s) => !s.transferOnly || item.payment_method === 'transfer');
+
+  // The furthest-along active state colours the row (paid > scanned > received).
+  const rowState = (item) =>
+    [...statesFor(item)].reverse().find((s) => item[s.key]) || null;
+
+  const visibleItems = items.filter((item) => {
+    if (stateFilter === 'not_received') return !item.received;
+    if (stateFilter === 'not_scanned') return !item.scanned;
+    if (stateFilter === 'not_paid') return item.payment_method === 'transfer' && !item.paid;
+    return true;
+  });
+
+  const notReceivedCount = items.filter((i) => !i.received).length;
+  const notPaidCount = items.filter((i) => i.payment_method === 'transfer' && !i.paid).length;
   const totalAmount = visibleItems.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
 
   if (loading) {
@@ -98,30 +146,27 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-4">
-        {/* "Hiányzók mutatása" toggle */}
-        <button
-          type="button"
-          role="switch"
-          aria-checked={missingOnly}
-          onClick={() => setMissingOnly((v) => !v)}
-          className="flex items-center gap-2 text-sm text-gray-700"
-        >
-          <span
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-              missingOnly ? 'bg-pepper-red' : 'bg-gray-300'
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                missingOnly ? 'translate-x-4' : 'translate-x-1'
-              }`}
-            />
-          </span>
-          Hiányzók mutatása
-          {missingCount > 0 && (
-            <span className="ml-1 text-xs font-semibold text-pepper-red">({missingCount})</span>
-          )}
-        </button>
+        <Select
+          value={stateFilter}
+          onChange={(e) => setStateFilter(e.target.value)}
+          options={[
+            { value: '', label: 'Minden számla' },
+            { value: 'not_received', label: `Be nem érkezett${notReceivedCount ? ` (${notReceivedCount})` : ''}` },
+            { value: 'not_scanned', label: 'Nem szkennelt' },
+            { value: 'not_paid', label: `Nem fizetett – átutalás${notPaidCount ? ` (${notPaidCount})` : ''}` },
+          ]}
+          className="w-64"
+        />
+
+        {/* Legend */}
+        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+          {STATES.map((s) => (
+            <span key={s.key} className="inline-flex items-center gap-1">
+              <span className={`h-2.5 w-2.5 rounded-full border ${s.dot}`} />
+              {s.label}
+            </span>
+          ))}
+        </div>
 
         <div className="ml-auto text-sm text-gray-500">
           Összesen: <span className="font-semibold text-gray-900">{formatCurrency(totalAmount)}</span>
@@ -132,67 +177,77 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
       {visibleItems.length === 0 ? (
         <EmptyState
           icon={Receipt}
-          title={missingOnly ? 'Nincs hiányzó számla' : 'Nincsenek számlák'}
-          description={
-            missingOnly
-              ? 'A megadott időszakban minden hivatalos készpénzes/kártyás számla beérkezett'
-              : 'A megadott időszakban nincs hivatalos készpénzes/kártyás számla'
-          }
+          title="Nincsenek számlák"
+          description="A megadott időszakban és szűrésre nem található számla"
         />
       ) : (
         <Table>
           <TableHead>
             <TableRow>
+              <TableHeader>Állapot</TableHeader>
               <TableHeader>Név</TableHeader>
               <TableHeader>Tétel</TableHeader>
               {isAdmin && <TableHeader>Egység</TableHeader>}
               <TableHeader>Dátum</TableHeader>
               <TableHeader>Fizetés</TableHeader>
               <TableHeader align="right">Összeg</TableHeader>
-              <TableHeader align="center">Beérkezett</TableHeader>
             </TableRow>
           </TableHead>
           <TableBody>
-            {visibleItems.map((item) => (
-              <TableRow key={item.id} className={item.received ? 'bg-green-50/40' : ''}>
-                <TableCell>
-                  <div>
-                    <p className="font-medium text-gray-900">{item.supplier_name}</p>
+            {visibleItems.map((item) => {
+              const rs = rowState(item);
+              return (
+                <TableRow key={item.id} className={rs ? rs.row : ''}>
+                  {/* Status dots: only the dot shows until it is active, then the
+                      label appears next to it. Clicking toggles the state. */}
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {statesFor(item).map((s) => {
+                        const active = !!item[s.key];
+                        return (
+                          <button
+                            key={s.key}
+                            type="button"
+                            onClick={() => toggleState(item, s, !active)}
+                            disabled={savingId === `${item.id}-${s.key}`}
+                            title={active ? s.label : `Jelölés: ${s.label}`}
+                            className="inline-flex items-center gap-1 disabled:opacity-50"
+                          >
+                            <span
+                              className={`h-3 w-3 rounded-full border transition-colors ${
+                                active ? s.dot : 'bg-white border-gray-300 hover:border-gray-500'
+                              }`}
+                            />
+                            {active && (
+                              <span className={`text-xs font-medium ${s.text}`}>{s.label}</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </TableCell>
+                  <TableCell className="max-w-[180px]">
+                    <p className="font-medium text-gray-900 truncate">{item.supplier_name}</p>
                     {item.invoice_number && (
-                      <p className="text-xs text-gray-500">{item.invoice_number}</p>
+                      <p className="text-xs text-gray-500 truncate">{item.invoice_number}</p>
                     )}
-                  </div>
-                </TableCell>
-                <TableCell className="max-w-xs truncate">
-                  {item.item_description || '-'}
-                </TableCell>
-                {isAdmin && <TableCell>{item.units?.name || '-'}</TableCell>}
-                <TableCell>{formatDate(item.invoice_date)}</TableCell>
-                <TableCell>
-                  <Badge variant="info" size="sm">
-                    {PAYMENT_METHODS[item.payment_method] || item.payment_method}
-                  </Badge>
-                </TableCell>
-                <TableCell align="right" className="font-semibold text-red-600">
-                  -{formatCurrency(item.amount, item.currency)}
-                </TableCell>
-                <TableCell align="center">
-                  <button
-                    type="button"
-                    onClick={() => toggleReceived(item, !item.received)}
-                    disabled={savingId === item.id}
-                    title={item.received ? 'Beérkezett' : 'Még nem érkezett be'}
-                    className={`inline-flex h-6 w-6 items-center justify-center rounded border transition-colors disabled:opacity-50 ${
-                      item.received
-                        ? 'bg-green-600 border-green-600 text-white'
-                        : 'bg-white border-gray-300 hover:border-green-500'
-                    }`}
-                  >
-                    {item.received && <Check className="h-4 w-4" />}
-                  </button>
-                </TableCell>
-              </TableRow>
-            ))}
+                  </TableCell>
+                  <TableCell className="max-w-[160px] truncate">
+                    {item.item_description || '-'}
+                  </TableCell>
+                  {isAdmin && <TableCell>{item.units?.name || '-'}</TableCell>}
+                  <TableCell>{formatDate(item.invoice_date)}</TableCell>
+                  <TableCell>
+                    <Badge variant="info" size="sm">
+                      {PAYMENT_METHODS[item.payment_method] || item.payment_method}
+                    </Badge>
+                  </TableCell>
+                  <TableCell align="right" className="font-semibold text-red-600">
+                    -{formatCurrency(item.amount, item.currency)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       )}

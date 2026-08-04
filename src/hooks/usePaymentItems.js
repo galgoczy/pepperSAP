@@ -22,6 +22,8 @@ function normalizeExpense(e) {
     payment_method: e.payment_method || null,
     is_official: e.is_official,
     date: e.invoice_date,
+    // Alternative date basis for transfer invoices (list can switch to it).
+    fulfillment_date: e.fulfillment_date || null,
     created_at: e.created_at,
     units: e.units || null,
     editable: true,

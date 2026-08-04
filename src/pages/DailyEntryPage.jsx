@@ -918,7 +918,7 @@ export default function DailyEntryPage() {
             <div>
               <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 <span className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-sm font-bold">3</span>
-                Napi kifizetések
+                Napi kifizetések / számlák
                 <div className="ml-auto flex flex-wrap gap-2">
                   <Button
                     size="sm"

@@ -89,7 +89,7 @@ export default function ExpensesPage() {
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setIsFormOpen(true)}>
             <Plus className="h-4 w-4" />
-            Új kifizetés
+            Számla / kifizetés
           </Button>
           <Button variant="secondary" onClick={() => setIsEfoFormOpen(true)}>
             <Users className="h-4 w-4" />
@@ -142,7 +142,7 @@ export default function ExpensesPage() {
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              Kifizetések
+              Számlák áttekintése
             </button>
             <button
               onClick={() => setActiveTab('received')}
@@ -188,7 +188,7 @@ export default function ExpensesPage() {
       <Modal
         isOpen={isFormOpen}
         onClose={handleClose}
-        title="Új kifizetés"
+        title="Számla / kifizetés"
         size="lg"
       >
         <ExpenseForm

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Receipt, Filter } from 'lucide-react';
+import { Receipt, Filter, ChevronUp, ChevronDown } from 'lucide-react';
 import { usePaymentItems, PAYMENT_KIND_META } from '../../hooks/usePaymentItems';
 import {
   Table,
@@ -17,6 +17,37 @@ import {
 } from '../common';
 import { formatCurrency, formatDate, PAYMENT_METHODS, getFirstDayOfMonth, getLastDayOfMonth } from '../../lib/utils';
 
+// Which "pot" a payment comes out of:
+//   bank      – anything paid from the bank account (card, MOL card, transfer, …)
+//   house     – official cash (Házipénztár)
+//   reserve   – non-official cash (Tartalék)
+// EFO/wage items have no is_official flag; their official part moves the house
+// cash, so they are grouped under Házipénztár.
+function itemSource(item) {
+  const pm = item.payment_method;
+  if (pm && pm !== 'cash') return 'bank';
+  if (item.is_official === false) return 'reserve';
+  return 'house';
+}
+
+const SORTABLE = {
+  kind: (i) => PAYMENT_KIND_META[i.kind]?.label || '',
+  name: (i) => (i.name || '').toLowerCase(),
+  description: (i) => (i.description || '').toLowerCase(),
+  unit: (i) => (i.units?.name || '').toLowerCase(),
+  date: (i, dateBasis) => effectiveDate(i, dateBasis) || '',
+  amount: (i) => i.amount || 0,
+};
+
+// Transfer invoices can be listed by their issue date (kelt) or, optionally, by
+// their fulfillment date (teljesítés). Everything else always uses its own date.
+function effectiveDate(item, dateBasis) {
+  if (dateBasis === 'fulfillment' && item.payment_method === 'transfer') {
+    return item.fulfillment_date || item.date;
+  }
+  return item.date;
+}
+
 export default function ExpenseList({
   unitId,
   onEdit,
@@ -29,6 +60,10 @@ export default function ExpenseList({
   const [localEndDate, setLocalEndDate] = useState(getLastDayOfMonth());
   const [paymentFilter, setPaymentFilter] = useState('');
   const [kindFilter, setKindFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+  const [dateBasis, setDateBasis] = useState('invoice'); // 'invoice' | 'fulfillment'
+  const [sortKey, setSortKey] = useState('date');
+  const [sortDir, setSortDir] = useState('desc');
   const [showFilters, setShowFilters] = useState(false);
 
   // Use props if provided, otherwise use local state
@@ -61,8 +96,49 @@ export default function ExpenseList({
     if (paymentFilter && item.payment_method !== paymentFilter) {
       return false;
     }
+    if (sourceFilter && itemSource(item) !== sourceFilter) {
+      return false;
+    }
     return true;
   });
+
+  // Sort: click a header to sort by it, click again to flip the direction.
+  const sortedItems = [...filteredItems].sort((a, b) => {
+    const get = SORTABLE[sortKey] || SORTABLE.date;
+    const va = get(a, dateBasis);
+    const vb = get(b, dateBasis);
+    let cmp;
+    if (typeof va === 'number' && typeof vb === 'number') cmp = va - vb;
+    else cmp = String(va).localeCompare(String(vb), 'hu');
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const toggleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'date' || key === 'amount' ? 'desc' : 'asc');
+    }
+  };
+
+  // Clickable header cell with the sort indicator.
+  const SortHeader = ({ sortId, children, align }) => (
+    <TableHeader align={align}>
+      <button
+        type="button"
+        onClick={() => toggleSort(sortId)}
+        className={`inline-flex items-center gap-1 hover:text-gray-900 ${
+          sortKey === sortId ? 'text-gray-900 font-semibold' : ''
+        }`}
+      >
+        {children}
+        {sortKey === sortId && (
+          sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+        )}
+      </button>
+    </TableHeader>
+  );
 
   // Calculate totals
   const totalAmount = filteredItems.reduce(
@@ -141,12 +217,36 @@ export default function ExpenseList({
               ]}
               className="w-48"
             />
+
+            <Select
+              label="Típus"
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+              options={[
+                { value: '', label: 'Minden típus' },
+                { value: 'bank', label: 'Bankszámla' },
+                { value: 'house', label: 'Házipénztár' },
+                { value: 'reserve', label: 'Tartalék' },
+              ]}
+              className="w-44"
+            />
+
+            <Select
+              label="Dátum alapja"
+              value={dateBasis}
+              onChange={(e) => setDateBasis(e.target.value)}
+              options={[
+                { value: 'invoice', label: 'Kelt' },
+                { value: 'fulfillment', label: 'Teljesítés (átutalásnál)' },
+              ]}
+              className="w-52"
+            />
           </div>
         )}
       </div>
 
       {/* Table */}
-      {filteredItems.length === 0 ? (
+      {sortedItems.length === 0 ? (
         <EmptyState
           icon={Receipt}
           title="Nincsenek kifizetések"
@@ -156,18 +256,17 @@ export default function ExpenseList({
         <Table>
           <TableHead>
             <TableRow>
-              <TableHeader>Fajta</TableHeader>
-              <TableHeader>Név</TableHeader>
-              <TableHeader>Tétel</TableHeader>
-              {isAdmin && <TableHeader>Egység</TableHeader>}
-              <TableHeader>Dátum</TableHeader>
+              <SortHeader sortId="kind">Fajta</SortHeader>
+              <SortHeader sortId="name">Név</SortHeader>
+              <SortHeader sortId="description">Tétel</SortHeader>
+              {isAdmin && <SortHeader sortId="unit">Egység</SortHeader>}
+              <SortHeader sortId="date">Dátum</SortHeader>
               <TableHeader>Fizetés</TableHeader>
-              <TableHeader>Számlás</TableHeader>
-              <TableHeader align="right">Összeg</TableHeader>
+              <SortHeader sortId="amount" align="right">Összeg</SortHeader>
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredItems.map((item) => {
+            {sortedItems.map((item) => {
               const kindMeta = PAYMENT_KIND_META[item.kind];
               return (
                 <TableRow
@@ -198,23 +297,11 @@ export default function ExpenseList({
                   {isAdmin && (
                     <TableCell>{item.units?.name || '-'}</TableCell>
                   )}
-                  <TableCell>{formatDate(item.date)}</TableCell>
+                  <TableCell>{formatDate(effectiveDate(item, dateBasis))}</TableCell>
                   <TableCell>
                     {item.payment_method ? (
                       <Badge variant="info" size="sm">
                         {PAYMENT_METHODS[item.payment_method] || item.payment_method}
-                      </Badge>
-                    ) : (
-                      <span className="text-gray-400">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {item.kind === 'expense' ? (
-                      <Badge
-                        variant={item.is_official ? 'success' : 'warning'}
-                        size="sm"
-                      >
-                        {item.is_official ? 'Hivatalos' : 'Egyéb'}
                       </Badge>
                     ) : (
                       <span className="text-gray-400">-</span>
