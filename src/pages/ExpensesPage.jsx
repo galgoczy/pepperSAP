@@ -41,11 +41,15 @@ export default function ExpensesPage() {
   const refreshList = () => setRefreshKey((k) => k + 1);
 
   // Unit options for admin filter
+  // Every unit is selectable, not just the restaurants: costs can also be booked
+  // on the events unit (Rendezvény) and the central one (Központ).
   const unitOptions = [
     { value: 'all', label: 'Összes egység' },
-    ...units
-      .filter(u => u.type === 'restaurant')
-      .sort((a, b) => a.name.localeCompare(b.name))
+    ...[...units]
+      .sort((a, b) => {
+        const rank = (u) => (u.type === 'restaurant' ? 0 : 1);
+        return rank(a) - rank(b) || (a.name || '').localeCompare(b.name || '', 'hu');
+      })
       .map(u => ({ value: u.id, label: u.name }))
   ];
 
