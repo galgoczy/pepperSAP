@@ -7,7 +7,32 @@ export const PAYMENT_KIND_META = {
   expense: { label: 'Számla', variant: 'default' },
   efo: { label: 'EFO', variant: 'info' },
   wage: { label: 'Heti bér', variant: 'primary' },
+  central: { label: 'Központ', variant: 'warning' },
 };
+
+// Central (Központ) costs live in their own table and have no unit; they are
+// shown as their own kind so the Központ's costs appear alongside the units'.
+function normalizeCentralPayment(p) {
+  return {
+    id: `central-${p.id}`,
+    rawId: p.id,
+    kind: 'central',
+    name: p.supplier_name || p.item_description || 'Központi kifizetés',
+    reference: p.invoice_number || null,
+    description: p.item_description || p.notes || '',
+    amount: parseFloat(p.amount) || 0,
+    currency: 'HUF',
+    payment_method: 'cash',
+    // 'cash' = számlás központi kifizetés, 'reserve' = számla nélküli.
+    is_official: p.payment_type === 'cash',
+    date: p.payment_date,
+    fulfillment_date: null,
+    created_at: p.created_at,
+    units: { name: 'Központ' },
+    editable: false,
+    raw: p,
+  };
+}
 
 function normalizeExpense(e) {
   return {
@@ -93,20 +118,32 @@ export function usePaymentItems(unitId, startDate, endDate) {
         return q;
       };
 
-      const [expensesRes, efoRes, wageRes] = await Promise.all([
+      // Central payments have no unit_id, so they are only included when the
+      // caller is not narrowing to one unit (i.e. the admin "all units" view).
+      let centralQuery = null;
+      if (!unitId) {
+        centralQuery = supabase.from('central_payments').select('*');
+        if (startDate) centralQuery = centralQuery.gte('payment_date', startDate);
+        if (endDate) centralQuery = centralQuery.lte('payment_date', endDate);
+      }
+
+      const [expensesRes, efoRes, wageRes, centralRes] = await Promise.all([
         applyRange(supabase.from('expenses').select('*, units (id, name)'), 'invoice_date'),
         applyRange(supabase.from('efo_payments').select('*, units (id, name)'), 'payment_date'),
         applyRange(supabase.from('wage_payments').select('*, units (id, name)'), 'payment_date'),
+        centralQuery || Promise.resolve({ data: [], error: null }),
       ]);
 
       if (expensesRes.error) console.error('Error fetching expenses:', expensesRes.error);
       if (efoRes.error) console.warn('Error fetching EFO payments:', efoRes.error);
       if (wageRes.error) console.warn('Error fetching wage payments:', wageRes.error);
+      if (centralRes.error) console.warn('Error fetching central payments:', centralRes.error);
 
       const merged = [
         ...(expensesRes.data || []).map(normalizeExpense),
         ...(efoRes.data || []).map(normalizeEfo),
         ...(wageRes.data || []).map(normalizeWage),
+        ...(centralRes.data || []).map(normalizeCentralPayment),
       ].sort((a, b) => {
         // Newest first by payment date, then by creation time.
         if (a.date !== b.date) return (b.date || '').localeCompare(a.date || '');

@@ -82,9 +82,44 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
       if (startDate) query = query.gte('invoice_date', startDate);
       if (endDate) query = query.lte('invoice_date', endDate);
 
-      const { data, error } = await query;
-      if (error) throw error;
-      setItems(data || []);
+      // Central (Központ) costs live in their own table — they are the single
+      // source for the central balance, so they are read here rather than
+      // duplicated as expenses. Only the invoiced ones (payment_type 'cash';
+      // 'reserve' is explicitly "számla nélkül") belong in the invoice list.
+      // They are only relevant when not filtering to a specific unit.
+      let centralQuery = null;
+      if (!unitId) {
+        centralQuery = supabase
+          .from('central_payments')
+          .select('*')
+          .eq('payment_type', 'cash')
+          .order('payment_date', { ascending: false });
+        if (startDate) centralQuery = centralQuery.gte('payment_date', startDate);
+        if (endDate) centralQuery = centralQuery.lte('payment_date', endDate);
+      }
+
+      const [expensesRes, centralRes] = await Promise.all([
+        query,
+        centralQuery || Promise.resolve({ data: [], error: null }),
+      ]);
+
+      if (expensesRes.error) throw expensesRes.error;
+      if (centralRes.error) console.warn('Error fetching central payments:', centralRes.error);
+
+      // Normalize central payments onto the same shape the table renders.
+      const centralItems = (centralRes.data || []).map((p) => ({
+        ...p,
+        source: 'central',
+        supplier_name: p.supplier_name || p.item_description || 'Központi kifizetés',
+        invoice_date: p.payment_date,
+        payment_method: 'cash',
+        units: { name: 'Központ' },
+      }));
+
+      setItems([
+        ...(expensesRes.data || []).map((e) => ({ ...e, source: 'expense' })),
+        ...centralItems,
+      ]);
     } catch (error) {
       console.error('Error fetching received invoices:', error);
       toast.error('Hiba a számlák betöltésekor');
@@ -99,13 +134,16 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
 
   // Toggle one of the three states on an invoice (optimistic, reverts on error).
   const toggleState = async (item, state, nextValue) => {
-    setSavingId(`${item.id}-${state.key}`);
+    const rowKey = `${item.source}-${item.id}`;
+    setSavingId(`${rowKey}-${state.key}`);
+    const sameRow = (e) => e.id === item.id && e.source === item.source;
     setItems((prev) =>
-      prev.map((e) => (e.id === item.id ? { ...e, [state.key]: nextValue } : e))
+      prev.map((e) => (sameRow(e) ? { ...e, [state.key]: nextValue } : e))
     );
     try {
+      // Marks are stored on the row's own table (expenses or central_payments).
       const { error } = await supabase
-        .from('expenses')
+        .from(item.source === 'central' ? 'central_payments' : 'expenses')
         .update({
           [state.key]: nextValue,
           [state.atField]: nextValue ? new Date().toISOString() : null,
@@ -117,7 +155,7 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
       console.error('Error updating invoice state:', error);
       toast.error('Hiba a jelölés mentésekor');
       setItems((prev) =>
-        prev.map((e) => (e.id === item.id ? { ...e, [state.key]: !nextValue } : e))
+        prev.map((e) => (sameRow(e) ? { ...e, [state.key]: !nextValue } : e))
       );
     } finally {
       setSavingId(null);
@@ -268,7 +306,7 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
               // the colour doesn't disappear under the cursor.
               const rs = rowState(item);
               return (
-                <TableRow key={item.id} hover={!rs} className={rs ? rs.row : ''}>
+                <TableRow key={`${item.source}-${item.id}`} hover={!rs} className={rs ? rs.row : ''}>
                   {/* Status dots: only the dot shows until it is active, then the
                       label appears next to it. Clicking toggles the state. */}
                   <TableCell>
@@ -280,7 +318,7 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
                             key={s.key}
                             type="button"
                             onClick={() => toggleState(item, s, !active)}
-                            disabled={savingId === `${item.id}-${s.key}`}
+                            disabled={savingId === `${item.source}-${item.id}-${s.key}`}
                             title={active ? s.label : `Jelölés: ${s.label}`}
                             className="inline-flex items-center gap-1 disabled:opacity-50"
                           >

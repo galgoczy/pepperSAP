@@ -24,6 +24,8 @@ import { formatCurrency, formatDate, PAYMENT_METHODS, getFirstDayOfMonth, getLas
 // EFO/wage items have no is_official flag; their official part moves the house
 // cash, so they are grouped under Házipénztár.
 function itemSource(item) {
+  // Central costs come out of the central pénztár, not a unit's házipénztár.
+  if (item.kind === 'central') return 'central';
   const pm = item.payment_method;
   if (pm && pm !== 'cash') return 'bank';
   if (item.is_official === false) return 'reserve';
@@ -199,6 +201,7 @@ export default function ExpenseList({
                 { value: 'expense', label: PAYMENT_KIND_META.expense.label },
                 { value: 'efo', label: PAYMENT_KIND_META.efo.label },
                 { value: 'wage', label: PAYMENT_KIND_META.wage.label },
+                { value: 'central', label: PAYMENT_KIND_META.central.label },
               ]}
               className="w-40"
             />
@@ -227,6 +230,7 @@ export default function ExpenseList({
                 { value: 'bank', label: 'Bankszámla' },
                 { value: 'house', label: 'Házipénztár' },
                 { value: 'reserve', label: 'Tartalék' },
+                { value: 'central', label: 'Központi pénztár' },
               ]}
               className="w-44"
             />
@@ -271,8 +275,8 @@ export default function ExpenseList({
               return (
                 <TableRow
                   key={item.id}
-                  className="cursor-pointer hover:bg-gray-50"
-                  onClick={() => onEdit(item)}
+                  className={item.editable === false ? '' : 'cursor-pointer hover:bg-gray-50'}
+                  onClick={item.editable === false ? undefined : () => onEdit(item)}
                 >
                   <TableCell>
                     <Badge variant={kindMeta.variant} size="sm">
