@@ -330,6 +330,53 @@ export function useTransfers(unitId, direction = 'all') {
     }
   };
 
+  // Bank cash withdrawals are created already approved, so the pending-only
+  // edit/delete paths above don't apply to them. These two are for the admin's
+  // "Készpénzfelvételek" tab; RLS keeps them admin-only.
+  const updateBankWithdrawal = async (transferId, changes) => {
+    try {
+      const update = {};
+      if (changes.amount !== undefined) update.amount = changes.amount;
+      if (changes.transfer_date) update.transfer_date = changes.transfer_date;
+      if (changes.withdrawn_by_name !== undefined) update.withdrawn_by_name = changes.withdrawn_by_name;
+      if (changes.notes !== undefined) update.notes = changes.notes;
+
+      const { error } = await supabase
+        .from('cash_transfers')
+        .update(update)
+        .eq('id', transferId)
+        .eq('source_type', 'bank');
+
+      if (error) throw error;
+
+      toast.success('Készpénzfelvét módosítva');
+      fetchTransfers();
+    } catch (error) {
+      console.error('Error updating bank withdrawal:', error);
+      toast.error('Hiba a készpénzfelvét módosításakor');
+      throw error;
+    }
+  };
+
+  const deleteBankWithdrawal = async (transferId) => {
+    try {
+      const { error } = await supabase
+        .from('cash_transfers')
+        .delete()
+        .eq('id', transferId)
+        .eq('source_type', 'bank');
+
+      if (error) throw error;
+
+      toast.success('Készpénzfelvét törölve');
+      fetchTransfers();
+    } catch (error) {
+      console.error('Error deleting bank withdrawal:', error);
+      toast.error('Hiba a készpénzfelvét törlésekor');
+      throw error;
+    }
+  };
+
   return {
     transfers,
     loading,
@@ -339,6 +386,8 @@ export function useTransfers(unitId, direction = 'all') {
     modifyTransfer,
     editPendingTransfer,
     deleteTransfer,
+    updateBankWithdrawal,
+    deleteBankWithdrawal,
   };
 }
 

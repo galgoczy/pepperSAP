@@ -78,6 +78,7 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
     deleteTransfer,
   } = useTransfers(unitId);
   const [showTransferForm, setShowTransferForm] = useState(false);
+  const [showBankWithdrawal, setShowBankWithdrawal] = useState(false);
   const [breakdownPocket, setBreakdownPocket] = useState(null);
 
   const restaurantUnits = units.filter(u => u.type === 'restaurant');
@@ -113,8 +114,11 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
 
   return (
     <>
-      {/* Action button */}
-      <div className="flex justify-end">
+      {/* Action buttons */}
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={() => setShowBankWithdrawal(true)}>
+          Készpénzfelvét (bank)
+        </Button>
         <Button onClick={() => setShowTransferForm(true)}>
           <Send className="h-4 w-4" />
           Átküldés
@@ -185,6 +189,18 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
         sourceType="unit"
         isAdmin={isAdmin}
       />
+
+      {/* Bank cash withdrawal into this unit's own house cash */}
+      <BankWithdrawalModal
+        isOpen={showBankWithdrawal}
+        onClose={() => setShowBankWithdrawal(false)}
+        units={restaurantUnits}
+        fixedUnitId={unitId}
+        onSubmit={async (data) => {
+          await createTransfer(data);
+          refetchBalance();
+        }}
+      />
     </>
   );
 }
@@ -236,6 +252,8 @@ function AdminCashView({ units }) {
     modifyTransfer,
     editPendingTransfer,
     deleteTransfer,
+    updateBankWithdrawal,
+    deleteBankWithdrawal,
     refetch: refetchTransfers,
   } = useTransfers(null); // null = all transfers
   const { payments, loading: paymentsLoading, createPayment, refetch: refetchPayments } = useCentralPayments();
@@ -310,6 +328,7 @@ function AdminCashView({ units }) {
     { id: 'transfers', label: `Átküldések${pendingTransfers.length > 0 ? ` (${pendingTransfers.length})` : ''}` },
     { id: 'payments', label: 'Kifizetések' },
     { id: 'revisions', label: `Revíziók${pendingRevisionCount > 0 ? ` (${pendingRevisionCount})` : ''}` },
+    { id: 'withdrawals', label: 'Készpénzfelvételek' },
     { id: 'pockets', label: 'Zsebek', icon: Wallet },
   ];
 
@@ -555,6 +574,22 @@ function AdminCashView({ units }) {
             }}
           />
         </div>
+      )}
+
+      {activeTab === 'withdrawals' && (
+        <BankWithdrawalsList
+          withdrawals={transfers.filter((t) => t.source_type === 'bank')}
+          loading={transfersLoading}
+          units={units}
+          onUpdate={async (id, changes) => {
+            await updateBankWithdrawal(id, changes);
+            refetchCentral();
+          }}
+          onDelete={async (id) => {
+            await deleteBankWithdrawal(id);
+            refetchCentral();
+          }}
+        />
       )}
 
       {activeTab === 'pockets' && (
@@ -945,24 +980,35 @@ function CentralPaymentModal({ isOpen, onClose, onSubmit }) {
 
 // Bank cash withdrawal: recorded as an auto-approved transfer from the bank
 // ('bank' source) into a chosen unit, or directly into Központ. No approval step.
-function BankWithdrawalModal({ isOpen, onClose, onSubmit, units }) {
+// `fixedUnitId` locks the destination to one unit (used by the units themselves,
+// who can only withdraw into their own house cash). Without it the admin picks
+// the destination (a unit or Központ).
+function BankWithdrawalModal({ isOpen, onClose, onSubmit, units, fixedUnitId = null }) {
   const [loading, setLoading] = useState(false);
-  const initial = { amount: '', transfer_date: getToday(), destination: 'central', notes: '' };
+  const initial = {
+    amount: '',
+    transfer_date: getToday(),
+    destination: fixedUnitId || 'central',
+    withdrawn_by_name: '',
+    notes: '',
+  };
   const [formData, setFormData] = useState(initial);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const toCentral = formData.destination === 'central';
+      const destination = fixedUnitId || formData.destination;
+      const toCentral = !fixedUnitId && destination === 'central';
       await onSubmit({
         source_type: 'bank',
         source_unit_id: null,
         destination_type: toCentral ? 'central' : 'unit',
-        destination_unit_id: toCentral ? null : formData.destination,
+        destination_unit_id: toCentral ? null : destination,
         amount: parseFloat(formData.amount),
         transfer_date: formData.transfer_date,
         transfer_type: 'cash',
+        withdrawn_by_name: formData.withdrawn_by_name.trim(),
         notes: formData.notes,
         status: 'approved',
       });
@@ -978,7 +1024,9 @@ function BankWithdrawalModal({ isOpen, onClose, onSubmit, units }) {
       <form onSubmit={handleSubmit} className="space-y-4">
         <p className="text-sm text-gray-500">
           A bankból felvett készpénz átküldésként kerül rögzítésre, jóváhagyás nélkül.
-          A célhely pénztára (egység vagy Központ) a felvett összeggel nő.
+          {fixedUnitId
+            ? ' Az egység házipénztára a felvett összeggel nő.'
+            : ' A célhely pénztára (egység vagy Központ) a felvett összeggel nő.'}
         </p>
         <Input
           label="Összeg"
@@ -990,14 +1038,23 @@ function BankWithdrawalModal({ isOpen, onClose, onSubmit, units }) {
           suffix="Ft"
           required
         />
-        <Select
-          label="Hová kerül"
-          value={formData.destination}
-          onChange={(e) => setFormData(prev => ({ ...prev, destination: e.target.value }))}
-          options={[
-            { value: 'central', label: 'Központ' },
-            ...units.map(u => ({ value: u.id, label: u.name })),
-          ]}
+        {!fixedUnitId && (
+          <Select
+            label="Hová kerül"
+            value={formData.destination}
+            onChange={(e) => setFormData(prev => ({ ...prev, destination: e.target.value }))}
+            options={[
+              { value: 'central', label: 'Központ' },
+              ...units.map(u => ({ value: u.id, label: u.name })),
+            ]}
+          />
+        )}
+        <Input
+          label="Készpénzt felvette (név)"
+          value={formData.withdrawn_by_name}
+          onChange={(e) => setFormData(prev => ({ ...prev, withdrawn_by_name: e.target.value }))}
+          placeholder="A pénzt ténylegesen felvevő személy neve"
+          required
         />
         <Input
           label="Dátum"
@@ -1019,6 +1076,157 @@ function BankWithdrawalModal({ isOpen, onClose, onSubmit, units }) {
         </div>
       </form>
     </Modal>
+  );
+}
+
+// Admin list of the bank cash withdrawals, where the amount (and the other
+// details) can be corrected or the whole record removed.
+function BankWithdrawalsList({ withdrawals, loading, units, onUpdate, onDelete }) {
+  const [editItem, setEditItem] = useState(null);
+  const [editForm, setEditForm] = useState({ amount: '', transfer_date: '', withdrawn_by_name: '', notes: '' });
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const destinationName = (t) => {
+    if (t.destination_type === 'central') return 'Központ';
+    return t.destination_unit?.name
+      || units.find((u) => u.id === t.destination_unit_id)?.name
+      || 'Ismeretlen';
+  };
+
+  const openEdit = (t) => {
+    setEditItem(t);
+    setEditForm({
+      amount: String(t.amount ?? ''),
+      transfer_date: t.transfer_date || getToday(),
+      withdrawn_by_name: t.withdrawn_by_name || '',
+      notes: t.notes || '',
+    });
+  };
+
+  const submitEdit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await onUpdate(editItem.id, {
+        amount: parseFloat(editForm.amount),
+        transfer_date: editForm.transfer_date,
+        withdrawn_by_name: editForm.withdrawn_by_name.trim(),
+        notes: editForm.notes,
+      });
+      setEditItem(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <Card><div className="animate-pulse h-32 bg-gray-200 rounded"></div></Card>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold text-gray-900">Legutóbbi készpénzfelvételek</h2>
+
+      {withdrawals.length === 0 ? (
+        <Card><p className="text-center text-gray-500 py-6">Nincsenek készpénzfelvételek</p></Card>
+      ) : (
+        <Card>
+          <div className="space-y-3">
+            {withdrawals.map((t) => (
+              <div key={t.id} className="p-4 border border-gray-200 rounded-lg">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      Bank → {destinationName(t)}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      {formatDate(t.transfer_date)}
+                      {t.withdrawn_by_name && ` • Felvette: ${t.withdrawn_by_name}`}
+                      {t.notes && ` • ${t.notes}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg font-bold text-green-700">
+                      +{formatCurrency(t.amount)}
+                    </span>
+                    <Button size="sm" variant="secondary" onClick={() => openEdit(t)}>
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={() => setDeleteConfirm(t)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Edit modal */}
+      <Modal isOpen={!!editItem} onClose={() => setEditItem(null)} title="Készpénzfelvét módosítása" size="md">
+        <form onSubmit={submitEdit} className="space-y-4">
+          <Input
+            label="Összeg"
+            type="number"
+            step="1"
+            min="1"
+            value={editForm.amount}
+            onChange={(e) => setEditForm((p) => ({ ...p, amount: e.target.value }))}
+            suffix="Ft"
+            required
+          />
+          <Input
+            label="Készpénzt felvette (név)"
+            value={editForm.withdrawn_by_name}
+            onChange={(e) => setEditForm((p) => ({ ...p, withdrawn_by_name: e.target.value }))}
+            required
+          />
+          <Input
+            label="Dátum"
+            type="date"
+            value={editForm.transfer_date}
+            onChange={(e) => setEditForm((p) => ({ ...p, transfer_date: e.target.value }))}
+            max={getToday()}
+            required
+          />
+          <Textarea
+            label="Megjegyzés"
+            value={editForm.notes}
+            onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))}
+            rows={2}
+          />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setEditItem(null)}>Mégse</Button>
+            <Button type="submit" loading={saving}>Mentés</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete confirmation */}
+      <Modal isOpen={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} title="Készpénzfelvét törlése" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Biztosan törlöd ezt a készpénzfelvételt
+            {deleteConfirm && <> (<strong>{formatCurrency(deleteConfirm.amount)}</strong>)</>}?
+            A célhely házipénztára ennyivel csökken. Ez a művelet nem vonható vissza.
+          </p>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="secondary" onClick={() => setDeleteConfirm(null)}>Mégse</Button>
+            <Button
+              variant="danger"
+              onClick={async () => {
+                await onDelete(deleteConfirm.id);
+                setDeleteConfirm(null);
+              }}
+            >
+              Törlés
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
   );
 }
 
