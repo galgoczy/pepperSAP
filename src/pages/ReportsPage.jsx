@@ -8,6 +8,7 @@ import { Card, Button, Select, DateInput } from '../components/common';
 import MonthlyReport from '../components/reports/MonthlyReport';
 import MonthlyTableReport from '../components/reports/MonthlyTableReport';
 import HouseCashReport from '../components/reports/HouseCashReport';
+import TrafficReport from '../components/reports/TrafficReport';
 import ExportModal from '../components/reports/ExportModal';
 import { getFirstDayOfMonth, getToday } from '../lib/utils';
 
@@ -19,6 +20,7 @@ const MONTH_NAMES = [
 
 // Base report types for all users
 const baseReportTypes = [
+  { value: 'traffic', label: 'Forgalmi jelentés' },
   { value: 'full_monthly', label: 'Teljes havi forgalom' },
   { value: 'full_traffic', label: 'Teljes forgalmi jelentés (forgalom + házipénztár)' },
   { value: 'cash_revenue', label: 'Készpénz bevételek' },
@@ -96,6 +98,8 @@ export default function ReportsPage() {
     if (isAccountant && !unitId) return 'cash_register_all_simple';
     if (isAccountant) return 'cash_register';
     if (isAdmin && !unitId) return 'full_monthly_all';
+    // A unit's own default is the traffic report.
+    if (!isAdmin) return 'traffic';
     return 'full_monthly';
   };
   const [reportType, setReportType] = useState(getDefaultReportType());
@@ -341,6 +345,19 @@ export default function ReportsPage() {
         <MonthlyTableReport
           yearMonth={selectedYearMonth}
         />
+      ) : reportType === 'traffic' ? (
+        effectiveUnitId ? (
+          <TrafficReport
+            unitId={effectiveUnitId}
+            unitName={units.find((u) => u.id === effectiveUnitId)?.name || ''}
+          />
+        ) : (
+          <Card>
+            <p className="text-center text-gray-500 py-8">
+              Válassz ki egy egységet a forgalmi jelentéshez
+            </p>
+          </Card>
+        )
       ) : reportType === 'house_cash' ? (
         <HouseCashReport
           unitId={effectiveUnitId}

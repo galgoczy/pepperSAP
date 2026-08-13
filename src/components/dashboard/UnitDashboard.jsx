@@ -10,7 +10,9 @@ import {
   Clock,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import { useAnimatedNumber } from '../../hooks/useAnimatedNumber';
+import TrafficReport from '../reports/TrafficReport';
 import { Card, Button, LoadingSpinner } from '../common';
 import { supabase } from '../../lib/supabase';
 import { fetchHouseCashSeries } from '../../lib/houseCashSeries';
@@ -38,6 +40,7 @@ function AnimatedCurrency({ value, hasData = true }) {
 
 export default function UnitDashboard() {
   const { unitId, profile } = useAuth();
+  const { settings, updateSetting } = useAppSettings();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -170,13 +173,45 @@ export default function UnitDashboard() {
           </p>
         </div>
 
-        <Link to="/daily">
-          <Button>
-            <Plus className="h-4 w-4" />
-            Napi adatok rögzítése
-          </Button>
-        </Link>
+        <div className="flex items-center gap-4">
+          {/* Desktop-only: pin the traffic report to the top of the dashboard. */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={settings.dashboardTrafficReport}
+            onClick={() => updateSetting('dashboardTrafficReport', !settings.dashboardTrafficReport)}
+            className="hidden lg:flex items-center gap-2 text-sm text-gray-600"
+            title="A forgalmi jelentés megjelenítése a vezérlőpult tetején"
+          >
+            <span
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                settings.dashboardTrafficReport ? 'bg-pepper-red' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  settings.dashboardTrafficReport ? 'translate-x-4' : 'translate-x-1'
+                }`}
+              />
+            </span>
+            Forgalmi jelentés
+          </button>
+
+          <Link to="/daily">
+            <Button>
+              <Plus className="h-4 w-4" />
+              Napi adatok rögzítése
+            </Button>
+          </Link>
+        </div>
       </div>
+
+      {/* Traffic report first, when switched on (desktop only) */}
+      {settings.dashboardTrafficReport && unitId && (
+        <div className="hidden lg:block">
+          <TrafficReport unitId={unitId} unitName={profile?.unit_name || ''} />
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

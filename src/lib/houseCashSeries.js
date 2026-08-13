@@ -116,6 +116,16 @@ export async function fetchHouseCashSeries(unitId, endDate) {
         reservePaymentItems: [],
         cashAnchor: undefined,
         reserveAnchor: undefined,
+        // Breakdown-only fields. cashRevenue and reserveRevenue each merge two
+        // things; these keep the parts separately so a report can show them in
+        // their own columns. They are NOT used by any balance calculation —
+        // adding them changes nothing about the running balances.
+        //   cashRevenue    = registerCash + otherCashIncome
+        //   reserveRevenue = reserveDiff  + otherReserveIncome
+        registerCash: 0,
+        otherCashIncome: 0,
+        reserveDiff: 0,
+        otherReserveIncome: 0,
       });
     }
     return byDate.get(d);
@@ -128,6 +138,10 @@ export async function fetchHouseCashSeries(unitId, endDate) {
     row.cashRevenue += cash;
     row.cashDiscrepancies += discrepancies;
     row.reserveRevenue += (parseFloat(rev.total_revenue) || 0) - revenue;
+    // Breakdown-only mirrors (see the note at the bottom of this block): the same
+    // numbers kept separately, because cashRevenue/reserveRevenue merge them.
+    row.registerCash += cash;
+    row.reserveDiff += (parseFloat(rev.total_revenue) || 0) - revenue;
     if (tipReserveCost) {
       row.reserveExpenses += tipReserveCost;
       row.reservePaymentItems.push({ label: 'Bankkártyás borravaló kivét (60%)', amount: tipReserveCost });
@@ -139,6 +153,9 @@ export async function fetchHouseCashSeries(unitId, endDate) {
     const row = ensure(hc.date);
     row.cashRevenue += parseFloat(hc.official_other_income) || 0;
     row.reserveRevenue += parseFloat(hc.other_extra_income) || 0;
+    // Breakdown-only mirrors.
+    row.otherCashIncome += parseFloat(hc.official_other_income) || 0;
+    row.otherReserveIncome += parseFloat(hc.other_extra_income) || 0;
   });
 
   // Expenses

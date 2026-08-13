@@ -15,6 +15,8 @@ const DEFAULT_SETTINGS = {
   // Admin Házipénztár "Áttekintés": whether the all-units section is expanded
   // (collapsed by default; the admin's choice is remembered in this browser).
   allUnitsOpen: false,
+  // Unit dashboard (desktop only): show the traffic report at the very top.
+  dashboardTrafficReport: false,
 };
 
 // Resolve which unit should be pre-selected, given the settings and the list
