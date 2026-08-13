@@ -95,7 +95,10 @@ export default function ExpenseList({
     if (kindFilter && item.kind !== kindFilter) {
       return false;
     }
-    if (paymentFilter && item.payment_method !== paymentFilter) {
+    // 'cash_card' is a combined option: cash and card payments together.
+    if (paymentFilter === 'cash_card') {
+      if (item.payment_method !== 'cash' && item.payment_method !== 'card') return false;
+    } else if (paymentFilter && item.payment_method !== paymentFilter) {
       return false;
     }
     if (sourceFilter && itemSource(item) !== sourceFilter) {
@@ -212,6 +215,7 @@ export default function ExpenseList({
               onChange={(e) => setPaymentFilter(e.target.value)}
               options={[
                 { value: '', label: 'Összes fizetési mód' },
+                { value: 'cash_card', label: 'Készpénz + bankkártya' },
                 { value: 'cash', label: 'Készpénz' },
                 { value: 'card', label: 'Bankkártya' },
                 { value: 'mol_card', label: 'MOL kártya' },

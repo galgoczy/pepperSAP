@@ -170,7 +170,12 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
     [...statesFor(item)].reverse().find((s) => item[s.key]) || null;
 
   const visibleItems = items.filter((item) => {
-    if (methodFilter && item.payment_method !== methodFilter) return false;
+    // 'cash_card' is a combined option: cash and card payments together.
+    if (methodFilter === 'cash_card') {
+      if (item.payment_method !== 'cash' && item.payment_method !== 'card') return false;
+    } else if (methodFilter && item.payment_method !== methodFilter) {
+      return false;
+    }
     if (stateFilter === 'not_received') return !item.received;
     if (stateFilter === 'not_scanned') return !item.scanned;
     if (stateFilter === 'not_paid') return item.payment_method === 'transfer' && !item.paid;
@@ -257,6 +262,7 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
           onChange={(e) => setMethodFilter(e.target.value)}
           options={[
             { value: '', label: 'Minden fizetési mód' },
+            { value: 'cash_card', label: 'Készpénz + bankkártya' },
             { value: 'transfer', label: 'Átutalás' },
             { value: 'card', label: 'Bankkártya' },
             { value: 'mol_card', label: 'MOL kártya' },
