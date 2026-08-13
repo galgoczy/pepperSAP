@@ -6,7 +6,7 @@ import autoTable from 'jspdf-autotable';
 import { supabase } from '../../lib/supabase';
 import { fetchHouseCashSeries, openingForDate } from '../../lib/houseCashSeries';
 import { Card, Button, LoadingSpinner } from '../common';
-import { formatCurrency, formatDate } from '../../lib/utils';
+import { formatCurrency } from '../../lib/utils';
 
 const MONTH_NAMES = [
   'Január', 'Február', 'Március', 'Április', 'Május', 'Június',
@@ -36,6 +36,17 @@ function monthLabel(ym) {
   const [y, m] = ym.split('-').map(Number);
   return `${y}. ${MONTH_NAMES[m - 1]}`;
 }
+// Short day label without the year (the month is in the title), e.g. "08.01."
+function shortDate(iso) {
+  const [, m, d] = (iso || '').split('-');
+  return m && d ? `${m}.${d}.` : iso;
+}
+
+// The house-cash half of the table is tinted so the two halves are easy to tell
+// apart; the first of those columns also gets a divider line.
+const CASH_CELL = 'bg-slate-50';
+const CASH_FIRST = 'bg-slate-50 border-l-2 border-slate-300';
+
 // Every day of the month as YYYY-MM-DD (local components, no timezone drift).
 function daysOfMonth(ym) {
   const [y, m] = ym.split('-').map(Number);
@@ -179,7 +190,7 @@ export default function TrafficReport({ unitId, unitName = '', yearMonth: ymProp
   ];
 
   const rowValues = (r) => [
-    formatDate(r.date), r.software, r.card,
+    shortDate(r.date), r.software, r.card,
     ...activeRevenues.map((o) => r.optional[o.key] || 0),
     r.totalRevenue, r.openingCash, r.cashIncome, r.reserveIncome, r.otherIncome,
     r.spent, r.transfers, r.closing, r.notes,
@@ -246,10 +257,18 @@ export default function TrafficReport({ unitId, unitName = '', yearMonth: ymProp
       styles: { fontSize: 6.5, cellPadding: 1.2 },
       headStyles: { fillColor: [211, 47, 47], fontSize: 6.5 },
       footStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold' },
-      columnStyles: {
-        0: { cellWidth: 16 },
-        [headers.length - 1]: { cellWidth: 45, fontSize: 5.5, textColor: [110, 110, 110] },
-      },
+      // Tint the house-cash half so the two parts are distinguishable on paper too.
+      columnStyles: (() => {
+        const firstCash = 4 + activeRevenues.length; // Dátum, Szoftver, Kártya, …, Összes
+        const styles = {
+          0: { cellWidth: 12 },
+          [headers.length - 1]: { cellWidth: 45, fontSize: 5.5, textColor: [110, 110, 110], fillColor: [241, 245, 249] },
+        };
+        for (let i = firstCash; i < headers.length - 1; i++) {
+          styles[i] = { fillColor: [241, 245, 249] };
+        }
+        return styles;
+      })(),
       margin: { left: 8, right: 8 },
     });
 
@@ -315,20 +334,20 @@ export default function TrafficReport({ unitId, unitName = '', yearMonth: ymProp
                   <th key={o.key} className="px-2 py-2 text-right">{o.label}</th>
                 ))}
                 <th className="px-2 py-2 text-right font-semibold">Összes</th>
-                <th className="px-2 py-2 text-right whitespace-nowrap">Nyitó kp</th>
-                <th className="px-2 py-2 text-right whitespace-nowrap">Kp bevétel</th>
-                <th className="px-2 py-2 text-right whitespace-nowrap">Tartalék bev.</th>
-                <th className="px-2 py-2 text-right whitespace-nowrap">Egyéb bev.</th>
-                <th className="px-2 py-2 text-right">Költött</th>
-                <th className="px-2 py-2 text-right">Átküldés</th>
-                <th className="px-2 py-2 text-right font-semibold">Zárás</th>
-                <th className="px-2 py-2 text-left">Megjegyzések</th>
+                <th className={`px-2 py-2 text-right whitespace-nowrap ${CASH_FIRST}`}>Nyitó kp</th>
+                <th className={`px-2 py-2 text-right whitespace-nowrap ${CASH_CELL}`}>Kp bevétel</th>
+                <th className={`px-2 py-2 text-right whitespace-nowrap ${CASH_CELL}`}>Tartalék bev.</th>
+                <th className={`px-2 py-2 text-right whitespace-nowrap ${CASH_CELL}`}>Egyéb bev.</th>
+                <th className={`px-2 py-2 text-right ${CASH_CELL}`}>Költött</th>
+                <th className={`px-2 py-2 text-right ${CASH_CELL}`}>Átküldés</th>
+                <th className={`px-2 py-2 text-right font-semibold ${CASH_CELL}`}>Zárás</th>
+                <th className={`px-2 py-2 text-left ${CASH_CELL}`}>Megjegyzések</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {rows.map((r) => (
                 <tr key={r.date} className="hover:bg-gray-50">
-                  <td className="px-2 py-1.5 whitespace-nowrap">{formatDate(r.date)}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">{shortDate(r.date)}</td>
                   <td className="px-2 py-1.5 text-right">{formatCurrency(r.software)}</td>
                   <td className="px-2 py-1.5 text-right">{formatCurrency(r.card)}</td>
                   {activeRevenues.map((o) => (
@@ -337,16 +356,16 @@ export default function TrafficReport({ unitId, unitName = '', yearMonth: ymProp
                     </td>
                   ))}
                   <td className="px-2 py-1.5 text-right font-medium">{formatCurrency(r.totalRevenue)}</td>
-                  <td className="px-2 py-1.5 text-right text-gray-500">{formatCurrency(r.openingCash)}</td>
-                  <td className="px-2 py-1.5 text-right text-green-700">{formatCurrency(r.cashIncome)}</td>
-                  <td className="px-2 py-1.5 text-right text-blue-700">{formatCurrency(r.reserveIncome)}</td>
-                  <td className="px-2 py-1.5 text-right">{formatCurrency(r.otherIncome)}</td>
-                  <td className="px-2 py-1.5 text-right text-red-600">{formatCurrency(r.spent)}</td>
-                  <td className="px-2 py-1.5 text-right text-amber-700">
+                  <td className={`px-2 py-1.5 text-right text-gray-500 ${CASH_FIRST}`}>{formatCurrency(r.openingCash)}</td>
+                  <td className={`px-2 py-1.5 text-right text-green-700 ${CASH_CELL}`}>{formatCurrency(r.cashIncome)}</td>
+                  <td className={`px-2 py-1.5 text-right text-blue-700 ${CASH_CELL}`}>{formatCurrency(r.reserveIncome)}</td>
+                  <td className={`px-2 py-1.5 text-right ${CASH_CELL}`}>{formatCurrency(r.otherIncome)}</td>
+                  <td className={`px-2 py-1.5 text-right text-red-600 ${CASH_CELL}`}>{formatCurrency(r.spent)}</td>
+                  <td className={`px-2 py-1.5 text-right text-amber-700 ${CASH_CELL}`}>
                     {r.transfers ? formatCurrency(r.transfers) : '-'}
                   </td>
-                  <td className="px-2 py-1.5 text-right font-semibold">{formatCurrency(r.closing)}</td>
-                  <td className="px-2 py-1.5 text-xs text-gray-500 max-w-[260px] truncate" title={r.notes}>
+                  <td className={`px-2 py-1.5 text-right font-semibold ${CASH_CELL}`}>{formatCurrency(r.closing)}</td>
+                  <td className={`px-2 py-1.5 text-xs text-gray-500 max-w-[260px] truncate ${CASH_CELL}`} title={r.notes}>
                     {r.notes || '-'}
                   </td>
                 </tr>
@@ -361,14 +380,14 @@ export default function TrafficReport({ unitId, unitName = '', yearMonth: ymProp
                   <td key={o.key} className="px-2 py-2 text-right">{formatCurrency(sumOptional(o.key))}</td>
                 ))}
                 <td className="px-2 py-2 text-right">{formatCurrency(sum('totalRevenue'))}</td>
-                <td className="px-2 py-2"></td>
-                <td className="px-2 py-2 text-right text-green-700">{formatCurrency(sum('cashIncome'))}</td>
-                <td className="px-2 py-2 text-right text-blue-700">{formatCurrency(sum('reserveIncome'))}</td>
-                <td className="px-2 py-2 text-right">{formatCurrency(sum('otherIncome'))}</td>
-                <td className="px-2 py-2 text-right text-red-600">{formatCurrency(sum('spent'))}</td>
-                <td className="px-2 py-2 text-right text-amber-700">{formatCurrency(sum('transfers'))}</td>
-                <td className="px-2 py-2 text-right">{formatCurrency(lastClosing)}</td>
-                <td className="px-2 py-2"></td>
+                <td className={`px-2 py-2 ${CASH_FIRST}`}></td>
+                <td className={`px-2 py-2 text-right text-green-700 ${CASH_CELL}`}>{formatCurrency(sum('cashIncome'))}</td>
+                <td className={`px-2 py-2 text-right text-blue-700 ${CASH_CELL}`}>{formatCurrency(sum('reserveIncome'))}</td>
+                <td className={`px-2 py-2 text-right ${CASH_CELL}`}>{formatCurrency(sum('otherIncome'))}</td>
+                <td className={`px-2 py-2 text-right text-red-600 ${CASH_CELL}`}>{formatCurrency(sum('spent'))}</td>
+                <td className={`px-2 py-2 text-right text-amber-700 ${CASH_CELL}`}>{formatCurrency(sum('transfers'))}</td>
+                <td className={`px-2 py-2 text-right ${CASH_CELL}`}>{formatCurrency(lastClosing)}</td>
+                <td className={`px-2 py-2 ${CASH_CELL}`}></td>
               </tr>
             </tfoot>
           </table>
