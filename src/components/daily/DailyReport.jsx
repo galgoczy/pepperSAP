@@ -360,7 +360,7 @@ export default function DailyReport({ date, unitId }) {
                 </div>
               )}
               <div className="flex justify-between text-red-600">
-                <span>Hivatalos kp számlák:</span>
+                <span>Kifizetések:</span>
                 <span>-{formatCurrency(officialCashExpenses)}</span>
               </div>
               <div className="flex justify-between text-red-600">

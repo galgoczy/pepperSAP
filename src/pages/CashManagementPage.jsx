@@ -498,7 +498,14 @@ function AdminCashView({ units }) {
 
       {activeTab === 'transfers' && (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900">Összes átküldés</h2>
+          {/* Same "start a transfer" action the units have, here for Központ. */}
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-gray-900">Összes átküldés</h2>
+            <Button onClick={() => setShowTransferForm(true)}>
+              <Send className="h-4 w-4" />
+              Átküldés egységnek
+            </Button>
+          </div>
           <TransferList
             transfers={transfers}
             loading={transfersLoading}

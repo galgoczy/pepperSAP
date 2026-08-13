@@ -234,7 +234,7 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
           <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
             <div className="flex items-center gap-2 mb-1">
               <Calculator className="h-4 w-4 text-red-600" />
-              <span className="text-sm font-medium text-red-700">Hivatalos kp kifizetések (-)</span>
+              <span className="text-sm font-medium text-red-700">Kifizetések (-)</span>
             </div>
             <p className="text-xl font-bold text-red-800">{formatCurrency(officialCashExpenses)}</p>
             <p className="text-xs text-red-600 mt-1">Készpénzes hivatalos kifizetésekből (automatikus)</p>

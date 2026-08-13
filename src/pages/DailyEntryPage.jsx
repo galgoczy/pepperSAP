@@ -482,7 +482,7 @@ export default function DailyEntryPage() {
         y += 5;
       }
       doc.setTextColor(180, 0, 0);
-      doc.text(sanitizeForPdf('Hivatalos kifizetések:'), 25, y);
+      doc.text(sanitizeForPdf('Kifizetések:'), 25, y);
       doc.text('-' + formatPdfCurrency(officialExpenses), rightMargin, y, { align: 'right' });
       y += 5;
       doc.text(sanitizeForPdf('EFO kifizetések:'), 25, y);
@@ -673,6 +673,15 @@ export default function DailyEntryPage() {
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(8);
           doc.text(sanitizeForPdf('0%: ' + formatPdfCurrency(cr.vat_0_percent) + '  5%: ' + formatPdfCurrency(cr.vat_5_percent) + '  18%: ' + formatPdfCurrency(cr.vat_18_percent) + '  27%: ' + formatPdfCurrency(cr.vat_27_percent) + '  Borr: ' + formatPdfCurrency(cr.tips)), 25, y);
+          y += 4;
+          // Closure number and cumulative ("göngyölt") figure from the Z-report.
+          doc.text(
+            sanitizeForPdf(
+              'Zárás sorszáma: ' + (cr.closure_sequence ?? '-')
+              + '   Göngyölt egyenleg: ' + (cr.cumulative_revenue == null ? '-' : formatPdfCurrency(cr.cumulative_revenue))
+            ),
+            25, y
+          );
           y += 6;
           doc.setFontSize(10);
         });
@@ -715,7 +724,7 @@ export default function DailyEntryPage() {
       doc.text(formatPdfCurrency(adjustedCash), rightMargin, y, { align: 'right' });
       y += 5;
       doc.setTextColor(180, 0, 0);
-      doc.text(sanitizeForPdf('Hivatalos kifizetések:'), 20, y);
+      doc.text(sanitizeForPdf('Kifizetések:'), 20, y);
       doc.text('-' + formatPdfCurrency(officialExpenses), rightMargin, y, { align: 'right' });
       y += 5;
       doc.text(sanitizeForPdf('Bér jellegű kifizetések:'), 20, y);
