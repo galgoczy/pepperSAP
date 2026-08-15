@@ -17,6 +17,8 @@ const DEFAULT_SETTINGS = {
   allUnitsOpen: false,
   // Unit dashboard (desktop only): show the traffic report at the very top.
   dashboardTrafficReport: false,
+  // Daily entry "Minden adat": show the month calendar above the form.
+  dailyCalendarOpen: true,
 };
 
 // Resolve which unit should be pre-selected, given the settings and the list

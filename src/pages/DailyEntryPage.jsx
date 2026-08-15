@@ -9,6 +9,7 @@ import { useAppSettings, resolveDefaultUnit } from '../hooks/useAppSettings';
 import DailyRevenueForm from '../components/daily/DailyRevenueForm';
 import HouseCashForm from '../components/daily/HouseCashForm';
 import DailyReport from '../components/daily/DailyReport';
+import MonthCalendar from '../components/daily/MonthCalendar';
 import ExpenseForm from '../components/expenses/ExpenseForm';
 import EfoPaymentForm from '../components/expenses/EfoPaymentForm';
 import WagePaymentForm from '../components/expenses/WagePaymentForm';
@@ -916,6 +917,43 @@ export default function DailyEntryPage() {
         {/* ALL - Combined view */}
         {activeTab === 'all' && (
           <div className="space-y-8">
+            {/* Month overview: which days are already recorded, and a one-click
+                jump to any of them. Collapsible; the choice is remembered. */}
+            <Card padding={false} className="p-3 no-print">
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={settings.dailyCalendarOpen}
+                  onClick={() => updateSetting('dailyCalendarOpen', !settings.dailyCalendarOpen)}
+                  className="flex items-center gap-2 text-sm text-gray-600"
+                  title="Naptár megjelenítése"
+                >
+                  <span
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                      settings.dailyCalendarOpen ? 'bg-pepper-red' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        settings.dailyCalendarOpen ? 'translate-x-4' : 'translate-x-1'
+                      }`}
+                    />
+                  </span>
+                  Naptár
+                </button>
+              </div>
+              {settings.dailyCalendarOpen && effectiveUnitId && (
+                <div className="mt-3">
+                  <MonthCalendar
+                    unitId={effectiveUnitId}
+                    selectedDate={selectedDate}
+                    onSelectDate={changeDate}
+                  />
+                </div>
+              )}
+            </Card>
+
             {/* Revenue Section */}
             <div>
               <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
