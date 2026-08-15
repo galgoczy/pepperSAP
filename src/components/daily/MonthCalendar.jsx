@@ -131,6 +131,22 @@ export default function MonthCalendar({ unitId, selectedDate, onSelectDate }) {
           const amount = totals[date];
           const hasData = amount !== undefined;
 
+          // Exactly one background/border variant per cell, so there is no
+          // ambiguity between conflicting Tailwind utilities.
+          // A recorded day is tinted on MOBILE (where the amount is hidden, the
+          // tint is the only signal); on desktop it stays white and the amount
+          // does the talking.
+          let look;
+          if (isSelected) {
+            look = 'border-pepper-red ring-2 ring-pepper-red bg-pepper-red/10';
+          } else if (isFuture) {
+            look = 'bg-gray-50 border-gray-100';
+          } else if (hasData) {
+            look = 'bg-emerald-50 sm:bg-white border-emerald-200 sm:border-gray-200';
+          } else {
+            look = 'bg-gray-50 border-gray-100';
+          }
+
           return (
             <button
               key={date}
@@ -141,12 +157,8 @@ export default function MonthCalendar({ unitId, selectedDate, onSelectDate }) {
               className={[
                 'rounded-lg border text-left px-1.5 py-1 transition-colors',
                 'min-h-[38px] sm:min-h-[52px] flex flex-col justify-between',
-                isFuture ? 'opacity-40 cursor-not-allowed bg-gray-50 border-gray-100' : 'hover:border-pepper-red',
-                isSelected
-                  ? 'border-pepper-red ring-2 ring-pepper-red bg-pepper-red/10'
-                  : hasData
-                    ? 'bg-white border-gray-200'
-                    : 'bg-gray-50 border-gray-100',
+                isFuture ? 'opacity-40 cursor-not-allowed' : 'hover:border-pepper-red',
+                look,
               ].join(' ')}
             >
               <span
