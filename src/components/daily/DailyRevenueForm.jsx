@@ -8,7 +8,7 @@ import { useEventRevenueValidation } from '../../hooks/useEventRevenueValidation
 import { Card, Button, Input, LoadingSpinner } from '../common';
 import CashRegisterSection from './CashRegisterSection';
 import ProtocolItemsSection from './ProtocolItemsSection';
-import { formatCurrency } from '../../lib/utils';
+import { formatCurrency, formatDateWithWeekday } from '../../lib/utils';
 import toast from 'react-hot-toast';
 
 const VAT_RATES = [
@@ -442,7 +442,9 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         setRemovedKeys(new Set());
       }
 
-      toast.success('Napi adatok sikeresen mentve!');
+      // Name the saved day in the confirmation, so a wrong-day entry surfaces
+      // immediately instead of days later.
+      toast.success(`Mentve: ${formatDateWithWeekday(date)}`);
     } catch (error) {
       console.error('Error saving daily revenue:', error);
     } finally {

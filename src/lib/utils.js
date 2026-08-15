@@ -20,6 +20,19 @@ export const formatDate = (date) => {
   });
 };
 
+const HU_WEEKDAYS = ['vasárnap', 'hétfő', 'kedd', 'szerda', 'csütörtök', 'péntek', 'szombat'];
+
+// "2026.08.11. (kedd)" — people spot a wrong weekday far more reliably than a
+// wrong digit, so the day name is shown wherever the entry date is confirmed.
+// Parsed from the local date components so there is no timezone drift.
+export const formatDateWithWeekday = (date) => {
+  if (!date) return '-';
+  const [y, m, d] = String(date).split('-').map(Number);
+  if (!y || !m || !d) return formatDate(date);
+  const dt = new Date(y, m - 1, d);
+  return `${formatDate(date)} (${HU_WEEKDAYS[dt.getDay()]})`;
+};
+
 // Format datetime to Hungarian locale
 export const formatDateTime = (date) => {
   if (!date) return '-';

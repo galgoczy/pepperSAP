@@ -13,7 +13,7 @@ import ExpenseForm from '../components/expenses/ExpenseForm';
 import EfoPaymentForm from '../components/expenses/EfoPaymentForm';
 import WagePaymentForm from '../components/expenses/WagePaymentForm';
 import PaymentEditModal from '../components/expenses/PaymentEditModal';
-import { getToday, formatCurrency, formatDate, PAYMENT_METHODS, TERMINAL_TIP_WITHDRAW_RATE } from '../lib/utils';
+import { getToday, formatCurrency, formatDate, formatDateWithWeekday, PAYMENT_METHODS, TERMINAL_TIP_WITHDRAW_RATE } from '../lib/utils';
 import { supabase } from '../lib/supabase';
 import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote } from 'lucide-react';
 
@@ -850,6 +850,25 @@ export default function DailyEntryPage() {
               PDF letöltés
             </Button>
           )}
+        </div>
+      </div>
+
+      {/* Always-visible date banner. It sticks under the fixed navbar so the day
+          being edited stays in sight while scrolling through a long form. */}
+      <div className="sticky top-16 z-30 -mx-4 md:-mx-6 lg:-mx-8 no-print">
+        <div className="bg-pepper-red text-white px-4 md:px-6 lg:px-8 py-2 shadow-md">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <CalendarDays className="h-5 w-5 flex-shrink-0" />
+            <span className="font-bold text-base md:text-lg">
+              {formatDateWithWeekday(selectedDate)}
+            </span>
+            {selectedUnitName && (
+              <span className="text-white/90 text-sm md:text-base">• {selectedUnitName}</span>
+            )}
+            {selectedDate === today && (
+              <span className="text-xs bg-white/20 rounded-full px-2 py-0.5">ma</span>
+            )}
+          </div>
         </div>
       </div>
 
