@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark, Banknote, Radio, PartyPopper, AlertTriangle, CheckCircle, Plus } from 'lucide-react';
+import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark, Banknote, Radio, PartyPopper, AlertTriangle, CheckCircle, Plus, MessageCircle, Copy } from 'lucide-react';
 import { useDailyRevenue } from '../../hooks/useDailyRevenue';
 import { useActiveCashRegisters, useAllCashRegisterRevenue, useRegisterClosureBaselines } from '../../hooks/useCashRegisterRevenue';
 import { useProtocolItems } from '../../hooks/useProtocolItems';
@@ -9,6 +9,7 @@ import { Card, Button, Input, LoadingSpinner } from '../common';
 import CashRegisterSection from './CashRegisterSection';
 import ProtocolItemsSection from './ProtocolItemsSection';
 import { formatCurrency, formatDateWithWeekday } from '../../lib/utils';
+import { buildWhatsappDailySummary, whatsappShareUrl } from '../../lib/whatsappSummary';
 import toast from 'react-hot-toast';
 
 const VAT_RATES = [
@@ -461,6 +462,33 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     (sum, c) => sum + closureTurnover(mergedForKey(c.key)),
     0
   );
+
+  // Day's total bankkártya payment across every closure — the "Bk" line of the
+  // WhatsApp summary. Read-only: nothing here feeds back into what gets saved.
+  const totalCardPayment = closureList.reduce(
+    (sum, c) => sum + (parseFloat(mergedForKey(c.key).card_payment) || 0),
+    0
+  );
+
+  const softwareRevenueValue = parseFloat(formData.total_revenue) || 0;
+  const whatsappText = buildWhatsappDailySummary({
+    date,
+    softwareRevenue: softwareRevenueValue,
+    cardRevenue: totalCardPayment,
+  });
+
+  const sendToWhatsapp = () => {
+    window.open(whatsappShareUrl(whatsappText), '_blank', 'noopener,noreferrer');
+  };
+
+  const copyWhatsappText = async () => {
+    try {
+      await navigator.clipboard.writeText(whatsappText);
+      toast.success('Vágólapra másolva');
+    } catch {
+      toast.error('Nem sikerült a másolás');
+    }
+  };
 
   // Non-critical check: the per-register software revenue sum should match the
   // Teljes forgalom. Flagged (not blocked) — a mismatch may be intentional.
@@ -1011,6 +1039,39 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
           </p>
         )}
       </Card>
+
+      {/* Daily summary for the unit's own WhatsApp group. Appears once the day
+          is saved. The send is manual on purpose: WhatsApp offers no official
+          way to post into a group, so the message is prefilled and the user
+          picks the group. Purely additive — it reads the form, never writes. */}
+      {revenue && softwareRevenueValue > 0 && (
+        <Card>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <MessageCircle className="h-4 w-4 text-green-600" />
+                Napi összesítő a WhatsApp csoportba
+              </h3>
+              <pre className="mt-2 font-mono text-xs leading-5 text-gray-700 whitespace-pre-wrap">
+                {whatsappText}
+              </pre>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button type="button" variant="secondary" size="sm" onClick={copyWhatsappText}>
+                <Copy className="h-4 w-4" />
+                Másolás
+              </Button>
+              <Button type="button" variant="success" size="sm" onClick={sendToWhatsapp}>
+                <MessageCircle className="h-4 w-4" />
+                Küldés WhatsApp-ra
+              </Button>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-gray-500">
+            A gomb megnyitja a WhatsAppot a kész üzenettel — csak ki kell választani az egység csoportját.
+          </p>
+        </Card>
+      )}
 
       {/* Submit button */}
       <div className="flex justify-end">
