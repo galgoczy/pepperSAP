@@ -831,10 +831,21 @@ async function fetchCashRevenueAllUnits(startDate, endDate) {
   return { data, totals };
 }
 
+// Sum of the EUR-denominated elütés entries recorded on one closure. HUF
+// entries are handled separately (they move the house cash); the EUR ones are
+// only reported, so they are summed for the period as their own column.
+function eurDiscrepancyOf(cr) {
+  if (!Array.isArray(cr?.discrepancies)) return 0;
+  return cr.discrepancies.reduce(
+    (sum, d) => sum + (d?.currency === 'EUR' ? (parseFloat(d.amount) || 0) : 0),
+    0
+  );
+}
+
 async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, software_revenue, closure_number, closure_sequence, cumulative_revenue, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, software_revenue, closure_number, closure_sequence, cumulative_revenue, discrepancies, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate);
 
@@ -846,11 +857,13 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
 
     if (!unitData[unitId]) {
       unitData[unitId] = {
+        unitId,
         unitName,
         cashRegisterTotal: 0,
         cash: 0,
         card: 0,
         terminal_card: 0,
+        eur: 0,
         registers: {},
       };
     }
@@ -868,6 +881,7 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
           cash: 0,
           card: 0,
           terminal_card: 0,
+          eur: 0,
           vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
           software: 0,
           closures: [],
@@ -879,8 +893,10 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
         (parseFloat(cr.vat_18_percent) || 0) +
         (parseFloat(cr.vat_27_percent) || 0) +
         (parseFloat(cr.tips) || 0);
+      const eur = eurDiscrepancyOf(cr);
 
       const reg = unitData[unitId].registers[registerId];
+      reg.eur += eur;
       reg.vat_0 += parseFloat(cr.vat_0_percent) || 0;
       reg.vat_5 += parseFloat(cr.vat_5_percent) || 0;
       reg.vat_18 += parseFloat(cr.vat_18_percent) || 0;
@@ -903,6 +919,7 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
       unitData[unitId].cash += parseFloat(cr.cash_payment) || 0;
       unitData[unitId].card += parseFloat(cr.card_payment) || 0;
       unitData[unitId].terminal_card += parseFloat(cr.terminal_card) || 0;
+      unitData[unitId].eur += eur;
     });
   });
 
@@ -922,6 +939,7 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
     cash: data.reduce((sum, r) => sum + r.cash, 0),
     card: data.reduce((sum, r) => sum + r.card, 0),
     terminal_card: data.reduce((sum, r) => sum + r.terminal_card, 0),
+    eur: data.reduce((sum, r) => sum + (r.eur || 0), 0),
   };
 
   return { data, totals };
@@ -985,11 +1003,12 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
 
     if (!unitData[unitId]) {
       unitData[unitId] = {
+        unitId,
         unitName,
         registers: {},
         totals: {
           vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
-          total: 0, cash: 0, card: 0, terminal_card: 0,
+          total: 0, cash: 0, card: 0, terminal_card: 0, eur: 0,
         },
       };
     }
@@ -1006,13 +1025,18 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
           days: [],
           totals: {
             vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
-            total: 0, cash: 0, card: 0, terminal_card: 0,
+            total: 0, cash: 0, card: 0, terminal_card: 0, eur: 0,
           },
         };
       }
 
       const dayData = {
         date: row.date,
+        // Needed for the deep link back to the daily entry of this closure.
+        unitId,
+        apNumber,
+        closureNumber: cr.closure_number ?? 1,
+        eur: eurDiscrepancyOf(cr),
         vat_0: parseFloat(cr.vat_0_percent) || 0,
         vat_5: parseFloat(cr.vat_5_percent) || 0,
         vat_18: parseFloat(cr.vat_18_percent) || 0,
@@ -1046,6 +1070,7 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
       unitData[unitId].registers[apNumber].totals.cash += dayData.cash;
       unitData[unitId].registers[apNumber].totals.card += dayData.card;
       unitData[unitId].registers[apNumber].totals.terminal_card += dayData.terminal_card;
+      unitData[unitId].registers[apNumber].totals.eur += dayData.eur;
 
       // Update unit totals
       unitData[unitId].totals.vat_0 += dayData.vat_0;
@@ -1057,6 +1082,7 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
       unitData[unitId].totals.cash += dayData.cash;
       unitData[unitId].totals.card += dayData.card;
       unitData[unitId].totals.terminal_card += dayData.terminal_card;
+      unitData[unitId].totals.eur += dayData.eur;
     });
   });
 
@@ -1065,7 +1091,7 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
     ...unit,
     registers: Object.values(unit.registers || {}).sort((a, b) => (a.ap_number || '').localeCompare(b.ap_number || '')),
     totals: {
-      ...(unit.totals || { vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0, total: 0, cash: 0, card: 0, terminal_card: 0 }),
+      ...(unit.totals || { vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0, total: 0, cash: 0, card: 0, terminal_card: 0, eur: 0 }),
       discrepancy: (unit.totals?.card || 0) - (unit.totals?.terminal_card || 0),
     },
   })).sort((a, b) => (a.unitName || '').localeCompare(b.unitName || ''));
@@ -1091,6 +1117,7 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
     card: data.reduce((sum, r) => sum + (r.totals?.card || 0), 0),
     terminal_card: data.reduce((sum, r) => sum + (r.totals?.terminal_card || 0), 0),
     discrepancy: data.reduce((sum, r) => sum + (r.totals?.discrepancy || 0), 0),
+    eur: data.reduce((sum, r) => sum + (r.totals?.eur || 0), 0),
   };
 
   return { data, totals };
@@ -1835,35 +1862,51 @@ function CashRevenueAllUnitsReport({ data, totals }) {
   );
 }
 
+// EUR elütés cell: only shown when there actually was one in the period.
+const eurCell = (v) => (Math.abs(v || 0) < 0.005 ? '-' : formatCurrency(v, 'EUR'));
+
+// Sticky column headers. The header can only stick to a scroll container, so the
+// table lives in a box that scrolls BOTH ways (a plain overflow-x-auto wrapper
+// makes `sticky top-0` a no-op — the wrapper never scrolls vertically). The
+// background sits on each th: with collapsed borders a thead background does not
+// paint over the rows scrolling underneath it.
+const STICKY_TH = 'sticky top-0 z-20 bg-red-50 px-4 py-2';
+
 function CashRegisterAllUnitsSimpleReport({ data, totals }) {
+  const sumRegisters = (unit, key) =>
+    (unit.registers || []).reduce((s, r) => s + (r[key] || 0), 0);
+  const sumAll = (key) =>
+    data.reduce((s, u) => s + sumRegisters(u, key), 0);
+
   return (
     <Card title="Pénztárgép forgalom - összes egység (egyszerű)">
-      <div className="overflow-x-auto">
+      <div className="overflow-auto max-h-[70vh]">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-red-50 sticky top-0 z-10">
+          <thead>
             <tr>
-              <th className="px-4 py-2 text-left">Egység / Pénztárgép</th>
-              <th className="px-4 py-2 text-right">0%</th>
-              <th className="px-4 py-2 text-right">5%</th>
-              <th className="px-4 py-2 text-right">18%</th>
-              <th className="px-4 py-2 text-right">27%</th>
-              <th className="px-4 py-2 text-right">Borr.</th>
-              <th className="px-4 py-2 text-right">Forgalom</th>
-              <th className="px-4 py-2 text-right">Novo</th>
-              <th className="px-4 py-2 text-right">Első z.</th>
-              <th className="px-4 py-2 text-right">Utolsó z.</th>
-              <th className="px-4 py-2 text-right">Utolsó göngyölt</th>
-              <th className="px-4 py-2 text-right">KP</th>
-              <th className="px-4 py-2 text-right">Kártya</th>
-              <th className="px-4 py-2 text-right">Terminál</th>
-              <th className="px-4 py-2 text-right">Eltérés</th>
+              <th className={`${STICKY_TH} text-left`}>Egység / Pénztárgép</th>
+              <th className={`${STICKY_TH} text-right`}>Első z.</th>
+              <th className={`${STICKY_TH} text-right`}>Utolsó z.</th>
+              <th className={`${STICKY_TH} text-right`}>0%</th>
+              <th className={`${STICKY_TH} text-right`}>5%</th>
+              <th className={`${STICKY_TH} text-right`}>18%</th>
+              <th className={`${STICKY_TH} text-right`}>27%</th>
+              <th className={`${STICKY_TH} text-right`}>KP</th>
+              <th className={`${STICKY_TH} text-right`}>Kártya</th>
+              <th className={`${STICKY_TH} text-right`}>Terminál</th>
+              <th className={`${STICKY_TH} text-right`}>Összesen</th>
+              <th className={`${STICKY_TH} text-right`}>Novo</th>
+              <th className={`${STICKY_TH} text-right`}>Borravaló</th>
+              <th className={`${STICKY_TH} text-right`}>Eltérés</th>
+              <th className={`${STICKY_TH} text-right`}>EUR elütés</th>
+              <th className={`${STICKY_TH} text-right`}>Göngyölt forgalom</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {data.map((unit, unitIdx) => (
               <React.Fragment key={`unit-${unitIdx}-${unit.unitName}`}>
                 <tr className="bg-gray-50 font-medium">
-                  <td className="px-4 py-2" colSpan={15}>{unit.unitName}</td>
+                  <td className="px-4 py-2" colSpan={16}>{unit.unitName}</td>
                 </tr>
                 {(unit.registers || []).map((reg, regIdx) => {
                   const discrepancy = reg.card - (reg.terminal_card || 0);
@@ -1872,70 +1915,74 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
                       <td className="px-4 py-2 pl-8 text-gray-600">
                         {reg.ap_number} {reg.name && `(${reg.name})`}
                       </td>
+                      <td className="px-4 py-2 text-right">{reg.firstSequence ?? '-'}</td>
+                      <td className="px-4 py-2 text-right">{reg.lastSequence ?? '-'}</td>
                       <td className="px-4 py-2 text-right">{formatCurrency(reg.vat_0 || 0)}</td>
                       <td className="px-4 py-2 text-right">{formatCurrency(reg.vat_5 || 0)}</td>
                       <td className="px-4 py-2 text-right">{formatCurrency(reg.vat_18 || 0)}</td>
                       <td className="px-4 py-2 text-right">{formatCurrency(reg.vat_27 || 0)}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(reg.tips || 0)}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(reg.total)}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(reg.software || 0)}</td>
-                      <td className="px-4 py-2 text-right">{reg.firstSequence ?? '-'}</td>
-                      <td className="px-4 py-2 text-right">{reg.lastSequence ?? '-'}</td>
-                      <td className="px-4 py-2 text-right">
-                        {reg.lastCumulative == null ? '-' : formatCurrency(reg.lastCumulative)}
-                      </td>
                       <td className="px-4 py-2 text-right">{formatCurrency(reg.cash)}</td>
                       <td className="px-4 py-2 text-right">{formatCurrency(reg.card)}</td>
                       <td className="px-4 py-2 text-right">{formatCurrency(reg.terminal_card || 0)}</td>
+                      <td className="px-4 py-2 text-right font-medium">{formatCurrency(reg.total)}</td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(reg.software || 0)}</td>
+                      <td className="px-4 py-2 text-right">{formatCurrency(reg.tips || 0)}</td>
                       <td className={`px-4 py-2 text-right ${discrepancy !== 0 ? 'text-orange-600 font-medium' : ''}`}>
                         {formatCurrency(discrepancy)}
+                      </td>
+                      <td className={`px-4 py-2 text-right ${(reg.eur || 0) !== 0 ? 'text-orange-600 font-medium' : 'text-gray-400'}`}>
+                        {eurCell(reg.eur)}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        {reg.lastCumulative == null ? '-' : formatCurrency(reg.lastCumulative)}
                       </td>
                     </tr>
                   );
                 })}
                 <tr className="bg-gray-100">
                   <td className="px-4 py-2 pl-8 font-medium text-gray-700">{unit.unitName} összesen</td>
-                  {['vat_0', 'vat_5', 'vat_18', 'vat_27', 'tips'].map((k) => (
+                  {/* Első / utolsó zárás only makes sense per register */}
+                  <td className="px-4 py-2" colSpan={2}></td>
+                  {['vat_0', 'vat_5', 'vat_18', 'vat_27'].map((k) => (
                     <td key={k} className="px-4 py-2 text-right font-medium">
-                      {formatCurrency((unit.registers || []).reduce((s, r) => s + (r[k] || 0), 0))}
+                      {formatCurrency(sumRegisters(unit, k))}
                     </td>
                   ))}
-                  <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.cashRegisterTotal)}</td>
-                  <td className="px-4 py-2 text-right font-medium">
-                    {formatCurrency((unit.registers || []).reduce((s, r) => s + (r.software || 0), 0))}
-                  </td>
-                  <td className="px-4 py-2" colSpan={3}></td>
                   <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.cash)}</td>
                   <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.card)}</td>
                   <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.terminal_card)}</td>
+                  <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.cashRegisterTotal)}</td>
+                  <td className="px-4 py-2 text-right font-medium">{formatCurrency(sumRegisters(unit, 'software'))}</td>
+                  <td className="px-4 py-2 text-right font-medium">{formatCurrency(sumRegisters(unit, 'tips'))}</td>
                   <td className={`px-4 py-2 text-right font-medium ${(unit.card - unit.terminal_card) !== 0 ? 'text-orange-600' : ''}`}>
                     {formatCurrency(unit.card - unit.terminal_card)}
                   </td>
+                  <td className={`px-4 py-2 text-right font-medium ${(unit.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
+                    {eurCell(unit.eur)}
+                  </td>
+                  <td className="px-4 py-2"></td>
                 </tr>
               </React.Fragment>
             ))}
             <tr className="bg-pepper-red bg-opacity-10 font-bold">
               <td className="px-4 py-2">Mindösszesen</td>
-              {['vat_0', 'vat_5', 'vat_18', 'vat_27', 'tips'].map((k) => (
-                <td key={k} className="px-4 py-2 text-right">
-                  {formatCurrency(
-                    data.reduce((s, u) => s + (u.registers || []).reduce((x, r) => x + (r[k] || 0), 0), 0)
-                  )}
-                </td>
+              <td className="px-4 py-2" colSpan={2}></td>
+              {['vat_0', 'vat_5', 'vat_18', 'vat_27'].map((k) => (
+                <td key={k} className="px-4 py-2 text-right">{formatCurrency(sumAll(k))}</td>
               ))}
-              <td className="px-4 py-2 text-right">{formatCurrency(totals.cashRegisterTotal)}</td>
-              <td className="px-4 py-2 text-right">
-                {formatCurrency(
-                  data.reduce((s, u) => s + (u.registers || []).reduce((x, r) => x + (r.software || 0), 0), 0)
-                )}
-              </td>
-              <td className="px-4 py-2" colSpan={3}></td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.cash)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.card)}</td>
               <td className="px-4 py-2 text-right">{formatCurrency(totals.terminal_card)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(totals.cashRegisterTotal)}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(sumAll('software'))}</td>
+              <td className="px-4 py-2 text-right">{formatCurrency(sumAll('tips'))}</td>
               <td className={`px-4 py-2 text-right ${(totals.card - totals.terminal_card) !== 0 ? 'text-orange-600' : ''}`}>
                 {formatCurrency(totals.card - totals.terminal_card)}
               </td>
+              <td className={`px-4 py-2 text-right ${(totals.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
+                {eurCell(totals.eur)}
+              </td>
+              <td className="px-4 py-2"></td>
             </tr>
           </tbody>
         </table>
@@ -1945,6 +1992,16 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
 }
 
 function CashRegisterAllUnitsDetailedReport({ data, totals }) {
+  const navigate = useNavigate();
+
+  // Jump to the closure's own day in the daily entry, with that register opened.
+  const openDay = (day) => {
+    if (!day?.unitId || !day?.date) return;
+    const params = new URLSearchParams({ unit: day.unitId, date: day.date });
+    if (day.apNumber) params.set('register', day.apNumber);
+    navigate(`/daily?${params.toString()}`);
+  };
+
   return (
     <Card title="Pénztárgép forgalom - összes egység (részletes)">
       <div className="space-y-6">
@@ -1952,6 +2009,7 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
           <span className="font-semibold">Jkv.</span> oszlop: eltérés esetén (terminál/kártya vagy göngyölt) automatikus jelölés –{' '}
           <span className="text-green-600 font-bold">✓</span> jegyzőkönyv elkészült,{' '}
           <span className="text-red-600 font-bold">✗</span> hiányzó jegyzőkönyv. Üres = nincs eltérés.
+          {' '}A sorokra kattintva a napi jelentés adott napja nyílik meg.
         </p>
         {data.map((unit, unitIdx) => (
           <div key={`unit-${unitIdx}-${unit.unitName}`} className="border border-gray-200 rounded-lg overflow-hidden">
@@ -1962,6 +2020,7 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
               <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-3 py-2 text-right" title="Zárás száma (Z-szám)">Zárás</th>
                     <th className="px-3 py-2 text-left">Dátum</th>
                     <th className="px-3 py-2 text-right">0%</th>
                     <th className="px-3 py-2 text-right">5%</th>
@@ -1974,6 +2033,7 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                     <th className="px-3 py-2 text-right">Term.</th>
                     <th className="px-3 py-2 text-right">Elt.</th>
                     <th className="px-3 py-2 text-center" title="Eltérés esetén: van-e jegyzőkönyv">Jkv.</th>
+                    <th className="px-3 py-2 text-right">EUR elütés</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -1981,13 +2041,19 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                     <React.Fragment key={`reg-${unitIdx}-${regIdx}-${reg.ap_number}`}>
                       {/* Register header row */}
                       <tr className="bg-blue-50">
-                        <td className="px-3 py-2 font-bold text-blue-800" colSpan={12}>
+                        <td className="px-3 py-2 font-bold text-blue-800" colSpan={14}>
                           Pénztárgép: {reg.ap_number} {reg.name && `(${reg.name})`}
                         </td>
                       </tr>
                       {/* Day rows for this register */}
                       {(reg.days || []).map((day, dayIdx) => (
-                        <tr key={`day-${unitIdx}-${regIdx}-${dayIdx}-${day.date}`} className="hover:bg-gray-50">
+                        <tr
+                          key={`day-${unitIdx}-${regIdx}-${dayIdx}-${day.date}-${day.closureNumber}`}
+                          onClick={() => openDay(day)}
+                          title="Ugrás a napi jelentéshez"
+                          className="hover:bg-blue-50 cursor-pointer"
+                        >
+                          <td className="px-3 py-2 text-right text-gray-500">{day.closureSeq ?? '-'}</td>
                           <td className="px-3 py-2">{formatDate(day.date)}</td>
                           <td className="px-3 py-2 text-right">{formatCurrency(day.vat_0)}</td>
                           <td className="px-3 py-2 text-right">{formatCurrency(day.vat_5)}</td>
@@ -2009,10 +2075,14 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                               <span className="text-red-600 font-bold" title="Eltérés – hiányzó jegyzőkönyv">✗</span>
                             )}
                           </td>
+                          <td className={`px-3 py-2 text-right ${(day.eur || 0) !== 0 ? 'text-orange-600 font-medium' : 'text-gray-300'}`}>
+                            {eurCell(day.eur)}
+                          </td>
                         </tr>
                       ))}
                       {/* Register subtotal row */}
                       <tr className="bg-gray-100 font-semibold">
+                        <td className="px-3 py-2"></td>
                         <td className="px-3 py-2">{reg.ap_number} összesen</td>
                         <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.vat_0)}</td>
                         <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.vat_5)}</td>
@@ -2027,11 +2097,15 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                           {formatCurrency(reg.totals?.discrepancy)}
                         </td>
                         <td className="px-3 py-2"></td>
+                        <td className={`px-3 py-2 text-right ${(reg.totals?.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
+                          {eurCell(reg.totals?.eur)}
+                        </td>
                       </tr>
                     </React.Fragment>
                   ))}
                   {/* Unit grand total row */}
                   <tr className="bg-pepper-red bg-opacity-20 font-bold">
+                    <td className="px-3 py-2"></td>
                     <td className="px-3 py-2">{unit.unitName} összesen</td>
                     <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.vat_0)}</td>
                     <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.vat_5)}</td>
@@ -2046,6 +2120,9 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                       {formatCurrency(unit.totals?.discrepancy)}
                     </td>
                     <td className="px-3 py-2"></td>
+                    <td className={`px-3 py-2 text-right ${(unit.totals?.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
+                      {eurCell(unit.totals?.eur)}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -2055,7 +2132,7 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
 
         {/* Grand total */}
         <div className="bg-pepper-red bg-opacity-10 rounded-lg p-4">
-          <div className="grid grid-cols-5 gap-4 text-center">
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-4 text-center">
             <div>
               <p className="text-sm text-gray-600">Összes forgalom</p>
               <p className="text-xl font-bold text-gray-900">{formatCurrency(totals?.total)}</p>
@@ -2076,6 +2153,12 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
               <p className="text-sm text-gray-600">Összes eltérés</p>
               <p className={`text-xl font-bold ${totals?.discrepancy !== 0 ? 'text-orange-600' : 'text-gray-700'}`}>
                 {formatCurrency(totals?.discrepancy)}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">EUR elütés</p>
+              <p className={`text-xl font-bold ${(totals?.eur || 0) !== 0 ? 'text-orange-600' : 'text-gray-700'}`}>
+                {eurCell(totals?.eur)}
               </p>
             </div>
           </div>

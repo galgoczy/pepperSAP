@@ -41,7 +41,7 @@ const closureTurnover = (data) =>
 
 const CUMULATIVE_TOLERANCE = 1; // Ft; rounding tolerance for the göngyölt check
 
-export default function DailyRevenueForm({ date, unitId, unitName }) {
+export default function DailyRevenueForm({ date, unitId, unitName, focusRegisterAp = null }) {
   const { revenue, loading: revenueLoading, saveRevenue, ensureRevenueExists } = useDailyRevenue(unitId, date);
   const { cashRegisters, loading: registersLoading } = useActiveCashRegisters(unitId, date);
   const { revenues: cashRegisterRevenues, saveAllRevenues } = useAllCashRegisterRevenue(revenue?.id);
@@ -81,6 +81,10 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     event_revenue_vat_rate: 27,
   });
   const [expandedRegisters, setExpandedRegisters] = useState({});
+  // Deep link from the pénztárgép reports (?register=<AP szám>): open that
+  // register's box once and scroll to it. Purely a UI hint — it only toggles
+  // the expand state, nothing about the data or the save path.
+  const focusHandledRef = useRef(false);
   const cashRegisterDataRef = useRef({});
   const [perRegisterSoftwareSum, setPerRegisterSoftwareSum] = useState(0);
   const [perRegisterGuestSum, setPerRegisterGuestSum] = useState(0);
@@ -134,6 +138,24 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     setExpandedRegisters(expanded);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cashRegisters]);
+
+  // Arriving from a cash register report row: open the linked register's
+  // closure(s) and scroll there. Runs once per mount, after the closures load.
+  useEffect(() => {
+    if (!focusRegisterAp || focusHandledRef.current || closureList.length === 0) return;
+    const matches = closureList.filter(
+      (c) => String(c.register.ap_number) === String(focusRegisterAp)
+    );
+    if (matches.length === 0) return;
+    focusHandledRef.current = true;
+    setExpandedRegisters((prev) => {
+      const next = { ...prev };
+      matches.forEach((c) => { next[c.key] = true; });
+      return next;
+    });
+    const el = document.getElementById(`register-${focusRegisterAp}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [focusRegisterAp, closureList]);
 
   useEffect(() => {
     if (revenue) {
@@ -693,7 +715,15 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
               : registerClosures.filter((c) => c.closureNumber === 1);
             const multiple = visibleClosures.length > 1;
             return (
-              <div key={register.id} className="space-y-3">
+              <div
+                key={register.id}
+                id={`register-${register.ap_number}`}
+                className={`space-y-3 ${
+                  focusRegisterAp && String(register.ap_number) === String(focusRegisterAp)
+                    ? 'rounded-lg ring-2 ring-pepper-red ring-offset-2'
+                    : ''
+                }`}
+              >
                 {visibleClosures.map((c) => (
                   <CashRegisterSection
                     key={c.key}

@@ -78,6 +78,8 @@ export default function DailyEntryPage() {
   const [selectedDate, setSelectedDate] = useState(searchParams.get('date') || getToday());
   // Initialize selected unit from URL param (for admin), or user's unit
   const urlUnitParam = searchParams.get('unit');
+  // Deep link from the cash register reports: open this register's box (AP number).
+  const focusRegisterAp = searchParams.get('register') || null;
   const [selectedUnit, setSelectedUnit] = useState(urlUnitParam || unitId || '');
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showEfoForm, setShowEfoForm] = useState(false);
@@ -964,6 +966,7 @@ export default function DailyEntryPage() {
                 date={selectedDate}
                 unitId={effectiveUnitId}
                 unitName={selectedUnitName}
+                focusRegisterAp={focusRegisterAp}
               />
             </div>
 
@@ -1076,6 +1079,7 @@ export default function DailyEntryPage() {
             date={selectedDate}
             unitId={effectiveUnitId}
             unitName={selectedUnitName}
+            focusRegisterAp={focusRegisterAp}
           />
         )}
 

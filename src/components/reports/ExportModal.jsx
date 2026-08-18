@@ -29,7 +29,10 @@ const reportTypeLabels = {
 
 // Columns that hold plain counts (e.g. guest headcount), not money — these must
 // not be formatted as currency in the PDF/Excel exports.
-const COUNT_HEADERS = new Set(['Létszám']);
+// Plain counters — no currency suffix (closure numbers are Z-report counters).
+const COUNT_HEADERS = new Set(['Létszám', 'Zárás', 'Első zárás', 'Utolsó zárás']);
+// Amounts denominated in EUR rather than HUF.
+const EUR_HEADERS = new Set(['EUR elütés']);
 
 // Hungarian month names for export
 const MONTH_NAMES = [
@@ -1175,10 +1178,20 @@ async function fetchCashRevenueAllUnitsExport(startDate, endDate) {
   return { data, headers };
 }
 
+// Sum of the EUR-denominated elütés entries on one closure (mirrors the
+// on-screen report: HUF elütés moves the house cash, EUR is reported only).
+function exportEurDiscrepancy(cr) {
+  if (!Array.isArray(cr?.discrepancies)) return 0;
+  return cr.discrepancies.reduce(
+    (sum, d) => sum + (d?.currency === 'EUR' ? (parseFloat(d.amount) || 0) : 0),
+    0
+  );
+}
+
 async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, software_revenue, closure_number, closure_sequence, cumulative_revenue, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, software_revenue, closure_number, closure_sequence, cumulative_revenue, discrepancies, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate);
 
@@ -1212,6 +1225,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
           cash: 0,
           card: 0,
           terminal_card: 0,
+          eur: 0,
           vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
           software: 0,
           closures: [],
@@ -1225,6 +1239,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
         (parseFloat(cr.tips) || 0);
 
       const regAcc = unitData[unitId].registers[registerId];
+      regAcc.eur += exportEurDiscrepancy(cr);
       regAcc.vat_0 += parseFloat(cr.vat_0_percent) || 0;
       regAcc.vat_5 += parseFloat(cr.vat_5_percent) || 0;
       regAcc.vat_18 += parseFloat(cr.vat_18_percent) || 0;
@@ -1250,7 +1265,13 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
     });
   });
 
-  const headers = ['Egység', 'Pénztárgép', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Forgalom', 'Novo forgalom', 'Első zárás', 'Utolsó zárás', 'Utolsó göngyölt', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés'];
+  // Column order mirrors the on-screen report exactly.
+  const headers = [
+    'Egység', 'Pénztárgép', 'Első zárás', 'Utolsó zárás',
+    '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA',
+    'Készpénz', 'Kártya', 'Terminál', 'Összesen', 'Novo forgalom', 'Borravaló',
+    'Eltérés', 'EUR elütés', 'Göngyölt forgalom',
+  ];
 
   const data = [];
   Object.values(unitData)
@@ -1261,20 +1282,21 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
         data.push({
           'Egység': unit.unitName,
           'Pénztárgép': `${reg.ap_number}${reg.name ? ` (${reg.name})` : ''}`,
+          'Első zárás': summary.firstSequence ?? '',
+          'Utolsó zárás': summary.lastSequence ?? '',
           '0% ÁFA': reg.vat_0,
           '5% ÁFA': reg.vat_5,
           '18% ÁFA': reg.vat_18,
           '27% ÁFA': reg.vat_27,
-          'Borravaló': reg.tips,
-          'Forgalom': reg.total,
-          'Novo forgalom': reg.software,
-          'Első zárás': summary.firstSequence ?? '',
-          'Utolsó zárás': summary.lastSequence ?? '',
-          'Utolsó göngyölt': summary.lastCumulative ?? '',
           'Készpénz': reg.cash,
           'Kártya': reg.card,
           'Terminál': reg.terminal_card,
+          'Összesen': reg.total,
+          'Novo forgalom': reg.software,
+          'Borravaló': reg.tips,
           'Eltérés': reg.card - reg.terminal_card,
+          'EUR elütés': reg.eur,
+          'Göngyölt forgalom': summary.lastCumulative ?? '',
         });
       });
     });
@@ -1285,7 +1307,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
 async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, closure_number, closure_sequence, discrepancies, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: true });
@@ -1326,6 +1348,8 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
 
       const dayData = {
         date: row.date,
+        closureSeq: cr.closure_sequence ?? cr.closure_number ?? null,
+        eur: exportEurDiscrepancy(cr),
         vat_0: parseFloat(cr.vat_0_percent) || 0,
         vat_5: parseFloat(cr.vat_5_percent) || 0,
         vat_18: parseFloat(cr.vat_18_percent) || 0,
@@ -1364,8 +1388,15 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
     });
   });
 
-  // Headers without "Pénztárgép" column - register name will be in header rows
-  const headers = ['Dátum', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Összesen', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés'];
+  // Headers without "Pénztárgép" column - register name will be in header rows.
+  // Closure number first, EUR elütés last (matches the on-screen report).
+  const headers = ['Zárás', 'Dátum', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Összesen', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés', 'EUR elütés'];
+
+  // Blank cells for the label/separator rows, so every row has every column.
+  const blanks = () => ({
+    'Zárás': '', '0% ÁFA': '', '5% ÁFA': '', '18% ÁFA': '', '27% ÁFA': '', 'Borravaló': '',
+    'Összesen': '', 'Készpénz': '', 'Kártya': '', 'Terminál': '', 'Eltérés': '', 'EUR elütés': '',
+  });
 
   const data = [];
   const units = Object.values(unitData).sort((a, b) => a.unitName.localeCompare(b.unitName));
@@ -1373,42 +1404,30 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
   // Track grand totals
   const grandTotals = {
     vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
-    total: 0, cash: 0, card: 0, terminal_card: 0,
+    total: 0, cash: 0, card: 0, terminal_card: 0, eur: 0,
   };
 
   units.forEach((unit, unitIndex) => {
     // Add empty row between units (not before the first unit)
     if (unitIndex > 0) {
-      data.push({
-        'Dátum': '', '0% ÁFA': '', '5% ÁFA': '', '18% ÁFA': '', '27% ÁFA': '', 'Borravaló': '',
-        'Összesen': '', 'Készpénz': '', 'Kártya': '', 'Terminál': '', 'Eltérés': '',
-        _rowType: 'empty',
-      });
+      data.push({ ...blanks(), 'Dátum': '', _rowType: 'empty' });
     }
 
     // Unit header row
-    data.push({
-      'Dátum': `=== ${unit.unitName} ===`,
-      '0% ÁFA': '', '5% ÁFA': '', '18% ÁFA': '', '27% ÁFA': '', 'Borravaló': '',
-      'Összesen': '', 'Készpénz': '', 'Kártya': '', 'Terminál': '', 'Eltérés': '',
-      _rowType: 'unitHeader',
-    });
+    data.push({ ...blanks(), 'Dátum': `=== ${unit.unitName} ===`, _rowType: 'unitHeader' });
 
     const registers = Object.values(unit.registers).sort((a, b) => a.ap_number.localeCompare(b.ap_number));
+    let unitEur = 0;
 
     registers.forEach((reg) => {
       // Register header row
       const registerLabel = reg.name ? `Pénztárgép: ${reg.ap_number} (${reg.name})` : `Pénztárgép: ${reg.ap_number}`;
-      data.push({
-        'Dátum': registerLabel,
-        '0% ÁFA': '', '5% ÁFA': '', '18% ÁFA': '', '27% ÁFA': '', 'Borravaló': '',
-        'Összesen': '', 'Készpénz': '', 'Kártya': '', 'Terminál': '', 'Eltérés': '',
-        _rowType: 'registerHeader',
-      });
+      data.push({ ...blanks(), 'Dátum': registerLabel, _rowType: 'registerHeader' });
 
       // Day rows
       reg.days.forEach((day) => {
         data.push({
+          'Zárás': day.closureSeq ?? '',
           'Dátum': formatDate(day.date),
           '0% ÁFA': day.vat_0,
           '5% ÁFA': day.vat_5,
@@ -1420,13 +1439,17 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
           'Kártya': day.card,
           'Terminál': day.terminal_card,
           'Eltérés': day.discrepancy,
+          'EUR elütés': day.eur,
           _rowType: 'data',
         });
       });
 
       // Register subtotal row
       const regDiscrepancy = reg.totals.card - reg.totals.terminal_card;
+      const regEur = reg.days.reduce((s, d) => s + (d.eur || 0), 0);
+      unitEur += regEur;
       data.push({
+        'Zárás': '',
         'Dátum': `${reg.ap_number} összesen`,
         '0% ÁFA': reg.totals.vat_0,
         '5% ÁFA': reg.totals.vat_5,
@@ -1438,6 +1461,7 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
         'Kártya': reg.totals.card,
         'Terminál': reg.totals.terminal_card,
         'Eltérés': regDiscrepancy,
+        'EUR elütés': regEur,
         _rowType: 'subtotal',
       });
     });
@@ -1445,6 +1469,7 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
     // Unit grand total row
     const unitDiscrepancy = unit.totals.card - unit.totals.terminal_card;
     data.push({
+      'Zárás': '',
       'Dátum': `${unit.unitName} összesen`,
       '0% ÁFA': unit.totals.vat_0,
       '5% ÁFA': unit.totals.vat_5,
@@ -1456,6 +1481,7 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
       'Kártya': unit.totals.card,
       'Terminál': unit.totals.terminal_card,
       'Eltérés': unitDiscrepancy,
+      'EUR elütés': unitEur,
       _rowType: 'unitTotal',
     });
 
@@ -1469,18 +1495,16 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
     grandTotals.cash += unit.totals.cash;
     grandTotals.card += unit.totals.card;
     grandTotals.terminal_card += unit.totals.terminal_card;
+    grandTotals.eur += unitEur;
   });
 
   // Add empty row before grand total
-  data.push({
-    'Dátum': '', '0% ÁFA': '', '5% ÁFA': '', '18% ÁFA': '', '27% ÁFA': '', 'Borravaló': '',
-    'Összesen': '', 'Készpénz': '', 'Kártya': '', 'Terminál': '', 'Eltérés': '',
-    _rowType: 'empty',
-  });
+  data.push({ ...blanks(), 'Dátum': '', _rowType: 'empty' });
 
   // Add grand total row at the end
   const grandDiscrepancy = grandTotals.card - grandTotals.terminal_card;
   data.push({
+    'Zárás': '',
     'Dátum': 'Mindösszesen',
     '0% ÁFA': grandTotals.vat_0,
     '5% ÁFA': grandTotals.vat_5,
@@ -1492,6 +1516,7 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
     'Kártya': grandTotals.card,
     'Terminál': grandTotals.terminal_card,
     'Eltérés': grandDiscrepancy,
+    'EUR elütés': grandTotals.eur,
     _rowType: 'grandTotal',
   });
 
@@ -1833,11 +1858,17 @@ async function fetchEventsAllUnitsExport(startDate, endDate) {
 // EXPORT FUNCTIONS
 // ============================================
 
+// Counters and "last value" columns: summing them would be meaningless, so the
+// totals row leaves them blank.
+const NON_SUMMABLE_HEADERS = new Set(['Zárás', 'Első zárás', 'Utolsó zárás', 'Göngyölt forgalom']);
+
 function calculateTotalsRow(data, headers) {
   const totalsRow = {};
   headers.forEach((key) => {
     const firstRow = data[0];
-    if (firstRow && typeof firstRow[key] === 'number') {
+    if (NON_SUMMABLE_HEADERS.has(key)) {
+      totalsRow[key] = '';
+    } else if (firstRow && typeof firstRow[key] === 'number') {
       totalsRow[key] = data.reduce((sum, row) => sum + (row[key] || 0), 0);
     } else if (key === 'Dátum' || key === 'Egység') {
       totalsRow[key] = 'Összesen';
@@ -1979,6 +2010,10 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
   }));
   ws['!cols'] = colWidths;
 
+  // Keep the header row visible while scrolling in Excel (best effort — older
+  // SheetJS builds ignore the property, in which case View > Freeze Panes does it).
+  ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+
   // Style header row
   for (let col = range.s.c; col <= range.e.c; col++) {
     const headerCell = XLSX.utils.encode_cell({ r: 0, c: col });
@@ -2098,7 +2133,10 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
     for (let col = 0; col <= finalRange.e.c; col++) {
       const cell = XLSX.utils.encode_cell({ r: row, c: col });
       if (ws[cell] && typeof ws[cell].v === 'number') {
-        ws[cell].z = COUNT_HEADERS.has(headers[col]) ? '#,##0' : '#,##0 Ft';
+        const header = headers[col];
+        if (COUNT_HEADERS.has(header)) ws[cell].z = '#,##0';
+        else if (EUR_HEADERS.has(header)) ws[cell].z = '#,##0.00 "€"';
+        else ws[cell].z = '#,##0 Ft';
       }
     }
   }
@@ -2180,7 +2218,9 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
   // Format data for PDF table - sanitize all strings
   const formatPdfVal = (h, val) => {
     if (typeof val !== 'number') return sanitizeForPdf(val);
-    return COUNT_HEADERS.has(h) ? val.toLocaleString('hu-HU') : formatCurrency(val);
+    if (COUNT_HEADERS.has(h)) return val.toLocaleString('hu-HU');
+    if (EUR_HEADERS.has(h)) return sanitizeForPdf(formatCurrency(val, 'EUR'));
+    return formatCurrency(val);
   };
 
   const tableData = data.map((row) => headers.map((h) => formatPdfVal(h, row[h])));
