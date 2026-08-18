@@ -267,8 +267,8 @@ export default function CashRegisterSection({
   const hasDiscrepancy = !cardValidation.isValid;
 
   // Turnover vs payment methods: the VAT buckets have to add up to
-  // készpénz + bankkártya + SZÉP. A gap has to be explained with an elütés
-  // before the day can be saved (the form blocks on the same condition).
+  // készpénz + bankkártya + SZÉP. A gap should be explained with an elütés, but
+  // it never stands in the way of saving the day.
   const paymentBreakdown = validatePaymentBreakdown({
     vatTotal: cashRegisterTotal,
     cash: parseFloat(formData.cash_payment) || 0,
@@ -277,7 +277,7 @@ export default function CashRegisterSection({
   });
   const paymentGap = paymentBreakdown.applicable && !paymentBreakdown.isValid;
   const paymentGapDocumented = hasDocumentedDiscrepancy(formData.discrepancies);
-  const paymentGapBlocking = paymentGap && !paymentGapDocumented;
+  const paymentGapUndocumented = paymentGap && !paymentGapDocumented;
 
   // Whether this closure has any kind of discrepancy (terminal/card mismatch, a
   // payment breakdown gap or a recorded elütés) — used to flag a collapsed
@@ -609,7 +609,7 @@ export default function CashRegisterSection({
             {paymentGap && (
               <div
                 className={`mt-3 rounded-lg border p-3 text-sm ${
-                  paymentGapBlocking
+                  paymentGapUndocumented
                     ? 'border-red-300 bg-red-50 text-red-800'
                     : 'border-green-300 bg-green-50 text-green-800'
                 }`}
@@ -627,9 +627,9 @@ export default function CashRegisterSection({
                       {SHOW_SZEP_FIELDS ? ' + SZÉP' : ''}) {formatCurrency(paymentBreakdown.paid)}
                     </p>
                     <p className="mt-1 text-xs font-medium">
-                      {paymentGapBlocking
-                        ? 'Rögzíts egy elütést indoklással — addig a nap nem menthető.'
-                        : 'Elütés rögzítve, a nap menthető.'}
+                      {paymentGapUndocumented
+                        ? 'Rögzíts róla egy elütést indoklással. (A mentést ez nem akadályozza.)'
+                        : 'Elütés rögzítve.'}
                     </p>
                   </div>
                 </div>

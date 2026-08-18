@@ -214,9 +214,9 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
   );
 
   // Closures where the payment methods (KP + kártya + SZÉP) do not add up to the
-  // turnover. An undocumented gap blocks the save: it is almost always a mis-key,
-  // and it is far cheaper to explain now than to reconstruct weeks later. Once an
-  // elütés with a reason is recorded, the day saves normally.
+  // turnover. This is flagged loudly wherever it can be seen, but it NEVER
+  // affects saving — recording the day always has to succeed, and a missing
+  // jegyzőkönyv can be caught up afterwards from the report.
   const paymentGapClosures = closureList
     .map((c) => {
       const d = mergedForKey(c.key);
@@ -234,7 +234,7 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
       };
     })
     .filter(Boolean);
-  const blockingClosures = paymentGapClosures.filter((g) => !g.documented);
+  const undocumentedGaps = paymentGapClosures.filter((g) => !g.documented);
 
   // Recompute the cross-closure sums and the per-closure validations (closure
   // sequence number and cumulative "göngyölt" revenue). Returns the software
@@ -462,24 +462,6 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
   const saveAll = async () => {
     if (!unitId) return;
 
-    if (blockingClosures.length > 0) {
-      const names = blockingClosures
-        .map((g) => g.closure.register.ap_number)
-        .join(', ');
-      toast.error(
-        `Nem menthető – ${names}: a fizetési módok nem adják ki a forgalmat. ` +
-          'Rögzíts egy elütést indoklással a pénztárgép boxában.',
-        { duration: 9000 }
-      );
-      // Open the offending boxes so the elütés can be entered right away.
-      setExpandedRegisters((prev) => {
-        const next = { ...prev };
-        blockingClosures.forEach((g) => { next[g.closure.key] = true; });
-        return next;
-      });
-      return;
-    }
-
     setSaving(true);
     try {
       // If protocol items exist, override protocol_gross with items total
@@ -510,6 +492,17 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
       // Name the saved day in the confirmation, so a wrong-day entry surfaces
       // immediately instead of days later.
       toast.success(`Mentve: ${formatDateWithWeekday(date)}`);
+
+      // Payment breakdown gaps are flagged loudly but NEVER block the save —
+      // the data is already stored at this point, this is only a reminder.
+      if (undocumentedGaps.length > 0) {
+        const names = undocumentedGaps.map((g) => g.closure.register.ap_number).join(', ');
+        toast(
+          `Figyelem – ${names}: a fizetési módok nem adják ki a forgalmat. ` +
+            'Rögzíts róla elütést indoklással.',
+          { icon: '⚠️', duration: 9000 }
+        );
+      }
     } catch (error) {
       console.error('Error saving daily revenue:', error);
     } finally {
@@ -1145,25 +1138,26 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
         </Card>
       )}
 
-      {/* Payment breakdown gaps that block the save */}
-      {blockingClosures.length > 0 && (
-        <div className="rounded-lg border border-red-300 bg-red-50 p-4">
+      {/* Payment breakdown gaps — flagged prominently, never blocking the save */}
+      {undocumentedGaps.length > 0 && (
+        <div className="rounded-lg border-2 border-red-400 bg-red-50 p-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+            <AlertTriangle className="h-6 w-6 text-red-600 mt-0.5 shrink-0" />
             <div className="text-sm text-red-800">
-              <p className="font-semibold">A nap nem menthető, amíg ezek nincsenek elütésként rögzítve:</p>
+              <p className="font-bold text-base">Hiányzó jegyzőkönyv – fizetési mód eltérés</p>
               <ul className="mt-2 space-y-1">
-                {blockingClosures.map((g) => (
+                {undocumentedGaps.map((g) => (
                   <li key={g.closure.key}>
                     <span className="font-mono font-medium">{g.closure.register.ap_number}</span>
                     {g.closure.closureNumber > 1 && ` (${g.closure.closureNumber}. zárás)`}
-                    {' — a fizetési módok eltérése: '}
-                    <span className="font-medium">{formatCurrency(g.difference)}</span>
+                    {' — a fizetési módok nem adják ki a forgalmat: '}
+                    <span className="font-bold">{formatCurrency(g.difference)}</span>
                   </li>
                 ))}
               </ul>
               <p className="mt-2 text-xs">
-                Nyisd ki az érintett pénztárgép boxát, és az Elütések résznél rögzítsd az eltérést indoklással.
+                Nyisd ki az érintett pénztárgép boxát, és az Elütések résznél rögzítsd az eltérést
+                indoklással. <span className="font-medium">A nap ettől függetlenül menthető.</span>
               </p>
             </div>
           </div>
