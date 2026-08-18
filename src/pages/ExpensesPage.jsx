@@ -172,6 +172,7 @@ export default function ExpensesPage() {
             isAdmin={isAdmin}
             startDate={startDate}
             endDate={endDate}
+            onEdit={handleEdit}
           />
         ) : (
           <ExpenseList

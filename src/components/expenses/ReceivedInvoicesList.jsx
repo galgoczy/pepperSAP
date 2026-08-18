@@ -58,7 +58,7 @@ const STATES = [
 
 // Admin view of official (számlás) payments, where the invoice's handling can be
 // tracked: received / scanned / paid.
-export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDate }) {
+export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDate, onEdit }) {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -311,12 +311,30 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
               // An active mark tints the whole row; hover is disabled there so
               // the colour doesn't disappear under the cursor.
               const rs = rowState(item);
+              // Központi kifizetések live in their own table and are managed on
+              // the Házipénztár → Központ tab, so they open no editor here —
+              // the same rule the Számlák áttekintése list already follows.
+              const editable = item.source === 'expense' && !!onEdit;
               return (
-                <TableRow key={`${item.source}-${item.id}`} hover={!rs} className={rs ? rs.row : ''}>
+                <TableRow
+                  key={`${item.source}-${item.id}`}
+                  hover={!rs}
+                  className={rs ? rs.row : ''}
+                  onClick={editable ? () => onEdit({ kind: 'expense', raw: item }) : undefined}
+                  title={
+                    editable
+                      ? 'Kattints a szerkesztéshez'
+                      : 'Központi kifizetés – a Házipénztár / Központ fülön szerkeszthető'
+                  }
+                >
                   {/* Status dots: only the dot shows until it is active, then the
-                      label appears next to it. Clicking toggles the state. */}
+                      label appears next to it. Clicking toggles the state.
+                      The clicks stay in this cell so they never open the editor. */}
                   <TableCell>
-                    <div className="flex items-center gap-2">
+                    <div
+                      className="flex items-center gap-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {statesFor(item).map((s) => {
                         const active = !!item[s.key];
                         return (
