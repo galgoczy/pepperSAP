@@ -10,6 +10,7 @@ import CashRegisterSection from './CashRegisterSection';
 import ProtocolItemsSection from './ProtocolItemsSection';
 import { formatCurrency, formatDateWithWeekday } from '../../lib/utils';
 import { buildWhatsappDailySummary, whatsappShareUrl } from '../../lib/whatsappSummary';
+import { validatePaymentBreakdown, hasDocumentedDiscrepancy } from '../../lib/validations';
 import toast from 'react-hot-toast';
 
 const VAT_RATES = [
@@ -211,6 +212,29 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
     (key) => cashRegisterDataRef.current[key] || existingByKey[key] || {},
     [existingByKey]
   );
+
+  // Closures where the payment methods (KP + kártya + SZÉP) do not add up to the
+  // turnover. An undocumented gap blocks the save: it is almost always a mis-key,
+  // and it is far cheaper to explain now than to reconstruct weeks later. Once an
+  // elütés with a reason is recorded, the day saves normally.
+  const paymentGapClosures = closureList
+    .map((c) => {
+      const d = mergedForKey(c.key);
+      const check = validatePaymentBreakdown({
+        vatTotal: closureTurnover(d),
+        cash: parseFloat(d.cash_payment) || 0,
+        card: parseFloat(d.card_payment) || 0,
+        szep: parseFloat(d.szep_card_payment) || 0,
+      });
+      if (!check.applicable || check.isValid) return null;
+      return {
+        closure: c,
+        difference: check.difference,
+        documented: hasDocumentedDiscrepancy(d),
+      };
+    })
+    .filter(Boolean);
+  const blockingClosures = paymentGapClosures.filter((g) => !g.documented);
 
   // Recompute the cross-closure sums and the per-closure validations (closure
   // sequence number and cumulative "göngyölt" revenue). Returns the software
@@ -437,6 +461,24 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
   // to scroll down to save).
   const saveAll = async () => {
     if (!unitId) return;
+
+    if (blockingClosures.length > 0) {
+      const names = blockingClosures
+        .map((g) => g.closure.register.ap_number)
+        .join(', ');
+      toast.error(
+        `Nem menthető – ${names}: a fizetési módok nem adják ki a forgalmat. ` +
+          'Rögzíts egy elütést indoklással a pénztárgép boxában.',
+        { duration: 9000 }
+      );
+      // Open the offending boxes so the elütés can be entered right away.
+      setExpandedRegisters((prev) => {
+        const next = { ...prev };
+        blockingClosures.forEach((g) => { next[g.closure.key] = true; });
+        return next;
+      });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -1101,6 +1143,31 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
             A gomb megnyitja a WhatsAppot a kész üzenettel — csak ki kell választani az egység csoportját.
           </p>
         </Card>
+      )}
+
+      {/* Payment breakdown gaps that block the save */}
+      {blockingClosures.length > 0 && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+            <div className="text-sm text-red-800">
+              <p className="font-semibold">A nap nem menthető, amíg ezek nincsenek elütésként rögzítve:</p>
+              <ul className="mt-2 space-y-1">
+                {blockingClosures.map((g) => (
+                  <li key={g.closure.key}>
+                    <span className="font-mono font-medium">{g.closure.register.ap_number}</span>
+                    {g.closure.closureNumber > 1 && ` (${g.closure.closureNumber}. zárás)`}
+                    {' — a fizetési módok eltérése: '}
+                    <span className="font-medium">{formatCurrency(g.difference)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs">
+                Nyisd ki az érintett pénztárgép boxát, és az Elütések résznél rögzítsd az eltérést indoklással.
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Submit button */}

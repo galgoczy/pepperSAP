@@ -1,25 +1,57 @@
+// Everything the registers are checked against tolerates rounding only: a cash
+// elütés can leave a few forints behind, anything above that is a real gap.
+export const REGISTER_TOLERANCE = 5; // Ft
+
 // Validate card payment discrepancy
 export const validateCardPayments = (cashRegisterCard, terminalCard) => {
   const difference = Math.abs((cashRegisterCard || 0) - (terminalCard || 0));
-  const threshold = 100; // 100 Ft difference is acceptable
 
   return {
-    isValid: difference <= threshold,
+    isValid: difference <= REGISTER_TOLERANCE,
     difference: difference,
-    needsExplanation: difference > threshold,
+    needsExplanation: difference > REGISTER_TOLERANCE,
   };
 };
 
 // Validate SZEP card payment discrepancy
 export const validateSzepPayments = (cashRegisterSzep, terminalSzep) => {
   const difference = Math.abs((cashRegisterSzep || 0) - (terminalSzep || 0));
-  const threshold = 100;
 
   return {
-    isValid: difference <= threshold,
+    isValid: difference <= REGISTER_TOLERANCE,
     difference: difference,
-    needsExplanation: difference > threshold,
+    needsExplanation: difference > REGISTER_TOLERANCE,
   };
+};
+
+// The closure's turnover (the VAT buckets; borravaló is NOT part of it) has to
+// equal what the payment methods add up to (készpénz + bankkártya + SZÉP).
+// A gap means something was mis-keyed, so it must be documented with an elütés
+// before the day can be saved.
+export const validatePaymentBreakdown = ({ vatTotal, cash, card, szep }) => {
+  const paid = (cash || 0) + (card || 0) + (szep || 0);
+  const difference = (vatTotal || 0) - paid;
+
+  return {
+    paid,
+    difference,
+    // Only checked once BOTH sides carry a value. A closure that is still being
+    // filled in (turnover typed, payment methods not yet) must stay saveable —
+    // losing a half-entered day would be worse than a late warning.
+    applicable: (vatTotal || 0) > 0 && paid > 0,
+    isValid: Math.abs(difference) <= REGISTER_TOLERANCE,
+  };
+};
+
+// A payment-breakdown gap counts as documented once an elütés was recorded with
+// a reason on that closure — that is what the jegyzőkönyv is printed from.
+// Accepts either the discrepancies array or the whole closure, so that legacy
+// rows (single elütés kept in discrepancy_note) still count as documented.
+export const hasDocumentedDiscrepancy = (closureOrList) => {
+  const list = Array.isArray(closureOrList) ? closureOrList : closureOrList?.discrepancies;
+  if (Array.isArray(list) && list.some((d) => (d?.note || '').trim().length > 0)) return true;
+  if (Array.isArray(closureOrList)) return false;
+  return (closureOrList?.discrepancy_note || '').trim().length > 0;
 };
 
 // Validate amount (must be non-negative number)

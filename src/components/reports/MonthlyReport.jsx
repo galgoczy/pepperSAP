@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
+import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy } from '../../lib/validations';
 import { RevenueTrendChart } from '../charts/RevenueTrendChart';
 
 // Color options for marking
@@ -945,15 +946,17 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
   return { data, totals };
 }
 
-// Threshold/tolerance constants for auto-detecting cash-register discrepancies,
-// kept in sync with the daily form (validateCardPayments / recomputeDerived).
-const TERMINAL_DISCREPANCY_THRESHOLD = 100; // Ft
+// Tolerance for auto-detecting cash-register discrepancies, shared with the
+// daily form (validateCardPayments / validatePaymentBreakdown) so the reports
+// and the entry screen never disagree about what counts as an eltérés.
 const CUMULATIVE_TOLERANCE = 1; // Ft
 
 // Auto-mark each closure (day row) in the detailed report: whether a discrepancy
 // exists and whether a protocol ("jegyzőkönyv") was recorded for it.
-//  - terminal/card discrepancy: |card - terminal| over threshold; considered
+//  - terminal/card discrepancy: |card - terminal| over tolerance; considered
 //    handled when a terminal discrepancy note was entered.
+//  - payment breakdown gap: the VAT buckets do not add up to KP + kártya + SZÉP;
+//    considered handled when an elütés with a reason was recorded.
 //  - cumulative ("göngyölt") discrepancy: the Z-report cumulative does not match
 //    the previous cumulative + this closure's turnover; considered handled when
 //    an elütés (discrepancies[]) entry was recorded.
@@ -967,8 +970,11 @@ function computeRegisterProtocolMarks(days) {
   });
   let prevCumulative = null;
   ordered.forEach((day) => {
-    const termDisc = Math.abs(day.discrepancy) > TERMINAL_DISCREPANCY_THRESHOLD;
+    const termDisc = Math.abs(day.discrepancy) > REGISTER_TOLERANCE;
     const termHandled = day.terminalNote.length > 0;
+
+    const payDisc = !!day.paymentGap;
+    const payHandled = !!day.discrepancyDocumented;
 
     let cumDisc = false;
     if (prevCumulative != null && prevCumulative > 0 && day.cumulative > 0) {
@@ -978,10 +984,11 @@ function computeRegisterProtocolMarks(days) {
     const cumHandled = day.discrepancyCount > 0;
     if (day.cumulative > 0) prevCumulative = day.cumulative;
 
-    if (!termDisc && !cumDisc) {
+    if (!termDisc && !cumDisc && !payDisc) {
       day.protocolMark = null;
     } else {
-      const allHandled = (!termDisc || termHandled) && (!cumDisc || cumHandled);
+      const allHandled =
+        (!termDisc || termHandled) && (!cumDisc || cumHandled) && (!payDisc || payHandled);
       day.protocolMark = allHandled ? 'ok' : 'missing';
     }
   });
@@ -990,7 +997,7 @@ function computeRegisterProtocolMarks(days) {
 async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, terminal_discrepancy_note, discrepancies, cumulative_revenue, closure_number, closure_sequence, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, terminal_discrepancy_note, discrepancies, cumulative_revenue, closure_number, closure_sequence, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: true });
@@ -1044,11 +1051,13 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
         tips: parseFloat(cr.tips) || 0,
         cash: parseFloat(cr.cash_payment) || 0,
         card: parseFloat(cr.card_payment) || 0,
+        szep: parseFloat(cr.szep_card_payment) || 0,
         terminal_card: parseFloat(cr.terminal_card) || 0,
         // Closure-level fields used to auto-detect discrepancies and whether a
         // protocol ("jegyzőkönyv") was recorded for them (see computeProtocolMark).
         terminalNote: (cr.terminal_discrepancy_note || '').trim(),
         discrepancyCount: Array.isArray(cr.discrepancies) ? cr.discrepancies.length : 0,
+        discrepancyDocumented: hasDocumentedDiscrepancy(cr),
         cumulative: parseFloat(cr.cumulative_revenue) || 0,
         closureSeq: cr.closure_sequence ?? cr.closure_number ?? null,
       };
@@ -1057,6 +1066,13 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
       // Turnover that the cumulative (göngyölt) Z-report increments by: VAT
       // buckets only, tips excluded (matches the daily form's validation).
       dayData.turnover = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27;
+      // Payment breakdown: the VAT buckets must equal KP + kártya + SZÉP.
+      dayData.paid = dayData.cash + dayData.card + dayData.szep;
+      dayData.paymentDiff = dayData.turnover - dayData.paid;
+      dayData.paymentGap =
+        dayData.turnover > 0 &&
+        dayData.paid > 0 &&
+        Math.abs(dayData.paymentDiff) > REGISTER_TOLERANCE;
 
       unitData[unitId].registers[apNumber].days.push(dayData);
 
@@ -1862,6 +1878,60 @@ function CashRevenueAllUnitsReport({ data, totals }) {
   );
 }
 
+// Wide reports scroll sideways, but the real scrollbar sits at the BOTTOM of a
+// long table — you had to scroll the whole page down just to pan right. This
+// wraps the table in a box that scrolls both ways (which is also what makes the
+// sticky header work) and pins a second, synced scrollbar above it.
+function WideTable({ children, maxHeight = '70vh' }) {
+  const topRef = useRef(null);
+  const bodyRef = useRef(null);
+  const [size, setSize] = useState({ scrollWidth: 0, clientWidth: 0 });
+  const syncing = useRef(false);
+
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => setSize({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [children]);
+
+  // Mirror one scrollbar onto the other without the echo re-triggering us.
+  const mirror = (from, to) => {
+    if (!from || !to || syncing.current) return;
+    syncing.current = true;
+    to.scrollLeft = from.scrollLeft;
+    requestAnimationFrame(() => { syncing.current = false; });
+  };
+
+  const overflowing = size.scrollWidth > size.clientWidth + 1;
+
+  return (
+    <div>
+      {overflowing && (
+        <div
+          ref={topRef}
+          onScroll={() => mirror(topRef.current, bodyRef.current)}
+          className="overflow-x-auto overflow-y-hidden mb-1"
+        >
+          <div style={{ width: size.scrollWidth, height: 1 }} />
+        </div>
+      )}
+      <div
+        ref={bodyRef}
+        onScroll={() => mirror(bodyRef.current, topRef.current)}
+        className="overflow-auto"
+        style={{ maxHeight }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // EUR elütés cell: only shown when there actually was one in the period.
 const eurCell = (v) => (Math.abs(v || 0) < 0.005 ? '-' : formatCurrency(v, 'EUR'));
 
@@ -1880,11 +1950,15 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
 
   return (
     <Card title="Pénztárgép forgalom - összes egység (egyszerű)">
-      <div className="overflow-auto max-h-[70vh]">
+      <p className="text-xs text-gray-500 mb-2">
+        Oldalra görgetés: a táblázat feletti csúszkával, vagy Shift + egérgörgő. Az
+        egység/pénztárgép oszlop és a fejléc a helyén marad.
+      </p>
+      <WideTable>
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead>
             <tr>
-              <th className={`${STICKY_TH} text-left`}>Egység / Pénztárgép</th>
+              <th className={`${STICKY_TH} left-0 z-30 text-left`}>Egység / Pénztárgép</th>
               <th className={`${STICKY_TH} text-right`}>Első z.</th>
               <th className={`${STICKY_TH} text-right`}>Utolsó z.</th>
               <th className={`${STICKY_TH} text-right`}>0%</th>
@@ -1906,13 +1980,14 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
             {data.map((unit, unitIdx) => (
               <React.Fragment key={`unit-${unitIdx}-${unit.unitName}`}>
                 <tr className="bg-gray-50 font-medium">
-                  <td className="px-4 py-2" colSpan={16}>{unit.unitName}</td>
+                  <td className="sticky left-0 z-10 bg-gray-50 px-4 py-2">{unit.unitName}</td>
+                  <td className="px-4 py-2" colSpan={15}></td>
                 </tr>
                 {(unit.registers || []).map((reg, regIdx) => {
                   const discrepancy = reg.card - (reg.terminal_card || 0);
                   return (
                     <tr key={`${unitIdx}-${regIdx}-${reg.ap_number}`} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 pl-8 text-gray-600">
+                      <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 text-gray-600">
                         {reg.ap_number} {reg.name && `(${reg.name})`}
                       </td>
                       <td className="px-4 py-2 text-right">{reg.firstSequence ?? '-'}</td>
@@ -1940,7 +2015,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
                   );
                 })}
                 <tr className="bg-gray-100">
-                  <td className="px-4 py-2 pl-8 font-medium text-gray-700">{unit.unitName} összesen</td>
+                  <td className="sticky left-0 z-10 bg-gray-100 px-4 py-2 pl-8 font-medium text-gray-700">{unit.unitName} összesen</td>
                   {/* Első / utolsó zárás only makes sense per register */}
                   <td className="px-4 py-2" colSpan={2}></td>
                   {['vat_0', 'vat_5', 'vat_18', 'vat_27'].map((k) => (
@@ -1965,7 +2040,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
               </React.Fragment>
             ))}
             <tr className="bg-pepper-red bg-opacity-10 font-bold">
-              <td className="px-4 py-2">Mindösszesen</td>
+              <td className="sticky left-0 z-10 bg-red-50 px-4 py-2">Mindösszesen</td>
               <td className="px-4 py-2" colSpan={2}></td>
               {['vat_0', 'vat_5', 'vat_18', 'vat_27'].map((k) => (
                 <td key={k} className="px-4 py-2 text-right">{formatCurrency(sumAll(k))}</td>
@@ -1986,7 +2061,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
             </tr>
           </tbody>
         </table>
-      </div>
+      </WideTable>
     </Card>
   );
 }
@@ -2016,7 +2091,7 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
             <div className="bg-pepper-red bg-opacity-10 px-4 py-2 font-bold text-gray-900">
               {unit.unitName}
             </div>
-            <div className="overflow-x-auto">
+            <WideTable maxHeight="none">
               <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead className="bg-gray-50">
                   <tr>
@@ -2060,7 +2135,18 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                           <td className="px-3 py-2 text-right">{formatCurrency(day.vat_18)}</td>
                           <td className="px-3 py-2 text-right">{formatCurrency(day.vat_27)}</td>
                           <td className="px-3 py-2 text-right">{formatCurrency(day.tips)}</td>
-                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(day.total)}</td>
+                          <td
+                            className={`px-3 py-2 text-right font-medium ${
+                              day.paymentGap ? 'text-orange-600 underline decoration-dotted' : ''
+                            }`}
+                            title={
+                              day.paymentGap
+                                ? `A fizetési módok nem adják ki a forgalmat: eltérés ${formatCurrency(day.paymentDiff)}`
+                                : undefined
+                            }
+                          >
+                            {formatCurrency(day.total)}
+                          </td>
                           <td className="px-3 py-2 text-right">{formatCurrency(day.cash)}</td>
                           <td className="px-3 py-2 text-right">{formatCurrency(day.card)}</td>
                           <td className="px-3 py-2 text-right">{formatCurrency(day.terminal_card)}</td>
@@ -2126,7 +2212,7 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                   </tr>
                 </tbody>
               </table>
-            </div>
+            </WideTable>
           </div>
         ))}
 

@@ -3,7 +3,7 @@ import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp, Printer,
 import { Card, Input, Select, Button } from '../common';
 import { Textarea } from '../common/Input';
 import { formatCurrency, formatDate, TERMINAL_TIP_WITHDRAW_RATE } from '../../lib/utils';
-import { validateCardPayments } from '../../lib/validations';
+import { validateCardPayments, validatePaymentBreakdown, hasDocumentedDiscrepancy } from '../../lib/validations';
 import { jsPDF } from 'jspdf';
 
 // Feature flag: set to true to show SZÉP card fields
@@ -265,9 +265,24 @@ export default function CashRegisterSection({
   );
 
   const hasDiscrepancy = !cardValidation.isValid;
-  // Whether this closure has any kind of discrepancy (terminal/card mismatch or a
-  // recorded elütés) — used to flag a collapsed register box in the background.
-  const hasAnyDiscrepancy = hasDiscrepancy || (formData.discrepancies || []).length > 0;
+
+  // Turnover vs payment methods: the VAT buckets have to add up to
+  // készpénz + bankkártya + SZÉP. A gap has to be explained with an elütés
+  // before the day can be saved (the form blocks on the same condition).
+  const paymentBreakdown = validatePaymentBreakdown({
+    vatTotal: cashRegisterTotal,
+    cash: parseFloat(formData.cash_payment) || 0,
+    card: parseFloat(formData.card_payment) || 0,
+    szep: parseFloat(formData.szep_card_payment) || 0,
+  });
+  const paymentGap = paymentBreakdown.applicable && !paymentBreakdown.isValid;
+  const paymentGapDocumented = hasDocumentedDiscrepancy(formData.discrepancies);
+  const paymentGapBlocking = paymentGap && !paymentGapDocumented;
+
+  // Whether this closure has any kind of discrepancy (terminal/card mismatch, a
+  // payment breakdown gap or a recorded elütés) — used to flag a collapsed
+  // register box in the background.
+  const hasAnyDiscrepancy = hasDiscrepancy || paymentGap || (formData.discrepancies || []).length > 0;
 
   // Terminal card breakdown (display + reserve tip cost)
   const terminalCardTip = parseFloat(formData.terminal_card_tip) || 0;
@@ -589,6 +604,37 @@ export default function CashRegisterSection({
                 />
               )}
             </div>
+
+            {/* Turnover vs payment methods */}
+            {paymentGap && (
+              <div
+                className={`mt-3 rounded-lg border p-3 text-sm ${
+                  paymentGapBlocking
+                    ? 'border-red-300 bg-red-50 text-red-800'
+                    : 'border-green-300 bg-green-50 text-green-800'
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium">
+                      A fizetési módok nem adják ki a forgalmat: eltérés{' '}
+                      {formatCurrency(paymentBreakdown.difference)}
+                    </p>
+                    <p className="mt-1 text-xs">
+                      Forgalom (ÁFA-kulcsok, borravaló nélkül){' '}
+                      {formatCurrency(cashRegisterTotal)} · Fizetve (KP + kártya
+                      {SHOW_SZEP_FIELDS ? ' + SZÉP' : ''}) {formatCurrency(paymentBreakdown.paid)}
+                    </p>
+                    <p className="mt-1 text-xs font-medium">
+                      {paymentGapBlocking
+                        ? 'Rögzíts egy elütést indoklással — addig a nap nem menthető.'
+                        : 'Elütés rögzítve, a nap menthető.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Terminal data */}

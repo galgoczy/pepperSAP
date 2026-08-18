@@ -16,6 +16,7 @@ import WagePaymentForm from '../components/expenses/WagePaymentForm';
 import PaymentEditModal from '../components/expenses/PaymentEditModal';
 import { getToday, formatCurrency, formatDate, formatDateWithWeekday, PAYMENT_METHODS, TERMINAL_TIP_WITHDRAW_RATE } from '../lib/utils';
 import { supabase } from '../lib/supabase';
+import { REGISTER_TOLERANCE, validatePaymentBreakdown, hasDocumentedDiscrepancy } from '../lib/validations';
 import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote } from 'lucide-react';
 
 // Shift a YYYY-MM-DD date string by whole days, using local date components so
@@ -1534,8 +1535,8 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
                 }
               }
 
-              // Check card vs terminal difference
-              if (cardTerminalDiff !== 0) {
+              // Check card vs terminal difference (rounding tolerance only)
+              if (Math.abs(cardTerminalDiff) > REGISTER_TOLERANCE) {
                 const protocolData = {
                   register: registerName,
                   apNumber,
@@ -1544,6 +1545,34 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
                   note: cr.terminal_discrepancy_note,
                 };
                 if (cr.terminal_discrepancy_note) {
+                  completedProtocols.push(protocolData);
+                } else {
+                  missingProtocols.push(protocolData);
+                }
+              }
+
+              // Check the payment breakdown: the VAT buckets have to add up to
+              // készpénz + bankkártya + SZÉP (borravaló is not part of it).
+              const turnover =
+                (parseFloat(cr.vat_0_percent) || 0) +
+                (parseFloat(cr.vat_5_percent) || 0) +
+                (parseFloat(cr.vat_18_percent) || 0) +
+                (parseFloat(cr.vat_27_percent) || 0);
+              const breakdown = validatePaymentBreakdown({
+                vatTotal: turnover,
+                cash: parseFloat(cr.cash_payment) || 0,
+                card: parseFloat(cr.card_payment) || 0,
+                szep: parseFloat(cr.szep_card_payment) || 0,
+              });
+              if (breakdown.applicable && !breakdown.isValid) {
+                const protocolData = {
+                  register: registerName,
+                  apNumber,
+                  type: 'Fizetési mód eltérés',
+                  amount: breakdown.difference,
+                  note: hasDocumentedDiscrepancy(cr) ? 'Elütés rögzítve' : '',
+                };
+                if (protocolData.note) {
                   completedProtocols.push(protocolData);
                 } else {
                   missingProtocols.push(protocolData);
