@@ -42,13 +42,14 @@ export function buildWhatsappDailySummary({
   const lines = [shortYmd(date), `Novo ${amount(novo)}`, `Bk ${amount(bk)}`];
   if (showCash) lines.push(`Kp ${amount(novo - bk)}`);
 
-  // Only the ones that actually happened.
+  // Only the ones that actually happened. VIP comes first, right after the
+  // Novo / Bk / Kp block.
   [
+    ['VIP forgalom', vipRevenue],
+    ['VIP töltés', vipLoading],
     ['McKinsey', mckinsey],
     ['Protokol', protocol],
     ['Éttermi', restaurant],
-    ['VIP forgalom', vipRevenue],
-    ['VIP töltés', vipLoading],
   ].forEach(([label, value]) => {
     if (Math.round(value || 0) !== 0) lines.push(`${label} ${amount(value)}`);
   });
