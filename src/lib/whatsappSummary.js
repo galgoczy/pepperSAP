@@ -47,7 +47,7 @@ export function buildWhatsappDailySummary({
     ['McKinsey', mckinsey],
     ['Protokol', protocol],
     ['Éttermi', restaurant],
-    ['VIP', vipRevenue],
+    ['VIP forgalom', vipRevenue],
     ['VIP töltés', vipLoading],
   ].forEach(([label, value]) => {
     if (Math.round(value || 0) !== 0) lines.push(`${label} ${amount(value)}`);
