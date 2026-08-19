@@ -9,7 +9,7 @@ import { Card, Button, Input, LoadingSpinner } from '../common';
 import CashRegisterSection from './CashRegisterSection';
 import ProtocolItemsSection from './ProtocolItemsSection';
 import { formatCurrency, formatDateWithWeekday } from '../../lib/utils';
-import { buildWhatsappDailySummary, whatsappShareUrl } from '../../lib/whatsappSummary';
+import { buildWhatsappDailySummary, whatsappShareUrl, unitSendsCashLine } from '../../lib/whatsappSummary';
 import { validatePaymentBreakdown, hasDocumentedDiscrepancy } from '../../lib/validations';
 import toast from 'react-hot-toast';
 
@@ -528,10 +528,32 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
   );
 
   const softwareRevenueValue = parseFloat(formData.total_revenue) || 0;
+
+  // Protokoll is split in the message: bekészítés ("Protokol") and éttermi
+  // fogyasztás ("Éttermi"). When the day was recorded with protocol items they
+  // carry the split; the simple single-field mode only knows bekészítés.
+  const protocolByType = (type) =>
+    protocolItems
+      .filter((i) => i.item_type === type)
+      .reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+  const protocolBekeszites = protocolItems.length > 0
+    ? protocolByType('bekeszites')
+    : (parseFloat(formData.protocol_gross) || 0);
+  const protocolEttermi = protocolItems.length > 0 ? protocolByType('ettermi') : 0;
+
   const whatsappText = buildWhatsappDailySummary({
     date,
     softwareRevenue: softwareRevenueValue,
     cardRevenue: totalCardPayment,
+    showCash: unitSendsCashLine(unitName),
+    mckinsey: parseFloat(formData.mckinsey_gross) || 0,
+    protocol: protocolBekeszites,
+    restaurant: protocolEttermi,
+    vipRevenue: parseFloat(formData.vip_revenue) || 0,
+    vipLoading: parseFloat(formData.vip_loading) || 0,
+    // Same rule the save uses: the per-closure sum wins when the registers
+    // carry it, otherwise the manually entered value.
+    guestCount: perRegisterGuestSum > 0 ? perRegisterGuestSum : (parseFloat(formData.guest_count) || 0),
   });
 
   const sendToWhatsapp = () => {
