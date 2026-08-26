@@ -520,10 +520,12 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
     0
   );
 
-  // Day's total bankkártya payment across every closure — the "Bk" line of the
-  // WhatsApp summary. Read-only: nothing here feeds back into what gets saved.
-  const totalCardPayment = closureList.reduce(
-    (sum, c) => sum + (parseFloat(mergedForKey(c.key).card_payment) || 0),
+  // Day's bankkártya total for the WhatsApp summary's "Bk" line, taken from the
+  // TERMINAL (borravaló nélkül) rather than the register's own card field — the
+  // terminal is what the bank actually settles. Read-only: nothing here feeds
+  // back into what gets saved.
+  const totalTerminalCard = closureList.reduce(
+    (sum, c) => sum + (parseFloat(mergedForKey(c.key).terminal_card) || 0),
     0
   );
 
@@ -544,7 +546,7 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
   const whatsappText = buildWhatsappDailySummary({
     date,
     softwareRevenue: softwareRevenueValue,
-    cardRevenue: totalCardPayment,
+    cardRevenue: totalTerminalCard,
     showCash: unitSendsCashLine(unitName),
     mckinsey: parseFloat(formData.mckinsey_gross) || 0,
     protocol: protocolBekeszites,
