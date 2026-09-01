@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
@@ -2106,14 +2106,28 @@ const TD = 'px-2 py-1 whitespace-nowrap';
 
 function CashRegisterAllUnitsDetailedReport({ data, totals }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Returning from a day: scroll back to the register the day was opened from.
+  const focusKey = searchParams.get('focus');
+  useEffect(() => {
+    if (!focusKey) return;
+    const el = document.getElementById(`reg-${focusKey}`);
+    if (el) el.scrollIntoView({ block: 'start' });
+  }, [focusKey, data]);
 
   // Jump to the closure's own day in the daily entry, with that register opened.
+  // The whole report URL (period, unit, type) plus the register to scroll back
+  // to travels along as `back`, so returning restores the screen as it was —
+  // the report keeps none of this in component state.
   const openDay = (day) => {
     if (!day?.unitId || !day?.date) return;
+    const back = new URLSearchParams(searchParams);
+    back.set('focus', `${day.unitId}-${day.apNumber}`);
+
     const params = new URLSearchParams({ unit: day.unitId, date: day.date });
     if (day.apNumber) params.set('register', day.apNumber);
-    // Lets the daily entry offer a way back to this report.
-    params.set('from', 'cash-register-report');
+    params.set('back', `/reports?${back.toString()}`);
     navigate(`/daily?${params.toString()}`);
   };
 
@@ -2140,7 +2154,11 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
 
             {/* One block per register: its own header, its own sideways scroll. */}
             {(unit.registers || []).map((reg, regIdx) => (
-              <div key={`reg-${unitIdx}-${regIdx}-${reg.ap_number}`}>
+              <div
+                key={`reg-${unitIdx}-${regIdx}-${reg.ap_number}`}
+                id={`reg-${unit.unitId}-${reg.ap_number}`}
+                className="scroll-mt-20"
+              >
                 {/* Stays under the navbar while scrolling this register's rows,
                     so it is always clear which register the numbers belong to. */}
                 <div className="sticky top-16 z-20 bg-blue-50 border-y border-blue-100 px-3 py-1.5 text-xs font-bold text-blue-800">

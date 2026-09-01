@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Download, ChevronLeft, ChevronRight, FileSpreadsheet, Calendar } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { useAppSettings } from '../hooks/useAppSettings';
@@ -85,9 +85,15 @@ export default function ReportsPage() {
   const { isAdmin, isEvents, isAccountant, canViewAllUnits, unitId } = useAuth();
   const { units } = useUnits();
   const { settings, updateSetting } = useAppSettings();
-  const [startDate, setStartDate] = useState(getFirstDayOfMonth());
-  const [endDate, setEndDate] = useState(getToday());
-  const [selectedYearMonth, setSelectedYearMonth] = useState(getPreviousMonthYearMonth());
+  // The report's selection lives in the URL, so leaving the page and coming back
+  // (e.g. from a day opened out of the register report) restores what was on
+  // screen instead of resetting to the defaults.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [startDate, setStartDate] = useState(() => searchParams.get('start') || getFirstDayOfMonth());
+  const [endDate, setEndDate] = useState(() => searchParams.get('end') || getToday());
+  const [selectedYearMonth, setSelectedYearMonth] = useState(
+    () => searchParams.get('ym') || getPreviousMonthYearMonth()
+  );
 
   // Month options for monthly table dropdown
   const monthlyTableOptions = getMonthlyTableMonthOptions();
@@ -102,15 +108,31 @@ export default function ReportsPage() {
     if (!isAdmin) return 'traffic';
     return 'full_monthly';
   };
-  const [reportType, setReportType] = useState(getDefaultReportType());
+  const [reportType, setReportType] = useState(() => searchParams.get('type') || getDefaultReportType());
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState(() => {
+    // '' is a real value here ("all units"), so presence decides, not truthiness.
+    if (searchParams.has('unit')) return searchParams.get('unit');
     if (!canViewAllUnits) return unitId || '';
     // Admin/accountant: apply the "default unit" preference ('' = all units).
     if (settings.defaultUnitMode === 'specific' && settings.defaultUnitId) return settings.defaultUnitId;
     if (settings.defaultUnitMode === 'remember' && settings.lastUnitId) return settings.lastUnitId;
     return unitId || '';
   });
+
+  // Mirror the selection into the URL. The functional form keeps anything else
+  // that is there (e.g. `focus`, which scrolls the report back to a register).
+  useEffect(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('type', reportType);
+      next.set('unit', selectedUnit);
+      next.set('start', startDate);
+      next.set('end', endDate);
+      next.set('ym', selectedYearMonth);
+      return next;
+    }, { replace: true });
+  }, [reportType, selectedUnit, startDate, endDate, selectedYearMonth, setSearchParams]);
 
   // Get restaurant units only (exclude events unit)
   const restaurantUnits = units.filter((u) => u.type === 'restaurant');

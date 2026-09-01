@@ -1390,12 +1390,12 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
 
   // Headers without "Pénztárgép" column - register name will be in header rows.
   // Closure number first, EUR elütés last (matches the on-screen report).
-  const headers = ['Zárás', 'Dátum', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Borravaló', 'Összesen', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés', 'EUR elütés'];
+  const headers = ['Zárás', 'Dátum', '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA', 'Időszaki', 'Készpénz', 'Kártya', 'Terminál', 'Eltérés', 'Borravaló', 'EUR elütés'];
 
   // Blank cells for the label/separator rows, so every row has every column.
   const blanks = () => ({
     'Zárás': '', '0% ÁFA': '', '5% ÁFA': '', '18% ÁFA': '', '27% ÁFA': '', 'Borravaló': '',
-    'Összesen': '', 'Készpénz': '', 'Kártya': '', 'Terminál': '', 'Eltérés': '', 'EUR elütés': '',
+    'Időszaki': '', 'Készpénz': '', 'Kártya': '', 'Terminál': '', 'Eltérés': '', 'EUR elütés': '',
   });
 
   const data = [];
@@ -1433,12 +1433,12 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
           '5% ÁFA': day.vat_5,
           '18% ÁFA': day.vat_18,
           '27% ÁFA': day.vat_27,
-          'Borravaló': day.tips,
-          'Összesen': day.total,
+          'Időszaki': day.total,
           'Készpénz': day.cash,
           'Kártya': day.card,
           'Terminál': day.terminal_card,
           'Eltérés': day.discrepancy,
+          'Borravaló': day.tips,
           'EUR elütés': day.eur,
           _rowType: 'data',
         });
@@ -1455,12 +1455,12 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
         '5% ÁFA': reg.totals.vat_5,
         '18% ÁFA': reg.totals.vat_18,
         '27% ÁFA': reg.totals.vat_27,
-        'Borravaló': reg.totals.tips,
-        'Összesen': reg.totals.total,
+        'Időszaki': reg.totals.total,
         'Készpénz': reg.totals.cash,
         'Kártya': reg.totals.card,
         'Terminál': reg.totals.terminal_card,
         'Eltérés': regDiscrepancy,
+        'Borravaló': reg.totals.tips,
         'EUR elütés': regEur,
         _rowType: 'subtotal',
       });
@@ -1475,12 +1475,12 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
       '5% ÁFA': unit.totals.vat_5,
       '18% ÁFA': unit.totals.vat_18,
       '27% ÁFA': unit.totals.vat_27,
-      'Borravaló': unit.totals.tips,
-      'Összesen': unit.totals.total,
+      'Időszaki': unit.totals.total,
       'Készpénz': unit.totals.cash,
       'Kártya': unit.totals.card,
       'Terminál': unit.totals.terminal_card,
       'Eltérés': unitDiscrepancy,
+      'Borravaló': unit.totals.tips,
       'EUR elütés': unitEur,
       _rowType: 'unitTotal',
     });
@@ -1510,12 +1510,12 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
     '5% ÁFA': grandTotals.vat_5,
     '18% ÁFA': grandTotals.vat_18,
     '27% ÁFA': grandTotals.vat_27,
-    'Borravaló': grandTotals.tips,
-    'Összesen': grandTotals.total,
+    'Időszaki': grandTotals.total,
     'Készpénz': grandTotals.cash,
     'Kártya': grandTotals.card,
     'Terminál': grandTotals.terminal_card,
     'Eltérés': grandDiscrepancy,
+    'Borravaló': grandTotals.tips,
     'EUR elütés': grandTotals.eur,
     _rowType: 'grandTotal',
   });

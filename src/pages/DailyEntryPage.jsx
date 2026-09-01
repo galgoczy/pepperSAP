@@ -82,8 +82,9 @@ export default function DailyEntryPage() {
   const urlUnitParam = searchParams.get('unit');
   // Deep link from the cash register reports: open this register's box (AP number).
   const focusRegisterAp = searchParams.get('register') || null;
-  // Arrived from the detailed register report — offer a way back to it.
-  const cameFromReport = searchParams.get('from') === 'cash-register-report';
+  // Arrived from the detailed register report: `back` is the full report URL to
+  // return to (period, unit, report type and the register to scroll to).
+  const backUrl = searchParams.get('back');
   const [selectedUnit, setSelectedUnit] = useState(urlUnitParam || unitId || '');
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showEfoForm, setShowEfoForm] = useState(false);
@@ -804,10 +805,10 @@ export default function DailyEntryPage() {
     <div className="space-y-6">
       {/* Back to the report this day was opened from. Uses browser history, so
           the report keeps its period, filters and scroll position. */}
-      {cameFromReport && (
+      {backUrl && (
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={() => navigate(backUrl)}
           className="no-print inline-flex items-center gap-1 text-sm text-pepper-red hover:underline"
         >
           <ChevronLeft className="h-4 w-4" />
