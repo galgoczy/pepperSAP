@@ -976,10 +976,19 @@ function computeRegisterProtocolMarks(days) {
     const payDisc = !!day.paymentGap;
     const payHandled = !!day.discrepancyDocumented;
 
+    // Göngyölt: this closure's cumulative must be the previous one's plus this
+    // closure's turnover. The pieces are kept on the day so the cell can explain
+    // itself on hover instead of only feeding the Jkv. mark.
     let cumDisc = false;
+    day.cumulativeMismatch = false;
     if (prevCumulative != null && prevCumulative > 0 && day.cumulative > 0) {
       const expected = prevCumulative + day.turnover;
       cumDisc = Math.abs(day.cumulative - expected) > CUMULATIVE_TOLERANCE;
+      if (cumDisc) {
+        day.cumulativeMismatch = true;
+        day.expectedCumulative = expected;
+        day.expectedCumulativeBase = prevCumulative;
+      }
     }
     const cumHandled = day.discrepancyCount > 0;
     if (day.cumulative > 0) prevCumulative = day.cumulative;
@@ -2066,6 +2075,35 @@ function CashRegisterAllUnitsSimpleReport({ data, totals }) {
   );
 }
 
+// Dense money for the detailed table: no "Ft" suffix (stated once above the
+// report) — with ten numeric columns the suffix alone cost a column's width.
+const denseAmount = (v) => Math.round(v || 0).toLocaleString('hu-HU');
+
+// "2026-08-13" -> "08.13." — the year is the same for the whole report.
+const dayMonth = (iso) => {
+  const [, m, d] = String(iso || '').split('-');
+  return m && d ? `${m}.${d}.` : String(iso || '');
+};
+
+// One fixed column layout shared by every table in the detailed report, so the
+// per-register blocks and the unit total line up despite being separate tables.
+// Widths sized for the biggest values each column realistically holds — the
+// göngyölt (cumulative) figure runs into the hundreds of millions.
+const DETAILED_COLS = [42, 50, 78, 78, 78, 86, 90, 96, 86, 86, 86, 74, 32, 66, 70];
+const DETAILED_WIDTH = DETAILED_COLS.reduce((s, w) => s + w, 0);
+
+function DetailedColGroup() {
+  return (
+    <colgroup>
+      {DETAILED_COLS.map((w, i) => (
+        <col key={i} style={{ width: `${w}px` }} />
+      ))}
+    </colgroup>
+  );
+}
+
+const TD = 'px-2 py-1 whitespace-nowrap';
+
 function CashRegisterAllUnitsDetailedReport({ data, totals }) {
   const navigate = useNavigate();
 
@@ -2074,53 +2112,64 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
     if (!day?.unitId || !day?.date) return;
     const params = new URLSearchParams({ unit: day.unitId, date: day.date });
     if (day.apNumber) params.set('register', day.apNumber);
+    // Lets the daily entry offer a way back to this report.
+    params.set('from', 'cash-register-report');
     navigate(`/daily?${params.toString()}`);
   };
+
+  const tableStyle = { minWidth: `${DETAILED_WIDTH}px` };
 
   return (
     <Card title="Pénztárgép forgalom - összes egység (részletes)">
       <div className="space-y-6">
         <p className="text-xs text-gray-500">
-          <span className="font-semibold">Jkv.</span> oszlop: eltérés esetén (terminál/kártya vagy göngyölt) automatikus jelölés –{' '}
+          <span className="font-semibold">Jkv.</span> oszlop: eltérés esetén (terminál/kártya,
+          fizetési mód vagy göngyölt) automatikus jelölés –{' '}
           <span className="text-green-600 font-bold">✓</span> jegyzőkönyv elkészült,{' '}
           <span className="text-red-600 font-bold">✗</span> hiányzó jegyzőkönyv. Üres = nincs eltérés.
+          {' '}A pirosan/narancsan jelölt értékek fölé állva látszik az eltérés magyarázata.
           {' '}A sorokra kattintva a napi jelentés adott napja nyílik meg.
+          {' '}Az összegek forintban (az EUR elütés kivételével).
         </p>
+
         {data.map((unit, unitIdx) => (
-          <div key={`unit-${unitIdx}-${unit.unitName}`} className="border border-gray-200 rounded-lg overflow-hidden">
-            <div className="bg-pepper-red bg-opacity-10 px-4 py-2 font-bold text-gray-900">
+          <div key={`unit-${unitIdx}-${unit.unitName}`} className="border border-gray-200 rounded-lg">
+            <div className="bg-pepper-red bg-opacity-10 px-4 py-2 font-bold text-gray-900 rounded-t-lg">
               {unit.unitName}
             </div>
-            <WideTable maxHeight="none">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-right" title="Zárás száma (Z-szám)">Zárás</th>
-                    <th className="px-3 py-2 text-left">Dátum</th>
-                    <th className="px-3 py-2 text-right">0%</th>
-                    <th className="px-3 py-2 text-right">5%</th>
-                    <th className="px-3 py-2 text-right">18%</th>
-                    <th className="px-3 py-2 text-right">27%</th>
-                    <th className="px-3 py-2 text-right">Borr.</th>
-                    <th className="px-3 py-2 text-right font-semibold">Össz.</th>
-                    <th className="px-3 py-2 text-right">KP</th>
-                    <th className="px-3 py-2 text-right">Kártya</th>
-                    <th className="px-3 py-2 text-right">Term.</th>
-                    <th className="px-3 py-2 text-right">Elt.</th>
-                    <th className="px-3 py-2 text-center" title="Eltérés esetén: van-e jegyzőkönyv">Jkv.</th>
-                    <th className="px-3 py-2 text-right">EUR elütés</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {(unit.registers || []).map((reg, regIdx) => (
-                    <React.Fragment key={`reg-${unitIdx}-${regIdx}-${reg.ap_number}`}>
-                      {/* Register header row */}
-                      <tr className="bg-blue-50">
-                        <td className="px-3 py-2 font-bold text-blue-800" colSpan={14}>
-                          Pénztárgép: {reg.ap_number} {reg.name && `(${reg.name})`}
-                        </td>
+
+            {/* One block per register: its own header, its own sideways scroll. */}
+            {(unit.registers || []).map((reg, regIdx) => (
+              <div key={`reg-${unitIdx}-${regIdx}-${reg.ap_number}`}>
+                {/* Stays under the navbar while scrolling this register's rows,
+                    so it is always clear which register the numbers belong to. */}
+                <div className="sticky top-16 z-20 bg-blue-50 border-y border-blue-100 px-3 py-1.5 text-xs font-bold text-blue-800">
+                  Pénztárgép: {reg.ap_number} {reg.name && `(${reg.name})`}
+                </div>
+
+                <WideTable maxHeight="none">
+                  <table className="table-fixed divide-y divide-gray-200 text-[11px] tabular-nums" style={tableStyle}>
+                    <DetailedColGroup />
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className={`${TD} text-right`} title="Zárás száma (Z-szám)">Zárás</th>
+                        <th className={`${TD} text-left`}>Dátum</th>
+                        <th className={`${TD} text-right`}>0%</th>
+                        <th className={`${TD} text-right`}>5%</th>
+                        <th className={`${TD} text-right`}>18%</th>
+                        <th className={`${TD} text-right`}>27%</th>
+                        <th className={`${TD} text-right font-semibold`} title="A zárás időszaki forgalma">Időszaki</th>
+                        <th className={`${TD} text-right`} title="A Z-jelentés göngyölt forgalma">Göngy.</th>
+                        <th className={`${TD} text-right`}>KP</th>
+                        <th className={`${TD} text-right`}>Kártya</th>
+                        <th className={`${TD} text-right`}>Term.</th>
+                        <th className={`${TD} text-right`}>Elt.</th>
+                        <th className={`${TD} text-center`} title="Eltérés esetén: van-e jegyzőkönyv">Jkv.</th>
+                        <th className={`${TD} text-right`}>Borr.</th>
+                        <th className={`${TD} text-right`} title="Időszaki EUR alapú elütés">EUR elt.</th>
                       </tr>
-                      {/* Day rows for this register */}
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
                       {(reg.days || []).map((day, dayIdx) => (
                         <tr
                           key={`day-${unitIdx}-${regIdx}-${dayIdx}-${day.date}-${day.closureNumber}`}
@@ -2128,15 +2177,14 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                           title="Ugrás a napi jelentéshez"
                           className="hover:bg-blue-50 cursor-pointer"
                         >
-                          <td className="px-3 py-2 text-right text-gray-500">{day.closureSeq ?? '-'}</td>
-                          <td className="px-3 py-2">{formatDate(day.date)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(day.vat_0)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(day.vat_5)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(day.vat_18)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(day.vat_27)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(day.tips)}</td>
+                          <td className={`${TD} text-right text-gray-500`}>{day.closureSeq ?? '-'}</td>
+                          <td className={TD}>{dayMonth(day.date)}</td>
+                          <td className={`${TD} text-right`}>{denseAmount(day.vat_0)}</td>
+                          <td className={`${TD} text-right`}>{denseAmount(day.vat_5)}</td>
+                          <td className={`${TD} text-right`}>{denseAmount(day.vat_18)}</td>
+                          <td className={`${TD} text-right`}>{denseAmount(day.vat_27)}</td>
                           <td
-                            className={`px-3 py-2 text-right font-medium ${
+                            className={`${TD} text-right font-medium ${
                               day.paymentGap ? 'text-orange-600 underline decoration-dotted' : ''
                             }`}
                             title={
@@ -2145,15 +2193,40 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                                 : undefined
                             }
                           >
-                            {formatCurrency(day.total)}
+                            {denseAmount(day.total)}
                           </td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(day.cash)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(day.card)}</td>
-                          <td className="px-3 py-2 text-right">{formatCurrency(day.terminal_card)}</td>
-                          <td className={`px-3 py-2 text-right ${day.discrepancy !== 0 ? 'text-orange-600 font-medium' : ''}`}>
-                            {formatCurrency(day.discrepancy)}
+                          {/* Göngyölt: red when it does not follow the previous
+                              closure's cumulative plus this closure's turnover. */}
+                          <td
+                            className={`${TD} text-right ${
+                              day.cumulativeMismatch ? 'text-red-600 font-semibold underline decoration-dotted' : 'text-gray-500'
+                            }`}
+                            title={
+                              day.cumulativeMismatch
+                                ? `Göngyölt eltérés: rögzítve ${formatCurrency(day.cumulative)}, `
+                                  + `az előző göngyölt (${formatCurrency(day.expectedCumulativeBase)}) `
+                                  + `+ ezen zárás forgalma (${formatCurrency(day.turnover)}) alapján `
+                                  + `${formatCurrency(day.expectedCumulative)} lenne. Eltérés: `
+                                  + `${formatCurrency(day.cumulative - day.expectedCumulative)}.`
+                                : undefined
+                            }
+                          >
+                            {day.cumulative > 0 ? denseAmount(day.cumulative) : '-'}
                           </td>
-                          <td className="px-3 py-2 text-center">
+                          <td className={`${TD} text-right`}>{denseAmount(day.cash)}</td>
+                          <td className={`${TD} text-right`}>{denseAmount(day.card)}</td>
+                          <td className={`${TD} text-right`}>{denseAmount(day.terminal_card)}</td>
+                          <td
+                            className={`${TD} text-right ${day.discrepancy !== 0 ? 'text-orange-600 font-medium' : ''}`}
+                            title={
+                              day.discrepancy !== 0
+                                ? `Pénztárgép kártya (${formatCurrency(day.card)}) és terminál (${formatCurrency(day.terminal_card)}) eltérése`
+                                : undefined
+                            }
+                          >
+                            {denseAmount(day.discrepancy)}
+                          </td>
+                          <td className={`${TD} text-center`}>
                             {day.protocolMark === 'ok' && (
                               <span className="text-green-600 font-bold" title="Eltérés – jegyzőkönyv elkészült">✓</span>
                             )}
@@ -2161,52 +2234,63 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                               <span className="text-red-600 font-bold" title="Eltérés – hiányzó jegyzőkönyv">✗</span>
                             )}
                           </td>
-                          <td className={`px-3 py-2 text-right ${(day.eur || 0) !== 0 ? 'text-orange-600 font-medium' : 'text-gray-300'}`}>
+                          <td className={`${TD} text-right text-gray-500`}>{denseAmount(day.tips)}</td>
+                          <td className={`${TD} text-right ${(day.eur || 0) !== 0 ? 'text-orange-600 font-medium' : 'text-gray-300'}`}>
                             {eurCell(day.eur)}
                           </td>
                         </tr>
                       ))}
-                      {/* Register subtotal row */}
+                      {/* Register subtotal */}
                       <tr className="bg-gray-100 font-semibold">
-                        <td className="px-3 py-2"></td>
-                        <td className="px-3 py-2">{reg.ap_number} összesen</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.vat_0)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.vat_5)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.vat_18)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.vat_27)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.tips)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.total)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.cash)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.card)}</td>
-                        <td className="px-3 py-2 text-right">{formatCurrency(reg.totals?.terminal_card)}</td>
-                        <td className={`px-3 py-2 text-right ${reg.totals?.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
-                          {formatCurrency(reg.totals?.discrepancy)}
+                        <td className={TD}></td>
+                        <td className={TD}>{reg.ap_number}</td>
+                        <td className={`${TD} text-right`}>{denseAmount(reg.totals?.vat_0)}</td>
+                        <td className={`${TD} text-right`}>{denseAmount(reg.totals?.vat_5)}</td>
+                        <td className={`${TD} text-right`}>{denseAmount(reg.totals?.vat_18)}</td>
+                        <td className={`${TD} text-right`}>{denseAmount(reg.totals?.vat_27)}</td>
+                        <td className={`${TD} text-right`}>{denseAmount(reg.totals?.total)}</td>
+                        <td className={TD}></td>
+                        <td className={`${TD} text-right`}>{denseAmount(reg.totals?.cash)}</td>
+                        <td className={`${TD} text-right`}>{denseAmount(reg.totals?.card)}</td>
+                        <td className={`${TD} text-right`}>{denseAmount(reg.totals?.terminal_card)}</td>
+                        <td className={`${TD} text-right ${reg.totals?.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
+                          {denseAmount(reg.totals?.discrepancy)}
                         </td>
-                        <td className="px-3 py-2"></td>
-                        <td className={`px-3 py-2 text-right ${(reg.totals?.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
+                        <td className={TD}></td>
+                        <td className={`${TD} text-right`}>{denseAmount(reg.totals?.tips)}</td>
+                        <td className={`${TD} text-right ${(reg.totals?.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
                           {eurCell(reg.totals?.eur)}
                         </td>
                       </tr>
-                    </React.Fragment>
-                  ))}
-                  {/* Unit grand total row */}
+                    </tbody>
+                  </table>
+                </WideTable>
+              </div>
+            ))}
+
+            {/* Unit total — its own table, kept aligned by the shared colgroup */}
+            <WideTable maxHeight="none">
+              <table className="table-fixed text-[11px] tabular-nums" style={tableStyle}>
+                <DetailedColGroup />
+                <tbody>
                   <tr className="bg-pepper-red bg-opacity-20 font-bold">
-                    <td className="px-3 py-2"></td>
-                    <td className="px-3 py-2">{unit.unitName} összesen</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.vat_0)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.vat_5)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.vat_18)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.vat_27)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.tips)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.total)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.cash)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.card)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(unit.totals?.terminal_card)}</td>
-                    <td className={`px-3 py-2 text-right ${unit.totals?.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
-                      {formatCurrency(unit.totals?.discrepancy)}
+                    <td className={TD}></td>
+                    <td className={TD} colSpan={1}>Összesen</td>
+                    <td className={`${TD} text-right`}>{denseAmount(unit.totals?.vat_0)}</td>
+                    <td className={`${TD} text-right`}>{denseAmount(unit.totals?.vat_5)}</td>
+                    <td className={`${TD} text-right`}>{denseAmount(unit.totals?.vat_18)}</td>
+                    <td className={`${TD} text-right`}>{denseAmount(unit.totals?.vat_27)}</td>
+                    <td className={`${TD} text-right`}>{denseAmount(unit.totals?.total)}</td>
+                    <td className={TD}></td>
+                    <td className={`${TD} text-right`}>{denseAmount(unit.totals?.cash)}</td>
+                    <td className={`${TD} text-right`}>{denseAmount(unit.totals?.card)}</td>
+                    <td className={`${TD} text-right`}>{denseAmount(unit.totals?.terminal_card)}</td>
+                    <td className={`${TD} text-right ${unit.totals?.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
+                      {denseAmount(unit.totals?.discrepancy)}
                     </td>
-                    <td className="px-3 py-2"></td>
-                    <td className={`px-3 py-2 text-right ${(unit.totals?.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
+                    <td className={TD}></td>
+                    <td className={`${TD} text-right`}>{denseAmount(unit.totals?.tips)}</td>
+                    <td className={`${TD} text-right ${(unit.totals?.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
                       {eurCell(unit.totals?.eur)}
                     </td>
                   </tr>
