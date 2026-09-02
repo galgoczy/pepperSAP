@@ -10,6 +10,13 @@
 -- Semmilyen forgalmi adathoz nem nyúl. Idempotens.
 -- =============================================================================
 
+-- Segédfüggvény a policy-khoz (azonos a 20260611_tighten_cash_rls.sql-ben
+-- lévővel; ha már létezik, változatlanul felülírja).
+CREATE OR REPLACE FUNCTION get_my_role()
+RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$ SELECT role FROM user_profiles WHERE id = auth.uid() $$;
+GRANT EXECUTE ON FUNCTION get_my_role() TO authenticated;
+
 CREATE TABLE IF NOT EXISTS register_cumulative_checks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cash_register_id UUID NOT NULL REFERENCES cash_registers(id) ON DELETE CASCADE,
