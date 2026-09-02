@@ -34,9 +34,11 @@ const STATUS_BADGES = {
 export default function CashRegistersManager({ unitId, unitName }) {
   const {
     cashRegisters,
+    assignments,
     loading,
     createCashRegister,
     updateCashRegister,
+    updateAssignmentStart,
     deactivateCashRegister,
     suspendCashRegister,
     moveCashRegister,
@@ -80,7 +82,9 @@ export default function CashRegistersManager({ unitId, unitName }) {
       name: register.name || '',
       notes: register.notes || '',
       default_change_amount: register.default_change_amount ?? '',
-      valid_from: getToday(),
+      // The current "érvényes ettől" date at this unit (editable, e.g. to move
+      // the start back when earlier closures turn out to exist).
+      valid_from: assignments[register.id]?.start_date || '',
     });
     setFormError('');
     setIsFormOpen(true);
@@ -114,6 +118,16 @@ export default function CashRegistersManager({ unitId, unitName }) {
       };
       if (editingRegister) {
         await updateCashRegister(editingRegister.id, payload);
+        const currentStart = assignments[editingRegister.id]?.start_date || '';
+        if (valid_from && valid_from !== currentStart) {
+          try {
+            await updateAssignmentStart(editingRegister.id, valid_from);
+          } catch (assignError) {
+            // The register fields are already saved; only the date failed.
+            setFormError(assignError?.message || 'Az érvényesség dátumát nem sikerült módosítani.');
+            return;
+          }
+        }
         toast.success('Pénztárgép sikeresen frissítve!');
       } else {
         await createCashRegister(payload, valid_from);
@@ -260,6 +274,11 @@ export default function CashRegistersManager({ unitId, unitName }) {
                         Terminál: {register.terminal_number}
                       </div>
                     )}
+                    {assignments[register.id]?.start_date && (
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        Érvényes: {assignments[register.id].start_date}-től
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -389,23 +408,25 @@ export default function CashRegistersManager({ unitId, unitName }) {
             disabled={!!editingRegister}
           />
 
-          {!editingRegister && (
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-gray-700">
-                Érvényes ettől<span className="text-red-500 ml-1">*</span>
-              </label>
-              <DateInput
-                value={formData.valid_from}
-                onChange={(e) => setFormData({ ...formData, valid_from: e.target.value })}
-                max={getToday()}
-                required
-              />
-              <p className="text-xs text-gray-500">
-                Ettől a naptól jelenik meg a napi rögzítésnél. Korábbi statisztikába
-                nem kerül bele. Régi adat importjához állíts be korábbi dátumot.
-              </p>
-            </div>
-          )}
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700">
+              Érvényes ettől{!editingRegister && <span className="text-red-500 ml-1">*</span>}
+            </label>
+            <DateInput
+              value={formData.valid_from}
+              onChange={(e) => setFormData({ ...formData, valid_from: e.target.value })}
+              max={getToday()}
+              required={!editingRegister}
+            />
+            <p className="text-xs text-gray-500">
+              {editingRegister
+                ? 'Ettől a naptól kínálja fel a napi rögzítés ennél az egységnél. Ha ' +
+                  'korábbi zárások is voltak a gépen, told vissza a dátumot – a már ' +
+                  'rögzített forgalomhoz nem nyúl, csak a korábbi napok is szerkeszthetők lesznek.'
+                : 'Ettől a naptól jelenik meg a napi rögzítésnél. Korábbi statisztikába ' +
+                  'nem kerül bele. Régi adat importjához állíts be korábbi dátumot.'}
+            </p>
+          </div>
 
           <Input
             label="Terminál szám"

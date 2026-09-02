@@ -7,6 +7,7 @@ import { Modal, Button } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatDate, formatCurrency } from '../../lib/utils';
 import { fetchHouseCashSeries, fetchCentralHouseCashSeries } from '../../lib/houseCashSeries';
+import { isBlankClosure } from '../../lib/validations';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import toast from 'react-hot-toast';
@@ -1307,7 +1308,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
 async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, closure_number, closure_sequence, discrepancies, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, terminal_discrepancy_note, closure_number, closure_sequence, cumulative_revenue, discrepancies, discrepancy_note, discrepancy_amount, software_revenue, guest_count, terminal_card_total, terminal_szep, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: true });
@@ -1317,6 +1318,11 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
   (revenues || []).forEach((row) => {
     const unitName = row.units?.name || 'Ismeretlen';
     const unitId = row.unit_id;
+
+    // Same rule as the on-screen detailed report: all-empty closure rows (a day
+    // that was opened and saved without register data) are left out.
+    const crRevenues = (row.cash_register_revenue || []).filter((cr) => !isBlankClosure(cr));
+    if (crRevenues.length === 0) return;
 
     if (!unitData[unitId]) {
       unitData[unitId] = {
@@ -1329,7 +1335,6 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
       };
     }
 
-    const crRevenues = row.cash_register_revenue || [];
     crRevenues.forEach((cr) => {
       const apNumber = cr.cash_registers?.ap_number || 'unknown';
       const registerName = cr.cash_registers?.name || '';

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
-import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy } from '../../lib/validations';
+import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure } from '../../lib/validations';
 import { RevenueTrendChart } from '../charts/RevenueTrendChart';
 
 // Color options for marking
@@ -1006,7 +1006,7 @@ function computeRegisterProtocolMarks(days) {
 async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, terminal_discrepancy_note, discrepancies, cumulative_revenue, closure_number, closure_sequence, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, terminal_discrepancy_note, discrepancies, discrepancy_note, discrepancy_amount, software_revenue, guest_count, terminal_card_total, terminal_szep, cumulative_revenue, closure_number, closure_sequence, cash_registers(ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: true });
@@ -1016,6 +1016,9 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
   (revenues || []).forEach((row) => {
     const unitName = row.units?.name || 'Ismeretlen';
     const unitId = row.unit_id;
+
+    const crRevenues = (row.cash_register_revenue || []).filter((cr) => !isBlankClosure(cr));
+    if (crRevenues.length === 0) return;
 
     if (!unitData[unitId]) {
       unitData[unitId] = {
@@ -1029,7 +1032,6 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
       };
     }
 
-    const crRevenues = row.cash_register_revenue || [];
     crRevenues.forEach((cr) => {
       const apNumber = cr.cash_registers?.ap_number || 'unknown';
       const registerName = cr.cash_registers?.name || '';

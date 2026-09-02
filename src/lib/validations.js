@@ -2,6 +2,31 @@
 // elütés can leave a few forints behind, anything above that is a real gap.
 export const REGISTER_TOLERANCE = 5; // Ft
 
+// A closure row that carries no information at all. The daily form saves
+// closure #1 for EVERY register of the unit on every save, so a day that was
+// opened and saved (e.g. the wrong date, then cleared, or a day with only the
+// non-register fields filled) leaves behind an all-empty cash_register_revenue
+// row. Those rows are pure noise in the reports. A genuine zero Z-closure is
+// NOT blank: it has its closure_sequence (and usually cumulative) recorded.
+const num = (v) => (v == null || v === '' ? 0 : Number(v) || 0);
+const has = (v) => v != null && String(v).trim() !== '';
+export const isBlankClosure = (cr) => {
+  if (!cr) return true;
+  if (has(cr.closure_sequence) || has(cr.cumulative_revenue)) return false;
+  const amounts = [
+    cr.vat_0_percent, cr.vat_5_percent, cr.vat_18_percent, cr.vat_27_percent,
+    cr.tips, cr.cash_payment, cr.card_payment, cr.szep_card_payment,
+    cr.terminal_card, cr.terminal_card_total, cr.terminal_szep,
+    cr.software_revenue, cr.guest_count, cr.discrepancy_amount,
+  ];
+  if (amounts.some((v) => num(v) !== 0)) return false;
+  if (has(cr.terminal_discrepancy_note) || has(cr.discrepancy_note)) return false;
+  if (Array.isArray(cr.discrepancies) && cr.discrepancies.some((d) => num(d?.amount) !== 0 || has(d?.note))) {
+    return false;
+  }
+  return true;
+};
+
 // Validate card payment discrepancy
 export const validateCardPayments = (cashRegisterCard, terminalCard) => {
   const difference = Math.abs((cashRegisterCard || 0) - (terminalCard || 0));

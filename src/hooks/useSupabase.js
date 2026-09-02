@@ -139,7 +139,35 @@ export function useUsers() {
 // Hook for fetching and managing cash registers per unit
 export function useCashRegisters(unitId) {
   const [cashRegisters, setCashRegisters] = useState([]);
+  // cash_register_id -> the OPEN assignment period at this unit ({ id, start_date }).
+  // Its start_date is the "érvényes ettől" date: from when the register is
+  // offered for data entry at this unit.
+  const [assignments, setAssignments] = useState({});
   const [loading, setLoading] = useState(true);
+
+  const fetchAssignments = useCallback(async () => {
+    if (!unitId) {
+      setAssignments({});
+      return;
+    }
+    const { data, error } = await supabase
+      .from('cash_register_assignments')
+      .select('id, cash_register_id, start_date')
+      .eq('unit_id', unitId)
+      .is('end_date', null);
+    if (error) {
+      console.error('Error fetching register assignments:', error);
+      return;
+    }
+    const map = {};
+    (data || []).forEach((a) => {
+      // If (unexpectedly) several open periods exist, keep the earliest start.
+      if (!map[a.cash_register_id] || a.start_date < map[a.cash_register_id].start_date) {
+        map[a.cash_register_id] = { id: a.id, start_date: a.start_date };
+      }
+    });
+    setAssignments(map);
+  }, [unitId]);
 
   const fetchCashRegisters = useCallback(async () => {
     if (!unitId) {
@@ -158,13 +186,14 @@ export function useCashRegisters(unitId) {
 
       if (error) throw error;
       setCashRegisters(data || []);
+      await fetchAssignments();
     } catch (error) {
       console.error('Error fetching cash registers:', error);
       toast.error('Hiba a pénztárgépek betöltésekor');
     } finally {
       setLoading(false);
     }
-  }, [unitId]);
+  }, [unitId, fetchAssignments]);
 
   useEffect(() => {
     fetchCashRegisters();
@@ -194,7 +223,58 @@ export function useCashRegisters(unitId) {
     if (assignError) console.error('Register assignment insert failed:', assignError);
 
     setCashRegisters((prev) => [...prev, data]);
+    await fetchAssignments();
     return data;
+  };
+
+  // Change from when the register belongs to this unit ("érvényes ettől"),
+  // typically to move the start BACK so earlier days (e.g. zero Z-closures made
+  // before the register was added to the system) can be entered. No revenue is
+  // touched: it only widens/narrows the window in which the register is offered
+  // for data entry. Refused if the new window would overlap a period the
+  // register spent at another unit.
+  const updateAssignmentStart = async (registerId, newStart) => {
+    if (!newStart) throw new Error('Adj meg dátumot.');
+
+    const { data: periods, error: fetchError } = await supabase
+      .from('cash_register_assignments')
+      .select('id, unit_id, start_date, end_date, units(name)')
+      .eq('cash_register_id', registerId)
+      .order('start_date', { ascending: true });
+    if (fetchError) throw fetchError;
+
+    const current = (periods || []).find((p) => p.unit_id === unitId && p.end_date == null);
+
+    // Any OTHER period that reaches into [newStart, current end] is a conflict.
+    const conflict = (periods || []).find((p) => {
+      if (current && p.id === current.id) return false;
+      const currentEnd = current?.end_date || '9999-12-31';
+      return p.start_date <= currentEnd && (p.end_date == null || p.end_date >= newStart);
+    });
+    if (conflict) {
+      throw new Error(
+        `Ütközik a gép másik időszakával: ${conflict.units?.name || 'másik egység'} ` +
+          `(${conflict.start_date} – ${conflict.end_date || 'nyitott'}). ` +
+          'Az indulás nem nyúlhat bele abba az időszakba.'
+      );
+    }
+
+    if (current) {
+      const { error } = await supabase
+        .from('cash_register_assignments')
+        .update({ start_date: newStart })
+        .eq('id', current.id);
+      if (error) throw error;
+    } else {
+      // Registers created before the assignment periods existed may have no open
+      // period at this unit — create it, so the date-driven entry list sees them.
+      const { error } = await supabase
+        .from('cash_register_assignments')
+        .insert([{ cash_register_id: registerId, unit_id: unitId, start_date: newStart, end_date: null }]);
+      if (error) throw error;
+    }
+
+    await fetchAssignments();
   };
 
   const updateCashRegister = async (id, registerData) => {
@@ -309,10 +389,12 @@ export function useCashRegisters(unitId) {
 
   return {
     cashRegisters,
+    assignments,
     loading,
     refetch: fetchCashRegisters,
     createCashRegister,
     updateCashRegister,
+    updateAssignmentStart,
     deactivateCashRegister,
     suspendCashRegister,
     moveCashRegister,
