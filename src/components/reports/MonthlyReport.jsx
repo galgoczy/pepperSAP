@@ -445,7 +445,8 @@ async function fetchCashRegisterData(startDate, endDate, unitId) {
         card: parseFloat(cr.card_payment) || 0,
         terminal_card: parseFloat(cr.terminal_card) || 0,
       };
-      dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27 + dayData.tips;
+      // Register turnover = the ÁFA buckets. Borravaló is its own column, not part of it.
+      dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27;
       dayData.cardDiscrepancy = dayData.card - dayData.terminal_card;
 
       registerData[apNumber].days.push(dayData);
@@ -480,7 +481,7 @@ async function fetchCashRegisterData(startDate, endDate, unitId) {
     card: data.reduce((sum, r) => sum + r.totals.card, 0),
     terminal_card: data.reduce((sum, r) => sum + r.totals.terminal_card, 0),
   };
-  totals.cashRegisterTotal = totals.vat_0 + totals.vat_5 + totals.vat_18 + totals.vat_27 + totals.tips;
+  totals.cashRegisterTotal = totals.vat_0 + totals.vat_5 + totals.vat_18 + totals.vat_27; // borravaló nélkül
   totals.cardDiscrepancy = totals.card - totals.terminal_card;
 
   return { data, totals, unitName };
@@ -899,8 +900,7 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
       const total = (parseFloat(cr.vat_0_percent) || 0) +
         (parseFloat(cr.vat_5_percent) || 0) +
         (parseFloat(cr.vat_18_percent) || 0) +
-        (parseFloat(cr.vat_27_percent) || 0) +
-        (parseFloat(cr.tips) || 0);
+        (parseFloat(cr.vat_27_percent) || 0); // borravaló nélkül
       const eur = eurDiscrepancyOf(cr);
 
       const reg = unitData[unitId].registers[registerId];
@@ -1082,7 +1082,8 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
         cumulative: parseFloat(cr.cumulative_revenue) || 0,
         closureSeq: cr.closure_sequence ?? cr.closure_number ?? null,
       };
-      dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27 + dayData.tips;
+      // Register turnover = the ÁFA buckets. Borravaló is its own column, not part of it.
+      dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27;
       dayData.discrepancy = dayData.card - dayData.terminal_card;
       // A "rossz fizetési mód" elütés moving exactly the difference on/off the
       // card explains it (the terminal is the true figure).

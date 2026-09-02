@@ -522,7 +522,8 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
         card: parseFloat(cr.card_payment) || 0,
         terminal_card: parseFloat(cr.terminal_card) || 0,
       };
-      dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27 + dayData.tips;
+      // Register turnover = the ÁFA buckets. Borravaló is its own column, not part of it.
+      dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27;
       dayData.cardDiscrepancy = dayData.card - dayData.terminal_card;
 
       registerData[apNumber].days.push(dayData);
@@ -1243,8 +1244,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
       const total = (parseFloat(cr.vat_0_percent) || 0) +
         (parseFloat(cr.vat_5_percent) || 0) +
         (parseFloat(cr.vat_18_percent) || 0) +
-        (parseFloat(cr.vat_27_percent) || 0) +
-        (parseFloat(cr.tips) || 0);
+        (parseFloat(cr.vat_27_percent) || 0); // borravaló nélkül
 
       const regAcc = unitData[unitId].registers[registerId];
       regAcc.szep += parseFloat(cr.szep_card_payment) || 0;
@@ -1384,7 +1384,8 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
         card: parseFloat(cr.card_payment) || 0,
         terminal_card: parseFloat(cr.terminal_card) || 0,
       };
-      dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27 + dayData.tips;
+      // Register turnover = the ÁFA buckets. Borravaló is its own column, not part of it.
+      dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27;
       dayData.discrepancy = dayData.card - dayData.terminal_card;
 
       unitData[unitId].registers[apNumber].days.push(dayData);
