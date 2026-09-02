@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
-import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown } from '../../lib/validations';
+import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown, validateCardPayments, methodCardAdjustmentOf } from '../../lib/validations';
 import { useAuth } from '../../hooks/useAuth';
 import { useCumulativeChecks } from '../../hooks/useCumulativeChecks';
 import toast from 'react-hot-toast';
@@ -963,7 +963,8 @@ const CUMULATIVE_TOLERANCE = 1; // Ft
 // Auto-mark each closure (day row) in the detailed report: whether a discrepancy
 // exists and whether a protocol ("jegyzőkönyv") was recorded for it.
 //  - terminal/card discrepancy: |card - terminal| over tolerance; considered
-//    handled when a terminal discrepancy note was entered.
+//    handled when a "rossz fizetési mód" elütés covers it (or a legacy
+//    terminal discrepancy note was entered).
 //  - payment breakdown gap: the VAT buckets do not add up to KP + kártya + SZÉP;
 //    considered handled when an elütés with a reason was recorded.
 //  - cumulative ("göngyölt") discrepancy: the Z-report cumulative does not match
@@ -980,7 +981,7 @@ function computeRegisterProtocolMarks(days) {
   let prevCumulative = null;
   ordered.forEach((day) => {
     const termDisc = Math.abs(day.discrepancy) > REGISTER_TOLERANCE;
-    const termHandled = day.terminalNote.length > 0;
+    const termHandled = !!day.terminalExplained || day.terminalNote.length > 0;
 
     const payDisc = !!day.paymentGap;
     const payHandled = !!day.discrepancyDocumented;
@@ -1083,6 +1084,11 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
       };
       dayData.total = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27 + dayData.tips;
       dayData.discrepancy = dayData.card - dayData.terminal_card;
+      // A "rossz fizetési mód" elütés moving exactly the difference on/off the
+      // card explains it (the terminal is the true figure).
+      dayData.terminalExplained = validateCardPayments(
+        dayData.card, dayData.terminal_card, methodCardAdjustmentOf(cr)
+      ).explainedByDiscrepancy;
       // Turnover that the cumulative (göngyölt) Z-report increments by: VAT
       // buckets only, tips excluded (matches the daily form's validation).
       dayData.turnover = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27;
@@ -2332,10 +2338,15 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                           <td className={`${TD} text-right`}>{denseAmount(day.card)}</td>
                           <td className={`${TD} text-right`}>{denseAmount(day.terminal_card)}</td>
                           <td
-                            className={`${TD} text-right ${day.discrepancy !== 0 ? 'text-orange-600 font-medium' : ''}`}
+                            className={`${TD} text-right ${
+                              day.discrepancy !== 0
+                                ? day.terminalExplained ? 'text-green-700 font-medium' : 'text-orange-600 font-medium'
+                                : ''
+                            }`}
                             title={
                               day.discrepancy !== 0
-                                ? `Pénztárgép kártya (${formatCurrency(day.card)}) és terminál (${formatCurrency(day.terminal_card)}) eltérése`
+                                ? `Pénztárgép kártya (${formatCurrency(day.card)}) és terminál (${formatCurrency(day.terminal_card)}) eltérése` +
+                                  (day.terminalExplained ? ' – a rögzített „rossz fizetési mód” elütés kiadja.' : '')
                                 : undefined
                             }
                           >

@@ -4,12 +4,38 @@ import { Card, Input, Select, Button } from '../common';
 import { Textarea } from '../common/Input';
 import { formatCurrency, formatDate, TERMINAL_TIP_WITHDRAW_RATE } from '../../lib/utils';
 import { validateCardPayments, validatePaymentBreakdown, hasDocumentedDiscrepancy } from '../../lib/validations';
+import {
+  DISCREPANCY_KINDS,
+  PAYMENT_METHOD_LABELS,
+  discrepancyKind,
+  isMethodDiscrepancy,
+  amountDiscrepancyHuf,
+  methodAdjustments,
+  describeDiscrepancy,
+} from '../../lib/discrepancies';
 import { jsPDF } from 'jspdf';
 
 // Feature flag: set to true to show SZÉP card fields
 const SHOW_SZEP_FIELDS = false;
 
-const DEFAULT_DISCREPANCY = { amount: '', currency: 'HUF', note: '' };
+// kind: 'amount' (téves összeg / homály – a forgalom változik) or 'method'
+// (rossz fizetési mód – a forgalom nem változik, csak a jogcím). For 'method',
+// `keyed` is what it was wrongly keyed as and `actual` what really happened.
+const DEFAULT_DISCREPANCY = {
+  amount: '',
+  currency: 'HUF',
+  note: '',
+  kind: DISCREPANCY_KINDS.AMOUNT,
+  keyed: 'card',
+  actual: 'cash',
+};
+
+// Payment methods offered in the "rossz fizetési mód" selector.
+const METHOD_OPTIONS = [
+  { value: 'cash', label: PAYMENT_METHOD_LABELS.cash },
+  { value: 'card', label: PAYMENT_METHOD_LABELS.card },
+  { value: 'szep', label: PAYMENT_METHOD_LABELS.szep },
+];
 
 const DEFAULT_FORM_DATA = {
   software_revenue: '',
@@ -109,10 +135,11 @@ export default function CashRegisterSection({
     }
   }, [existingData]);
 
-  // Calculate total HUF discrepancy amount (only HUF entries)
-  const totalHufDiscrepancy = (formData.discrepancies || [])
-    .filter(d => d.currency === 'HUF')
-    .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+  // "Téves összeg" elütés total (HUF only) — what inflates the turnover. The
+  // "rossz fizetési mód" entries are summarised separately as per-method
+  // corrections (real = register + adjustment).
+  const totalHufDiscrepancy = amountDiscrepancyHuf(formData.discrepancies || []);
+  const methodAdj = methodAdjustments(formData.discrepancies || []);
 
   // Generate discrepancy protocol PDF
   const generateDiscrepancyProtocol = () => {
@@ -157,6 +184,8 @@ export default function CashRegisterSection({
       yPos += 7;
       doc.setFont('helvetica', 'normal');
       const amount = parseFloat(disc.amount) || 0;
+      doc.text(sanitizeForPdf(`Típus: ${describeDiscrepancy(disc)}`), 25, yPos);
+      yPos += 6;
       doc.text(sanitizeForPdf(`Összeg: ${formatCurrency(amount)} ${disc.currency}`), 25, yPos);
       yPos += 6;
       if (disc.note) {
@@ -171,7 +200,7 @@ export default function CashRegisterSection({
     if (formData.discrepancies?.length > 1) {
       yPos += 5;
       doc.setFont('helvetica', 'bold');
-      doc.text(sanitizeForPdf(`Összesen (HUF): ${formatCurrency(totalHufDiscrepancy)}`), 20, yPos);
+      doc.text(sanitizeForPdf(`Téves összeg összesen (HUF): ${formatCurrency(totalHufDiscrepancy)}`), 20, yPos);
     }
 
     // Signature section at bottom
@@ -232,8 +261,8 @@ export default function CashRegisterSection({
   };
 
   // Discrepancy management functions
-  const addDiscrepancy = () => {
-    const newDiscrepancies = [...(formData.discrepancies || []), { ...DEFAULT_DISCREPANCY }];
+  const addDiscrepancy = (preset = {}) => {
+    const newDiscrepancies = [...(formData.discrepancies || []), { ...DEFAULT_DISCREPANCY, ...preset }];
     handleChange('discrepancies', newDiscrepancies);
   };
 
@@ -259,12 +288,26 @@ export default function CashRegisterSection({
     (parseFloat(formData.vat_27_percent) || 0);
 
   // Validate card payments
+  // The terminal is the true card figure. A recorded "rossz fizetési mód"
+  // elütés that moves exactly the difference on/off the card explains it.
   const cardValidation = validateCardPayments(
     parseFloat(formData.card_payment) || 0,
-    parseFloat(formData.terminal_card) || 0
+    parseFloat(formData.terminal_card) || 0,
+    methodAdj.card
   );
 
   const hasDiscrepancy = !cardValidation.isValid;
+
+  // Prefill for the one-click "rossz fizetési mód" elütés from the terminal
+  // difference: register card above the terminal means card was keyed instead
+  // of cash, below means the other way round.
+  const terminalDiffPreset = () => ({
+    kind: DISCREPANCY_KINDS.METHOD,
+    currency: 'HUF',
+    amount: String(Math.round(cardValidation.difference)),
+    keyed: cardValidation.signedDifference > 0 ? 'card' : 'cash',
+    actual: cardValidation.signedDifference > 0 ? 'cash' : 'card',
+  });
 
   // Turnover vs payment methods: the VAT buckets have to add up to
   // készpénz + bankkártya + SZÉP. A gap should be explained with an elütés, but
@@ -472,7 +515,7 @@ export default function CashRegisterSection({
                 Elütések
                 {totalHufDiscrepancy > 0 && (
                   <span className="ml-2 text-red-600 font-normal">
-                    (Össz: {formatCurrency(totalHufDiscrepancy)})
+                    (Téves összeg össz.: {formatCurrency(totalHufDiscrepancy)})
                   </span>
                 )}
               </h4>
@@ -504,7 +547,7 @@ export default function CashRegisterSection({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={addDiscrepancy}
+                  onClick={() => addDiscrepancy()}
                 >
                   <Plus className="h-4 w-4" />
                   Új elütés
@@ -529,6 +572,55 @@ export default function CashRegisterSection({
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
+                    {/* Kind: the two cases are handled differently downstream,
+                        so the choice is spelled out, not hidden in a dropdown. */}
+                    {disc.currency === 'EUR' ? (
+                      <p className="mb-3 text-xs text-red-700">
+                        EUR elütés mindig <span className="font-semibold">téves összeg</span> (a forgalom változik).
+                      </p>
+                    ) : (
+                      <div className="mb-3">
+                        <div className="text-xs font-medium text-red-700 mb-1">Az elütés fajtája</div>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          {[
+                            {
+                              value: DISCREPANCY_KINDS.AMOUNT,
+                              title: 'Téves összeg (homály)',
+                              text: 'Rossz összeg került a gépbe. A forgalom változik, a kasszából ennyi hiányzik.',
+                            },
+                            {
+                              value: DISCREPANCY_KINDS.METHOD,
+                              title: 'Rossz fizetési mód',
+                              text: 'Jó összeg, rossz gombbal ütve (pl. kártya KP helyett). A forgalom nem változik, a terminál a mérvadó.',
+                            },
+                          ].map((opt) => {
+                            const active = discrepancyKind(disc) === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => updateDiscrepancy(index, 'kind', opt.value)}
+                                className={`text-left rounded-lg border p-2 transition-colors ${
+                                  active
+                                    ? 'border-pepper-red bg-white ring-2 ring-pepper-red ring-opacity-40'
+                                    : 'border-red-200 bg-red-50 hover:bg-white'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                                  <span
+                                    className={`inline-block h-3.5 w-3.5 rounded-full border-2 ${
+                                      active ? 'border-pepper-red bg-pepper-red' : 'border-gray-400 bg-white'
+                                    }`}
+                                  />
+                                  {opt.title}
+                                </div>
+                                <p className="mt-1 text-xs text-gray-600">{opt.text}</p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <div className="grid gap-3 md:grid-cols-3">
                       <Input
                         label="Összeg"
@@ -548,6 +640,36 @@ export default function CashRegisterSection({
                         ]}
                         size="sm"
                       />
+                      {isMethodDiscrepancy(disc) && (
+                        <>
+                          <Select
+                            label="Tévesen erre ütve"
+                            value={disc.keyed || 'card'}
+                            onChange={(e) => updateDiscrepancy(index, 'keyed', e.target.value)}
+                            options={METHOD_OPTIONS.filter((o) => SHOW_SZEP_FIELDS || o.value !== 'szep')}
+                            size="sm"
+                          />
+                          <Select
+                            label="Valójában ez volt"
+                            value={disc.actual || 'cash'}
+                            onChange={(e) => updateDiscrepancy(index, 'actual', e.target.value)}
+                            options={METHOD_OPTIONS.filter((o) => SHOW_SZEP_FIELDS || o.value !== 'szep')}
+                            size="sm"
+                          />
+                          <p className="md:col-span-3 text-xs text-red-700">
+                            {(disc.keyed || 'card') === (disc.actual || 'cash')
+                              ? 'A két fizetési mód nem lehet ugyanaz.'
+                              : `${PAYMENT_METHOD_LABELS[disc.keyed || 'card']} helyett ${PAYMENT_METHOD_LABELS[disc.actual || 'cash']} – ` +
+                                'a forgalom marad, a kassza ' +
+                                ((disc.actual || 'cash') === 'cash'
+                                  ? `+${formatCurrency(Math.abs(parseFloat(disc.amount) || 0))}`
+                                  : (disc.keyed || 'card') === 'cash'
+                                    ? `−${formatCurrency(Math.abs(parseFloat(disc.amount) || 0))}`
+                                    : 'nem változik') +
+                                '.'}
+                          </p>
+                        </>
+                      )}
                       <div className="md:col-span-3">
                         <Textarea
                           label="Indoklás"
@@ -589,7 +711,7 @@ export default function CashRegisterSection({
                 size="sm"
                 error={
                   !cardValidation.isValid
-                    ? `Eltérés: ${formatCurrency(cardValidation.difference)}`
+                    ? `Eltérés a terminálhoz képest: ${formatCurrency(cardValidation.difference)}`
                     : null
                 }
               />
@@ -711,28 +833,51 @@ export default function CashRegisterSection({
               <span className="font-bold">{formatCurrency(terminalCardNet)}</span>
             </div>
 
-            {/* Discrepancy warning */}
+            {/* Card vs terminal difference. The terminal is the true figure; no
+                free-text reason is asked any more — a "rossz fizetési mód"
+                elütés is offered instead (never required, never blocks saving). */}
             {hasDiscrepancy && (
               <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5" />
-                  <div className="text-sm">
-                    <h4 className="font-medium text-red-800">Eltérés!</h4>
-                    <p className="text-red-700 mt-1">
-                      Bankkártya: {formatCurrency(cardValidation.difference)}
+                  <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+                  <div className="text-sm flex-1">
+                    <h4 className="font-medium text-red-800">
+                      Eltérés a terminálhoz képest: {formatCurrency(cardValidation.difference)}
+                    </h4>
+                    <p className="text-red-700 mt-1 text-xs">
+                      Pénztárgép bankkártya {formatCurrency(parseFloat(formData.card_payment) || 0)} ·
+                      terminál (borravaló nélkül) {formatCurrency(terminalCardNet)}. A terminál a mérvadó.
+                      {cardValidation.signedDifference > 0
+                        ? ' Valószínűleg készpénzt ütöttek bankkártyára.'
+                        : ' Valószínűleg bankkártyát ütöttek készpénzre.'}
                     </p>
+                    <p className="text-red-700 mt-1 text-xs">
+                      Ha rossz fizetési módra ütöttek, vegyél fel róla elütést – nem kötelező, a mentést nem
+                      akadályozza.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => addDiscrepancy(terminalDiffPreset())}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Elütés felvétele: rossz fizetési mód ({formatCurrency(cardValidation.difference)})
+                    </Button>
                   </div>
                 </div>
-
-                <Textarea
-                  label="Eltérés indoklása"
-                  value={formData.terminal_discrepancy_note}
-                  onChange={(e) => handleChange('terminal_discrepancy_note', e.target.value)}
-                  rows={2}
-                  placeholder="Kérjük, indokolja az eltérést..."
-                  className="mt-2"
-                  required={hasDiscrepancy}
-                />
+                {formData.terminal_discrepancy_note && (
+                  <p className="mt-2 text-xs text-gray-600">
+                    Korábbi indoklás: {formData.terminal_discrepancy_note}
+                  </p>
+                )}
+              </div>
+            )}
+            {!hasDiscrepancy && cardValidation.explainedByDiscrepancy && (
+              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                Eltérés a terminálhoz képest {formatCurrency(cardValidation.difference)} – a rögzített
+                „rossz fizetési mód” elütés kiadja.
               </div>
             )}
           </div>

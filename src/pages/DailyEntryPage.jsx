@@ -16,7 +16,8 @@ import WagePaymentForm from '../components/expenses/WagePaymentForm';
 import PaymentEditModal from '../components/expenses/PaymentEditModal';
 import { getToday, formatCurrency, formatDate, formatDateWithWeekday, PAYMENT_METHODS, TERMINAL_TIP_WITHDRAW_RATE } from '../lib/utils';
 import { supabase } from '../lib/supabase';
-import { REGISTER_TOLERANCE, validatePaymentBreakdown, hasDocumentedDiscrepancy, hufDiscrepancyOf } from '../lib/validations';
+import { REGISTER_TOLERANCE, validatePaymentBreakdown, validateCardPayments, hasDocumentedDiscrepancy, hufDiscrepancyOf, methodCardAdjustmentOf } from '../lib/validations';
+import { netCashDiscrepancy, isMethodDiscrepancy, describeDiscrepancy } from '../lib/discrepancies';
 import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote } from 'lucide-react';
 
 // Shift a YYYY-MM-DD date string by whole days, using local date components so
@@ -242,19 +243,15 @@ export default function DailyEntryPage() {
               (parseFloat(cr.vat_27_percent) || 0) +
               (parseFloat(cr.tips) || 0);
 
-            // Calculate discrepancies from each cash register
+            // Elütés effect on the drawer: "téves összeg" is missing from the
+            // cash, "rossz fizetési mód" moves cash in or out (discrepancies.js).
             const registerName = cr.cash_registers?.name || cr.cash_registers?.ap_number || 'Pénztárgép';
+            totalDiscrepancies += netCashDiscrepancy(cr);
             if (cr.discrepancies && Array.isArray(cr.discrepancies)) {
               cr.discrepancies.forEach(disc => {
-                if (disc.currency === 'HUF') {
-                  totalDiscrepancies += parseFloat(disc.amount) || 0;
-                }
                 discrepancyDetails.push({ ...disc, registerName });
               });
             } else if (cr.discrepancy_amount && parseFloat(cr.discrepancy_amount) !== 0) {
-              if (cr.discrepancy_currency === 'HUF') {
-                totalDiscrepancies += parseFloat(cr.discrepancy_amount) || 0;
-              }
               discrepancyDetails.push({
                 amount: cr.discrepancy_amount,
                 currency: cr.discrepancy_currency || 'HUF',
@@ -377,14 +374,18 @@ export default function DailyEntryPage() {
           y += 5;
           doc.setFont('helvetica', 'normal');
           discrepancyDetails.forEach((disc) => {
-            doc.text(sanitizeForPdf(disc.registerName + ': ' + (disc.note || 'Nincs indoklás')), 25, y);
-            doc.text('-' + formatPdfCurrency(disc.amount) + (disc.currency !== 'HUF' ? ' ' + disc.currency : ''), rightMargin, y, { align: 'right' });
+            const method = isMethodDiscrepancy(disc);
+            const label = disc.registerName + ' – ' + describeDiscrepancy(disc) + ': ' + (disc.note || 'Nincs indoklás');
+            doc.text(sanitizeForPdf(label), 25, y);
+            // "Rossz fizetési mód": the money exists, only its method changes —
+            // no minus sign; the cash effect is in the total below.
+            doc.text((method ? '' : '-') + formatPdfCurrency(disc.amount) + (disc.currency !== 'HUF' ? ' ' + disc.currency : ''), rightMargin, y, { align: 'right' });
             y += 4;
           });
-          if (totalDiscrepancies > 0) {
+          if (totalDiscrepancies !== 0) {
             doc.setFont('helvetica', 'bold');
-            doc.text(sanitizeForPdf('Elütések összesen (HUF):'), 25, y);
-            doc.text('-' + formatPdfCurrency(totalDiscrepancies), rightMargin, y, { align: 'right' });
+            doc.text(sanitizeForPdf('Elütések hatása a készpénzre (HUF):'), 25, y);
+            doc.text((totalDiscrepancies > 0 ? '-' : '+') + formatPdfCurrency(Math.abs(totalDiscrepancies)), rightMargin, y, { align: 'right' });
             y += 4;
           }
           doc.setTextColor(0, 0, 0);
@@ -1552,16 +1553,25 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
                 }
               }
 
-              // Check card vs terminal difference (rounding tolerance only)
+              // Card vs terminal (the terminal is the true figure). Handled by
+              // a "rossz fizetési mód" elütés covering the difference, or by a
+              // legacy free-text reason.
               if (Math.abs(cardTerminalDiff) > REGISTER_TOLERANCE) {
+                const cardCheck = validateCardPayments(
+                  parseFloat(cr.card_payment) || 0,
+                  parseFloat(cr.terminal_card) || 0,
+                  methodCardAdjustmentOf(cr)
+                );
                 const protocolData = {
                   register: registerName,
                   apNumber,
                   type: 'Kártya-terminál eltérés',
                   amount: cardTerminalDiff,
-                  note: cr.terminal_discrepancy_note,
+                  note: cardCheck.explainedByDiscrepancy
+                    ? 'Rossz fizetési mód elütés rögzítve'
+                    : cr.terminal_discrepancy_note,
                 };
-                if (cr.terminal_discrepancy_note) {
+                if (protocolData.note) {
                   completedProtocols.push(protocolData);
                 } else {
                   missingProtocols.push(protocolData);

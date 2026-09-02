@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { TERMINAL_TIP_WITHDRAW_RATE } from './utils';
+import { netCashDiscrepancy } from './discrepancies';
 
 // Computes a unit's daily house-cash series (Pénztár zseb + Tartalék) live from
 // raw data, from zero through full history. This is the single source of truth
@@ -8,6 +9,8 @@ import { TERMINAL_TIP_WITHDRAW_RATE } from './utils';
 //
 // Per-day movement (agreed mechanism):
 //   cash    = (register cash - HUF discrepancies + official other income)
+//             (discrepancies = "téves összeg" elütés taken out of the drawer,
+//              corrected by "rossz fizetési mód" elütés moving cash in/out)
 //             - (cash-paid official expenses + official EFO/wage)
 //             +/- approved cash transfers
 //   reserve = (software revenue - register revenue + other extra income)
@@ -30,13 +33,9 @@ function sumRegister(crRows) {
       (parseFloat(cr.vat_5_percent) || 0) +
       (parseFloat(cr.vat_18_percent) || 0) +
       (parseFloat(cr.vat_27_percent) || 0);
-    if (Array.isArray(cr.discrepancies)) {
-      cr.discrepancies.forEach((d) => {
-        if (d.currency === 'HUF') discrepancies += parseFloat(d.amount) || 0;
-      });
-    } else if (cr.discrepancy_amount && cr.discrepancy_currency === 'HUF') {
-      discrepancies += parseFloat(cr.discrepancy_amount) || 0;
-    }
+    // "Téves összeg" elütés leaves the drawer short by its amount; a "rossz
+    // fizetési mód" elütés moves real cash the other way (see discrepancies.js).
+    discrepancies += netCashDiscrepancy(cr);
     // Withdrawn bankkártya tip: a share is booked as a reserve (tartalék) cost.
     if (cr.terminal_tip_withdrawn) {
       tipReserveCost += (parseFloat(cr.terminal_card_tip) || 0) * TERMINAL_TIP_WITHDRAW_RATE;

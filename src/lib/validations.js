@@ -1,3 +1,10 @@
+import {
+  amountDiscrepancyHuf,
+  methodAdjustments,
+  listDiscrepancies,
+  isMethodDiscrepancy,
+} from './discrepancies';
+
 // Everything the registers are checked against tolerates rounding only: a cash
 // elütés can leave a few forints behind, anything above that is a real gap.
 export const REGISTER_TOLERANCE = 5; // Ft
@@ -27,14 +34,22 @@ export const isBlankClosure = (cr) => {
   return true;
 };
 
-// Validate card payment discrepancy
-export const validateCardPayments = (cashRegisterCard, terminalCard) => {
-  const difference = Math.abs((cashRegisterCard || 0) - (terminalCard || 0));
+// Register card vs terminal. The terminal is the true figure; a difference is
+// in order when a recorded "rossz fizetési mód" elütés moves exactly that much
+// on/off the card (methodCardAdjustment = real card − register card).
+export const validateCardPayments = (cashRegisterCard, terminalCard, methodCardAdjustment = 0) => {
+  const signed = (cashRegisterCard || 0) - (terminalCard || 0);
+  const difference = Math.abs(signed);
+  const rawOk = difference <= REGISTER_TOLERANCE;
+  const explainedByDiscrepancy =
+    !rawOk && !!methodCardAdjustment && Math.abs(signed + methodCardAdjustment) <= REGISTER_TOLERANCE;
 
   return {
-    isValid: difference <= REGISTER_TOLERANCE,
+    isValid: rawOk || explainedByDiscrepancy,
     difference: difference,
-    needsExplanation: difference > REGISTER_TOLERANCE,
+    signedDifference: signed,
+    explainedByDiscrepancy,
+    needsExplanation: !(rawOk || explainedByDiscrepancy),
   };
 };
 
@@ -80,29 +95,25 @@ export const validatePaymentBreakdown = ({ vatTotal, cash, card, szep, hufDiscre
   };
 };
 
-// Total forint elütés recorded on a closure (discrepancies[] or the legacy
-// single discrepancy_amount). EUR entries are not part of it.
-export const hufDiscrepancyOf = (cr) => {
-  if (!cr) return 0;
-  if (Array.isArray(cr.discrepancies) && cr.discrepancies.length > 0) {
-    return cr.discrepancies.reduce(
-      (sum, d) => sum + ((d?.currency || 'HUF') === 'HUF' ? (parseFloat(d?.amount) || 0) : 0),
-      0
-    );
-  }
-  if ((cr.discrepancy_currency || 'HUF') === 'HUF') return parseFloat(cr.discrepancy_amount) || 0;
-  return 0;
-};
+// Total forint "téves összeg" elütés recorded on a closure — the kind that
+// inflates the register turnover. "Rossz fizetési mód" entries and EUR entries
+// are not part of it (they do not change the turnover).
+export const hufDiscrepancyOf = (cr) => amountDiscrepancyHuf(cr);
+
+// real card − register card implied by the closure's "rossz fizetési mód"
+// elütés — what validateCardPayments needs to see a card/terminal difference
+// as explained.
+export const methodCardAdjustmentOf = (cr) => methodAdjustments(cr).card;
 
 // A payment-breakdown gap counts as documented once an elütés was recorded with
 // a reason on that closure — that is what the jegyzőkönyv is printed from.
 // Accepts either the discrepancies array or the whole closure, so that legacy
 // rows (single elütés kept in discrepancy_note) still count as documented.
+// Only a "téves összeg" elütés documents a payment-breakdown gap; a "rossz
+// fizetési mód" one explains a card/terminal difference instead.
 export const hasDocumentedDiscrepancy = (closureOrList) => {
-  const list = Array.isArray(closureOrList) ? closureOrList : closureOrList?.discrepancies;
-  if (Array.isArray(list) && list.some((d) => (d?.note || '').trim().length > 0)) return true;
-  if (Array.isArray(closureOrList)) return false;
-  return (closureOrList?.discrepancy_note || '').trim().length > 0;
+  const list = Array.isArray(closureOrList) ? closureOrList : listDiscrepancies(closureOrList);
+  return list.some((d) => !isMethodDiscrepancy(d) && (d?.note || '').trim().length > 0);
 };
 
 // Validate amount (must be non-negative number)
