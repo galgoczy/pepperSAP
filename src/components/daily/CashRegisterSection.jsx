@@ -25,7 +25,9 @@ const DEFAULT_DISCREPANCY = {
   amount: '',
   currency: 'HUF',
   note: '',
-  kind: DISCREPANCY_KINDS.AMOUNT,
+  // New entries default to "rossz fizetési mód" (the more common case).
+  // Entries saved without a kind stay "téves összeg" (see discrepancies.js).
+  kind: DISCREPANCY_KINDS.METHOD,
   keyed: 'card',
   actual: 'cash',
 };
@@ -585,7 +587,7 @@ export default function CashRegisterSection({
                           {[
                             {
                               value: DISCREPANCY_KINDS.AMOUNT,
-                              title: 'Téves összeg (homály)',
+                              title: 'Téves összeg (túlütés)',
                               text: 'Rossz összeg került a gépbe. A forgalom változik, a kasszából ennyi hiányzik.',
                             },
                             {
@@ -650,7 +652,7 @@ export default function CashRegisterSection({
                             size="sm"
                           />
                           <Select
-                            label="Valójában ez volt"
+                            label="Valójában erre kellett volna"
                             value={disc.actual || 'cash'}
                             onChange={(e) => updateDiscrepancy(index, 'actual', e.target.value)}
                             options={METHOD_OPTIONS.filter((o) => SHOW_SZEP_FIELDS || o.value !== 'szep')}
