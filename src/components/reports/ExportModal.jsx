@@ -7,7 +7,8 @@ import { Modal, Button } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatDate, formatCurrency } from '../../lib/utils';
 import { fetchHouseCashSeries, fetchCentralHouseCashSeries } from '../../lib/houseCashSeries';
-import { isBlankClosure } from '../../lib/validations';
+import { isBlankClosure, REGISTER_TOLERANCE } from '../../lib/validations';
+import { fetchCumulativeCheckSet } from '../../hooks/useCumulativeChecks';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import toast from 'react-hot-toast';
@@ -1192,9 +1193,12 @@ function exportEurDiscrepancy(cr) {
 async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, software_revenue, closure_number, closure_sequence, cumulative_revenue, discrepancies, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, software_revenue, closure_number, closure_sequence, cumulative_revenue, discrepancies, cash_registers(id, ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate);
+
+  // "Göngyölt ellenőrizve" ticks of this exact period (empty if none / no table).
+  const checkedRegisters = await fetchCumulativeCheckSet(startDate, endDate);
 
   // Group by unit and register
   const unitData = {};
@@ -1220,11 +1224,13 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
 
       if (!unitData[unitId].registers[registerId]) {
         unitData[unitId].registers[registerId] = {
+          registerId: cr.cash_registers?.id || null,
           ap_number: registerId,
           name: registerName,
           total: 0,
           cash: 0,
           card: 0,
+          szep: 0,
           terminal_card: 0,
           eur: 0,
           vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
@@ -1240,6 +1246,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
         (parseFloat(cr.tips) || 0);
 
       const regAcc = unitData[unitId].registers[registerId];
+      regAcc.szep += parseFloat(cr.szep_card_payment) || 0;
       regAcc.eur += exportEurDiscrepancy(cr);
       regAcc.vat_0 += parseFloat(cr.vat_0_percent) || 0;
       regAcc.vat_5 += parseFloat(cr.vat_5_percent) || 0;
@@ -1266,12 +1273,15 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
     });
   });
 
-  // Column order mirrors the on-screen report exactly.
+  // Column order mirrors the on-screen report exactly. "Időszaki" is the
+  // period total incl. borravaló (the former "Összesen"); "Időszaki eltérés"
+  // is the on-screen red mark: ÁFA-kulcsok (borravaló nélkül) − (KP + kártya +
+  // SZÉP), blank when within tolerance.
   const headers = [
     'Egység', 'Pénztárgép', 'Első zárás', 'Utolsó zárás',
     '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA',
-    'Készpénz', 'Kártya', 'Terminál', 'Összesen', 'Novo forgalom', 'Borravaló',
-    'Eltérés', 'EUR elütés', 'Göngyölt forgalom',
+    'Készpénz', 'Kártya', 'Terminál', 'Időszaki', 'Időszaki eltérés', 'Eltérés',
+    'Göngyölt forgalom', 'Göngyölt ellenőrizve', 'Novo forgalom', 'EUR elütés', 'Borravaló',
   ];
 
   const data = [];
@@ -1280,6 +1290,9 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
     .forEach((unit) => {
       Object.values(unit.registers).forEach((reg) => {
         const summary = exportClosureSummary(reg.closures);
+        const turnover = reg.vat_0 + reg.vat_5 + reg.vat_18 + reg.vat_27;
+        const paid = reg.cash + reg.card + reg.szep;
+        const paymentGap = turnover > 0 && paid > 0 && Math.abs(turnover - paid) > REGISTER_TOLERANCE;
         data.push({
           'Egység': unit.unitName,
           'Pénztárgép': `${reg.ap_number}${reg.name ? ` (${reg.name})` : ''}`,
@@ -1292,12 +1305,14 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
           'Készpénz': reg.cash,
           'Kártya': reg.card,
           'Terminál': reg.terminal_card,
-          'Összesen': reg.total,
-          'Novo forgalom': reg.software,
-          'Borravaló': reg.tips,
+          'Időszaki': reg.total,
+          'Időszaki eltérés': paymentGap ? turnover - paid : '',
           'Eltérés': reg.card - reg.terminal_card,
-          'EUR elütés': reg.eur,
           'Göngyölt forgalom': summary.lastCumulative ?? '',
+          'Göngyölt ellenőrizve': reg.registerId && checkedRegisters.has(reg.registerId) ? 'igen' : '',
+          'Novo forgalom': reg.software,
+          'EUR elütés': reg.eur,
+          'Borravaló': reg.tips,
         });
       });
     });
@@ -1865,7 +1880,7 @@ async function fetchEventsAllUnitsExport(startDate, endDate) {
 
 // Counters and "last value" columns: summing them would be meaningless, so the
 // totals row leaves them blank.
-const NON_SUMMABLE_HEADERS = new Set(['Zárás', 'Első zárás', 'Utolsó zárás', 'Göngyölt forgalom']);
+const NON_SUMMABLE_HEADERS = new Set(['Zárás', 'Első zárás', 'Utolsó zárás', 'Göngyölt forgalom', 'Göngyölt ellenőrizve', 'Időszaki eltérés']);
 
 function calculateTotalsRow(data, headers) {
   const totalsRow = {};

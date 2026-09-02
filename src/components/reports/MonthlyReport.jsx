@@ -4,6 +4,9 @@ import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
 import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure } from '../../lib/validations';
+import { useAuth } from '../../hooks/useAuth';
+import { useCumulativeChecks } from '../../hooks/useCumulativeChecks';
+import toast from 'react-hot-toast';
 import { RevenueTrendChart } from '../charts/RevenueTrendChart';
 
 // Color options for marking
@@ -181,7 +184,7 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
     return <CashRevenueAllUnitsReport data={data} totals={totals} />;
   }
   if (reportType === 'cash_register_all_simple') {
-    return <CashRegisterAllUnitsSimpleReport data={data} totals={totals} />;
+    return <CashRegisterAllUnitsSimpleReport data={data} totals={totals} startDate={startDate} endDate={endDate} />;
   }
   if (reportType === 'cash_register_all_detailed') {
     return <CashRegisterAllUnitsDetailedReport data={data} totals={totals} />;
@@ -846,7 +849,7 @@ function eurDiscrepancyOf(cr) {
 async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, terminal_card, software_revenue, closure_number, closure_sequence, cumulative_revenue, discrepancies, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, software_revenue, closure_number, closure_sequence, cumulative_revenue, discrepancies, cash_registers(id, ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate);
 
@@ -876,11 +879,14 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
 
       if (!unitData[unitId].registers[registerId]) {
         unitData[unitId].registers[registerId] = {
+          // DB id, for the "göngyölt ellenőrizve" tick of this period.
+          registerId: cr.cash_registers?.id || null,
           ap_number: registerId,
           name: registerName,
           total: 0,
           cash: 0,
           card: 0,
+          szep: 0,
           terminal_card: 0,
           eur: 0,
           vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
@@ -897,6 +903,7 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
       const eur = eurDiscrepancyOf(cr);
 
       const reg = unitData[unitId].registers[registerId];
+      reg.szep += parseFloat(cr.szep_card_payment) || 0;
       reg.eur += eur;
       reg.vat_0 += parseFloat(cr.vat_0_percent) || 0;
       reg.vat_5 += parseFloat(cr.vat_5_percent) || 0;
@@ -1952,123 +1959,196 @@ const eurCell = (v) => (Math.abs(v || 0) < 0.005 ? '-' : formatCurrency(v, 'EUR'
 // background sits on each th: with collapsed borders a thead background does not
 // paint over the rows scrolling underneath it.
 const STICKY_TH = 'sticky top-0 z-20 bg-red-50 px-4 py-2';
+const STICKY_TH_DENSE = 'sticky top-0 z-20 bg-red-50 px-2 py-1';
 
-function CashRegisterAllUnitsSimpleReport({ data, totals }) {
+function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) {
+  const { isAdmin } = useAuth();
+  const { checks, available: checksAvailable, setChecked } = useCumulativeChecks(startDate, endDate);
+  const [savingCheck, setSavingCheck] = useState(null);
+
   const sumRegisters = (unit, key) =>
     (unit.registers || []).reduce((s, r) => s + (r[key] || 0), 0);
   const sumAll = (key) =>
     data.reduce((s, u) => s + sumRegisters(u, key), 0);
+
+  // Időszaki check: the VAT buckets (borravaló nélkül) must add up to what the
+  // payment methods (KP + kártya + SZÉP) add up to over the period.
+  const paymentGapOf = (r) => {
+    const turnover = (r.vat_0 || 0) + (r.vat_5 || 0) + (r.vat_18 || 0) + (r.vat_27 || 0);
+    const paid = (r.cash || 0) + (r.card || 0) + (r.szep || 0);
+    const diff = turnover - paid;
+    const gap = turnover > 0 && paid > 0 && Math.abs(diff) > REGISTER_TOLERANCE;
+    return { turnover, paid, diff, gap, r };
+  };
+  const gapTitle = ({ turnover, paid, diff, r }) =>
+    `Az ÁFA-kulcsok szerinti forgalom (${denseAmount(turnover)} Ft, borravaló nélkül) nem egyezik ` +
+    `a fizetési módok összegével: KP ${denseAmount(r.cash)} + kártya ${denseAmount(r.card)}` +
+    `${(r.szep || 0) !== 0 ? ` + SZÉP ${denseAmount(r.szep)}` : ''} = ${denseAmount(paid)} Ft. ` +
+    `Eltérés: ${diff > 0 ? '+' : ''}${denseAmount(diff)} Ft.`;
+
+  const toggleCheck = async (reg, checked) => {
+    if (!reg.registerId) return;
+    setSavingCheck(reg.registerId);
+    try {
+      await setChecked(reg.registerId, checked);
+    } catch (error) {
+      console.error('Error saving cumulative check:', error);
+      toast.error('A pipát nem sikerült elmenteni.');
+    } finally {
+      setSavingCheck(null);
+    }
+  };
+
+  const TH = `${STICKY_TH_DENSE} text-right whitespace-nowrap`;
+  const num = `${TD} text-right`;
 
   return (
     <Card title="Pénztárgép forgalom - összes egység (egyszerű)">
       <p className="text-xs text-gray-500 mb-2">
         Oldalra görgetés: a táblázat feletti csúszkával, vagy Shift + egérgörgő. Az
         egység/pénztárgép oszlop és a fejléc a helyén marad.
+        {' '}Az összegek forintban (az EUR elütés kivételével).
+        {' '}Az <span className="font-semibold">Időszaki</span> piros, ha az ÁFA-kulcsok
+        összege nem egyezik a KP + kártya + SZÉP összegével (fölé állva látszik a részletezés).
+        {' '}A <span className="font-semibold">göngyölt</span> mellett pipálható, hogy ellenőrizve
+        van – a pipa minden adminnak látszik.
+        {!checksAvailable && (
+          <span className="text-orange-600">
+            {' '}(A göngyölt pipához futtasd a 20260902_register_cumulative_checks migrációt.)
+          </span>
+        )}
       </p>
       <WideTable>
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <table className="min-w-full divide-y divide-gray-200 text-[11px] tabular-nums">
           <thead>
             <tr>
-              <th className={`${STICKY_TH} left-0 z-30 text-left`}>Egység / Pénztárgép</th>
-              <th className={`${STICKY_TH} text-right`}>Első z.</th>
-              <th className={`${STICKY_TH} text-right`}>Utolsó z.</th>
-              <th className={`${STICKY_TH} text-right`}>0%</th>
-              <th className={`${STICKY_TH} text-right`}>5%</th>
-              <th className={`${STICKY_TH} text-right`}>18%</th>
-              <th className={`${STICKY_TH} text-right`}>27%</th>
-              <th className={`${STICKY_TH} text-right`}>KP</th>
-              <th className={`${STICKY_TH} text-right`}>Kártya</th>
-              <th className={`${STICKY_TH} text-right`}>Terminál</th>
-              <th className={`${STICKY_TH} text-right`}>Összesen</th>
-              <th className={`${STICKY_TH} text-right`}>Novo</th>
-              <th className={`${STICKY_TH} text-right`}>Borravaló</th>
-              <th className={`${STICKY_TH} text-right`}>Eltérés</th>
-              <th className={`${STICKY_TH} text-right`}>EUR elütés</th>
-              <th className={`${STICKY_TH} text-right`}>Göngyölt forgalom</th>
+              <th className={`${STICKY_TH_DENSE} left-0 z-30 text-left whitespace-nowrap`}>Egység / Pénztárgép</th>
+              <th className={TH}>Első z.</th>
+              <th className={TH}>Utolsó z.</th>
+              <th className={TH}>0%</th>
+              <th className={TH}>5%</th>
+              <th className={TH}>18%</th>
+              <th className={TH}>27%</th>
+              <th className={TH}>KP</th>
+              <th className={TH}>Kártya</th>
+              <th className={TH}>Terminál</th>
+              <th className={TH}>Időszaki</th>
+              <th className={TH}>Eltérés</th>
+              <th className={TH}>Göngyölt</th>
+              <th className={TH}>Novo</th>
+              <th className={TH}>EUR elütés</th>
+              <th className={TH}>Borravaló</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {data.map((unit, unitIdx) => (
               <React.Fragment key={`unit-${unitIdx}-${unit.unitName}`}>
                 <tr className="bg-gray-50 font-medium">
-                  <td className="sticky left-0 z-10 bg-gray-50 px-4 py-2">{unit.unitName}</td>
-                  <td className="px-4 py-2" colSpan={15}></td>
+                  <td className={`sticky left-0 z-10 bg-gray-50 ${TD}`}>{unit.unitName}</td>
+                  <td className={TD} colSpan={15}></td>
                 </tr>
                 {(unit.registers || []).map((reg, regIdx) => {
                   const discrepancy = reg.card - (reg.terminal_card || 0);
+                  const pay = paymentGapOf(reg);
+                  const checked = !!(reg.registerId && checks[reg.registerId]);
+                  const canTick = checksAvailable && !!reg.registerId && reg.lastCumulative != null;
                   return (
                     <tr key={`${unitIdx}-${regIdx}-${reg.ap_number}`} className="hover:bg-gray-50">
-                      <td className="sticky left-0 z-10 bg-white px-4 py-2 pl-8 text-gray-600">
+                      <td className={`sticky left-0 z-10 bg-white ${TD} pl-6 text-gray-600`}>
                         {reg.ap_number} {reg.name && `(${reg.name})`}
                       </td>
-                      <td className="px-4 py-2 text-right">{reg.firstSequence ?? '-'}</td>
-                      <td className="px-4 py-2 text-right">{reg.lastSequence ?? '-'}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(reg.vat_0 || 0)}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(reg.vat_5 || 0)}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(reg.vat_18 || 0)}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(reg.vat_27 || 0)}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(reg.cash)}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(reg.card)}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(reg.terminal_card || 0)}</td>
-                      <td className="px-4 py-2 text-right font-medium">{formatCurrency(reg.total)}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(reg.software || 0)}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(reg.tips || 0)}</td>
-                      <td className={`px-4 py-2 text-right ${discrepancy !== 0 ? 'text-orange-600 font-medium' : ''}`}>
-                        {formatCurrency(discrepancy)}
+                      <td className={num}>{reg.firstSequence ?? '-'}</td>
+                      <td className={num}>{reg.lastSequence ?? '-'}</td>
+                      <td className={num}>{denseAmount(reg.vat_0)}</td>
+                      <td className={num}>{denseAmount(reg.vat_5)}</td>
+                      <td className={num}>{denseAmount(reg.vat_18)}</td>
+                      <td className={num}>{denseAmount(reg.vat_27)}</td>
+                      <td className={num}>{denseAmount(reg.cash)}</td>
+                      <td className={num}>{denseAmount(reg.card)}</td>
+                      <td className={num}>{denseAmount(reg.terminal_card)}</td>
+                      <td
+                        className={`${num} font-medium ${pay.gap ? 'text-red-600 bg-red-50 cursor-help' : ''}`}
+                        title={pay.gap ? gapTitle(pay) : undefined}
+                      >
+                        {denseAmount(reg.total)}
                       </td>
-                      <td className={`px-4 py-2 text-right ${(reg.eur || 0) !== 0 ? 'text-orange-600 font-medium' : 'text-gray-400'}`}>
+                      <td className={`${num} ${discrepancy !== 0 ? 'text-orange-600 font-medium' : ''}`}>
+                        {denseAmount(discrepancy)}
+                      </td>
+                      <td className={`${num} ${checked ? 'text-green-700 font-medium' : ''}`}>
+                        <span className="inline-flex items-center justify-end gap-1.5">
+                          <span>{reg.lastCumulative == null ? '-' : denseAmount(reg.lastCumulative)}</span>
+                          {canTick && (
+                            <input
+                              type="checkbox"
+                              className="h-3.5 w-3.5 accent-green-600 cursor-pointer disabled:cursor-not-allowed"
+                              checked={checked}
+                              disabled={!isAdmin || savingCheck === reg.registerId}
+                              onChange={(e) => toggleCheck(reg, e.target.checked)}
+                              title={
+                                checked
+                                  ? `Ellenőrizve${checks[reg.registerId]?.checkedAt ? ` (${formatDate(checks[reg.registerId].checkedAt)})` : ''}`
+                                  : 'Göngyölt forgalom ellenőrizve – pipáld be, ha rendben van'
+                              }
+                            />
+                          )}
+                        </span>
+                      </td>
+                      <td className={num}>{denseAmount(reg.software)}</td>
+                      <td className={`${num} ${(reg.eur || 0) !== 0 ? 'text-orange-600 font-medium' : 'text-gray-400'}`}>
                         {eurCell(reg.eur)}
                       </td>
-                      <td className="px-4 py-2 text-right">
-                        {reg.lastCumulative == null ? '-' : formatCurrency(reg.lastCumulative)}
-                      </td>
+                      <td className={num}>{denseAmount(reg.tips)}</td>
                     </tr>
                   );
                 })}
                 <tr className="bg-gray-100">
-                  <td className="sticky left-0 z-10 bg-gray-100 px-4 py-2 pl-8 font-medium text-gray-700">{unit.unitName} összesen</td>
+                  <td className={`sticky left-0 z-10 bg-gray-100 ${TD} pl-6 font-medium text-gray-700`}>{unit.unitName} összesen</td>
                   {/* Első / utolsó zárás only makes sense per register */}
-                  <td className="px-4 py-2" colSpan={2}></td>
+                  <td className={TD} colSpan={2}></td>
                   {['vat_0', 'vat_5', 'vat_18', 'vat_27'].map((k) => (
-                    <td key={k} className="px-4 py-2 text-right font-medium">
-                      {formatCurrency(sumRegisters(unit, k))}
+                    <td key={k} className={`${num} font-medium`}>
+                      {denseAmount(sumRegisters(unit, k))}
                     </td>
                   ))}
-                  <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.cash)}</td>
-                  <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.card)}</td>
-                  <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.terminal_card)}</td>
-                  <td className="px-4 py-2 text-right font-medium">{formatCurrency(unit.cashRegisterTotal)}</td>
-                  <td className="px-4 py-2 text-right font-medium">{formatCurrency(sumRegisters(unit, 'software'))}</td>
-                  <td className="px-4 py-2 text-right font-medium">{formatCurrency(sumRegisters(unit, 'tips'))}</td>
-                  <td className={`px-4 py-2 text-right font-medium ${(unit.card - unit.terminal_card) !== 0 ? 'text-orange-600' : ''}`}>
-                    {formatCurrency(unit.card - unit.terminal_card)}
+                  <td className={`${num} font-medium`}>{denseAmount(unit.cash)}</td>
+                  <td className={`${num} font-medium`}>{denseAmount(unit.card)}</td>
+                  <td className={`${num} font-medium`}>{denseAmount(unit.terminal_card)}</td>
+                  <td className={`${num} font-medium`}>{denseAmount(unit.cashRegisterTotal)}</td>
+                  <td className={`${num} font-medium ${(unit.card - unit.terminal_card) !== 0 ? 'text-orange-600' : ''}`}>
+                    {denseAmount(unit.card - unit.terminal_card)}
                   </td>
-                  <td className={`px-4 py-2 text-right font-medium ${(unit.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
+                  <td className={TD}></td>
+                  <td className={`${num} font-medium`}>{denseAmount(sumRegisters(unit, 'software'))}</td>
+                  <td className={`${num} font-medium ${(unit.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
                     {eurCell(unit.eur)}
                   </td>
-                  <td className="px-4 py-2"></td>
+                  <td className={`${num} font-medium`}>{denseAmount(sumRegisters(unit, 'tips'))}</td>
                 </tr>
               </React.Fragment>
             ))}
             <tr className="bg-pepper-red bg-opacity-10 font-bold">
-              <td className="sticky left-0 z-10 bg-red-50 px-4 py-2">Mindösszesen</td>
-              <td className="px-4 py-2" colSpan={2}></td>
+              <td className={`sticky left-0 z-10 bg-red-50 ${TD}`}>Mindösszesen</td>
+              <td className={TD} colSpan={2}></td>
               {['vat_0', 'vat_5', 'vat_18', 'vat_27'].map((k) => (
-                <td key={k} className="px-4 py-2 text-right">{formatCurrency(sumAll(k))}</td>
+                <td key={k} className={num}>{denseAmount(sumAll(k))}</td>
               ))}
-              <td className="px-4 py-2 text-right">{formatCurrency(totals.cash)}</td>
-              <td className="px-4 py-2 text-right">{formatCurrency(totals.card)}</td>
-              <td className="px-4 py-2 text-right">{formatCurrency(totals.terminal_card)}</td>
-              <td className="px-4 py-2 text-right">{formatCurrency(totals.cashRegisterTotal)}</td>
-              <td className="px-4 py-2 text-right">{formatCurrency(sumAll('software'))}</td>
-              <td className="px-4 py-2 text-right">{formatCurrency(sumAll('tips'))}</td>
-              <td className={`px-4 py-2 text-right ${(totals.card - totals.terminal_card) !== 0 ? 'text-orange-600' : ''}`}>
-                {formatCurrency(totals.card - totals.terminal_card)}
+              <td className={num}>{denseAmount(totals.cash)}</td>
+              <td className={num}>{denseAmount(totals.card)}</td>
+              {/* The period's terminal total is THE figure this report is read for. */}
+              <td className={`${num} bg-yellow-200 text-gray-900`} title="Terminál szerinti bankkártya összesen (időszak)">
+                {denseAmount(totals.terminal_card)}
               </td>
-              <td className={`px-4 py-2 text-right ${(totals.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
+              <td className={num}>{denseAmount(totals.cashRegisterTotal)}</td>
+              <td className={`${num} ${(totals.card - totals.terminal_card) !== 0 ? 'text-orange-600' : ''}`}>
+                {denseAmount(totals.card - totals.terminal_card)}
+              </td>
+              <td className={TD}></td>
+              <td className={num}>{denseAmount(sumAll('software'))}</td>
+              <td className={`${num} ${(totals.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
                 {eurCell(totals.eur)}
               </td>
-              <td className="px-4 py-2"></td>
+              <td className={num}>{denseAmount(sumAll('tips'))}</td>
             </tr>
           </tbody>
         </table>
