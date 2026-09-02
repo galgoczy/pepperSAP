@@ -10,7 +10,7 @@ import CashRegisterSection from './CashRegisterSection';
 import ProtocolItemsSection from './ProtocolItemsSection';
 import { formatCurrency, formatDateWithWeekday } from '../../lib/utils';
 import { buildWhatsappDailySummary, whatsappShareUrl, unitSendsCashLine } from '../../lib/whatsappSummary';
-import { validatePaymentBreakdown, hasDocumentedDiscrepancy } from '../../lib/validations';
+import { validatePaymentBreakdown, hasDocumentedDiscrepancy, hufDiscrepancyOf } from '../../lib/validations';
 import toast from 'react-hot-toast';
 
 const VAT_RATES = [
@@ -225,6 +225,7 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
         cash: parseFloat(d.cash_payment) || 0,
         card: parseFloat(d.card_payment) || 0,
         szep: parseFloat(d.szep_card_payment) || 0,
+        hufDiscrepancy: hufDiscrepancyOf(d),
       });
       if (!check.applicable || check.isValid) return null;
       return {

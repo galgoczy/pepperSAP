@@ -16,7 +16,7 @@ import WagePaymentForm from '../components/expenses/WagePaymentForm';
 import PaymentEditModal from '../components/expenses/PaymentEditModal';
 import { getToday, formatCurrency, formatDate, formatDateWithWeekday, PAYMENT_METHODS, TERMINAL_TIP_WITHDRAW_RATE } from '../lib/utils';
 import { supabase } from '../lib/supabase';
-import { REGISTER_TOLERANCE, validatePaymentBreakdown, hasDocumentedDiscrepancy } from '../lib/validations';
+import { REGISTER_TOLERANCE, validatePaymentBreakdown, hasDocumentedDiscrepancy, hufDiscrepancyOf } from '../lib/validations';
 import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote } from 'lucide-react';
 
 // Shift a YYYY-MM-DD date string by whole days, using local date components so
@@ -1580,6 +1580,7 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
                 cash: parseFloat(cr.cash_payment) || 0,
                 card: parseFloat(cr.card_payment) || 0,
                 szep: parseFloat(cr.szep_card_payment) || 0,
+                hufDiscrepancy: hufDiscrepancyOf(cr),
               });
               if (breakdown.applicable && !breakdown.isValid) {
                 const protocolData = {

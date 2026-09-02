@@ -53,19 +53,45 @@ export const validateSzepPayments = (cashRegisterSzep, terminalSzep) => {
 // equal what the payment methods add up to (készpénz + bankkártya + SZÉP).
 // A gap means something was mis-keyed, so it must be documented with an elütés
 // before the day can be saved.
-export const validatePaymentBreakdown = ({ vatTotal, cash, card, szep }) => {
+//
+// A recorded forint elütés (jegyzőkönyv) explains the gap: the mis-keyed amount
+// sits in the register's turnover but not in the money that actually came in,
+// so a gap that equals the elütés total is in order.
+export const validatePaymentBreakdown = ({ vatTotal, cash, card, szep, hufDiscrepancy = 0 }) => {
   const paid = (cash || 0) + (card || 0) + (szep || 0);
   const difference = (vatTotal || 0) - paid;
+  const elutes = Math.abs(hufDiscrepancy || 0);
+  const rawOk = Math.abs(difference) <= REGISTER_TOLERANCE;
+  // Sign-agnostic: the elütés amount is recorded as a positive figure whichever
+  // side it inflated.
+  const explainedByDiscrepancy =
+    !rawOk && elutes > 0 && Math.abs(Math.abs(difference) - elutes) <= REGISTER_TOLERANCE;
 
   return {
     paid,
     difference,
+    hufDiscrepancy: elutes,
+    explainedByDiscrepancy,
     // Only checked once BOTH sides carry a value. A closure that is still being
     // filled in (turnover typed, payment methods not yet) must stay saveable —
     // losing a half-entered day would be worse than a late warning.
     applicable: (vatTotal || 0) > 0 && paid > 0,
-    isValid: Math.abs(difference) <= REGISTER_TOLERANCE,
+    isValid: rawOk || explainedByDiscrepancy,
   };
+};
+
+// Total forint elütés recorded on a closure (discrepancies[] or the legacy
+// single discrepancy_amount). EUR entries are not part of it.
+export const hufDiscrepancyOf = (cr) => {
+  if (!cr) return 0;
+  if (Array.isArray(cr.discrepancies) && cr.discrepancies.length > 0) {
+    return cr.discrepancies.reduce(
+      (sum, d) => sum + ((d?.currency || 'HUF') === 'HUF' ? (parseFloat(d?.amount) || 0) : 0),
+      0
+    );
+  }
+  if ((cr.discrepancy_currency || 'HUF') === 'HUF') return parseFloat(cr.discrepancy_amount) || 0;
+  return 0;
 };
 
 // A payment-breakdown gap counts as documented once an elütés was recorded with

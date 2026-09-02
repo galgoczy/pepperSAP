@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
-import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure } from '../../lib/validations';
+import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown } from '../../lib/validations';
 import { useAuth } from '../../hooks/useAuth';
 import { useCumulativeChecks } from '../../hooks/useCumulativeChecks';
 import toast from 'react-hot-toast';
@@ -889,6 +889,7 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
           szep: 0,
           terminal_card: 0,
           eur: 0,
+          huf: 0,
           vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
           software: 0,
           closures: [],
@@ -904,6 +905,7 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
 
       const reg = unitData[unitId].registers[registerId];
       reg.szep += parseFloat(cr.szep_card_payment) || 0;
+      reg.huf += hufDiscrepancyOf(cr);
       reg.eur += eur;
       reg.vat_0 += parseFloat(cr.vat_0_percent) || 0;
       reg.vat_5 += parseFloat(cr.vat_5_percent) || 0;
@@ -1085,12 +1087,18 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
       // buckets only, tips excluded (matches the daily form's validation).
       dayData.turnover = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27;
       // Payment breakdown: the VAT buckets must equal KP + kártya + SZÉP.
-      dayData.paid = dayData.cash + dayData.card + dayData.szep;
-      dayData.paymentDiff = dayData.turnover - dayData.paid;
-      dayData.paymentGap =
-        dayData.turnover > 0 &&
-        dayData.paid > 0 &&
-        Math.abs(dayData.paymentDiff) > REGISTER_TOLERANCE;
+      // A recorded forint elütés of the same size explains the gap.
+      dayData.huf = hufDiscrepancyOf(cr);
+      const breakdown = validatePaymentBreakdown({
+        vatTotal: dayData.turnover,
+        cash: dayData.cash,
+        card: dayData.card,
+        szep: dayData.szep,
+        hufDiscrepancy: dayData.huf,
+      });
+      dayData.paid = breakdown.paid;
+      dayData.paymentDiff = breakdown.difference;
+      dayData.paymentGap = breakdown.applicable && !breakdown.isValid;
 
       unitData[unitId].registers[apNumber].days.push(dayData);
 
@@ -1973,18 +1981,24 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
 
   // Időszaki check: the VAT buckets (borravaló nélkül) must add up to what the
   // payment methods (KP + kártya + SZÉP) add up to over the period.
+  // A recorded forint elütés (jegyzőkönyv) of the same size explains the gap.
   const paymentGapOf = (r) => {
     const turnover = (r.vat_0 || 0) + (r.vat_5 || 0) + (r.vat_18 || 0) + (r.vat_27 || 0);
-    const paid = (r.cash || 0) + (r.card || 0) + (r.szep || 0);
-    const diff = turnover - paid;
-    const gap = turnover > 0 && paid > 0 && Math.abs(diff) > REGISTER_TOLERANCE;
-    return { turnover, paid, diff, gap, r };
+    const check = validatePaymentBreakdown({
+      vatTotal: turnover,
+      cash: r.cash,
+      card: r.card,
+      szep: r.szep,
+      hufDiscrepancy: r.huf,
+    });
+    return { turnover, paid: check.paid, diff: check.difference, gap: check.applicable && !check.isValid, r };
   };
   const gapTitle = ({ turnover, paid, diff, r }) =>
     `Az ÁFA-kulcsok szerinti forgalom (${denseAmount(turnover)} Ft, borravaló nélkül) nem egyezik ` +
     `a fizetési módok összegével: KP ${denseAmount(r.cash)} + kártya ${denseAmount(r.card)}` +
     `${(r.szep || 0) !== 0 ? ` + SZÉP ${denseAmount(r.szep)}` : ''} = ${denseAmount(paid)} Ft. ` +
-    `Eltérés: ${diff > 0 ? '+' : ''}${denseAmount(diff)} Ft.`;
+    `Eltérés: ${diff > 0 ? '+' : ''}${denseAmount(diff)} Ft.` +
+    `${(r.huf || 0) !== 0 ? ` Rögzített Ft elütés: ${denseAmount(r.huf)} Ft – nem fedi az eltérést.` : ' Nincs rögzített Ft elütés.'}`;
 
   const toggleCheck = async (reg, checked) => {
     if (!reg.registerId) return;
@@ -2289,7 +2303,8 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                             }`}
                             title={
                               day.paymentGap
-                                ? `A fizetési módok nem adják ki a forgalmat: eltérés ${formatCurrency(day.paymentDiff)}`
+                                ? `A fizetési módok nem adják ki a forgalmat: eltérés ${formatCurrency(day.paymentDiff)}` +
+                                  (day.huf ? ` (rögzített Ft elütés: ${formatCurrency(day.huf)}, nem fedi az eltérést)` : '')
                                 : undefined
                             }
                           >

@@ -7,7 +7,7 @@ import { Modal, Button } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatDate, formatCurrency } from '../../lib/utils';
 import { fetchHouseCashSeries, fetchCentralHouseCashSeries } from '../../lib/houseCashSeries';
-import { isBlankClosure, REGISTER_TOLERANCE } from '../../lib/validations';
+import { isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown } from '../../lib/validations';
 import { fetchCumulativeCheckSet } from '../../hooks/useCumulativeChecks';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppSettings } from '../../hooks/useAppSettings';
@@ -1233,6 +1233,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
           szep: 0,
           terminal_card: 0,
           eur: 0,
+          huf: 0,
           vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
           software: 0,
           closures: [],
@@ -1247,6 +1248,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
 
       const regAcc = unitData[unitId].registers[registerId];
       regAcc.szep += parseFloat(cr.szep_card_payment) || 0;
+      regAcc.huf += hufDiscrepancyOf(cr);
       regAcc.eur += exportEurDiscrepancy(cr);
       regAcc.vat_0 += parseFloat(cr.vat_0_percent) || 0;
       regAcc.vat_5 += parseFloat(cr.vat_5_percent) || 0;
@@ -1291,8 +1293,11 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
       Object.values(unit.registers).forEach((reg) => {
         const summary = exportClosureSummary(reg.closures);
         const turnover = reg.vat_0 + reg.vat_5 + reg.vat_18 + reg.vat_27;
-        const paid = reg.cash + reg.card + reg.szep;
-        const paymentGap = turnover > 0 && paid > 0 && Math.abs(turnover - paid) > REGISTER_TOLERANCE;
+        const check = validatePaymentBreakdown({
+          vatTotal: turnover, cash: reg.cash, card: reg.card, szep: reg.szep, hufDiscrepancy: reg.huf,
+        });
+        const paid = check.paid;
+        const paymentGap = check.applicable && !check.isValid;
         data.push({
           'Egység': unit.unitName,
           'Pénztárgép': `${reg.ap_number}${reg.name ? ` (${reg.name})` : ''}`,

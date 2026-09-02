@@ -274,6 +274,8 @@ export default function CashRegisterSection({
     cash: parseFloat(formData.cash_payment) || 0,
     card: parseFloat(formData.card_payment) || 0,
     szep: parseFloat(formData.szep_card_payment) || 0,
+    // A recorded forint elütés explains a gap of the same size.
+    hufDiscrepancy: totalHufDiscrepancy,
   });
   const paymentGap = paymentBreakdown.applicable && !paymentBreakdown.isValid;
   const paymentGapDocumented = hasDocumentedDiscrepancy(formData.discrepancies);
