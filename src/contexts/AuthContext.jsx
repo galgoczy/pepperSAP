@@ -33,6 +33,7 @@ const EMAIL_ROLE_MAP = {
   'kti@pepperhouse.hu': { role: 'unit', unit_name: 'KTI' },
   'allamkincstar@pepperhouse.hu': { role: 'unit', unit_name: 'Államkincstár' },
   'rsr@pepperhouse.hu': { role: 'unit', unit_name: 'RSR' },
+  'ttk@pepperhouse.hu': { role: 'unit', unit_name: 'TTK Kantin' },
   // Accountant (read-only)
   'konyveles@pepperhouse.hu': { role: 'accountant', unit_name: null },
 };
@@ -72,15 +73,35 @@ export function AuthProvider({ children }) {
       return existingProfile;
     }
 
-    // Get unit_id if needed
+    // Get unit_id if needed. The name must match units.name; we fall back to a
+    // case-insensitive match so a stray capital or trailing space in the unit
+    // record does not silently produce a unit user with no unit — which logs in
+    // fine but sees an empty app, and is hard to recognise as a naming problem.
     let unitId = null;
     if (roleConfig.unit_name) {
       const { data: unit } = await supabase
         .from('units')
         .select('id')
         .eq('name', roleConfig.unit_name)
-        .single();
-      unitId = unit?.id || null;
+        .maybeSingle();
+      if (unit?.id) {
+        unitId = unit.id;
+      } else {
+        const { data: loose } = await supabase
+          .from('units')
+          .select('id, name')
+          .ilike('name', roleConfig.unit_name.trim())
+          .maybeSingle();
+        unitId = loose?.id || null;
+        if (!unitId) {
+          console.error(
+            `A(z) "${roleConfig.unit_name}" egység nem található a units táblában, ` +
+            `így a(z) ${email} felhasználó egység nélkül jönne létre. ` +
+            'Ellenőrizd az Egységek menüben a pontos nevet.'
+          );
+          return null;
+        }
+      }
     }
 
     // Create new profile. Note: user_profiles has no email column (email lives
