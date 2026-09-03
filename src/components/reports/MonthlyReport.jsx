@@ -2431,11 +2431,39 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
     }
   };
 
+  // Elgépelt AP-szám (pl. hiányzó betű az "AP" után) két külön sort csinál
+  // ugyanabból a gépből. Automatikusan NEM vonjuk össze – az összevonás akkor
+  // is téves lenne, ha véletlenül két valódi gép száma esik egybe így –, de
+  // szólunk róla, hogy javítható legyen az adat.
+  const apKey = (ap) => String(ap || '').toUpperCase().replace(/^AP[A-Z]?/, 'AP');
+  const suspiciousGroups = Object.values(
+    data.reduce((acc, r) => {
+      const key = apKey(r.ap_number);
+      (acc[key] = acc[key] || []).push(r.ap_number);
+      return acc;
+    }, {})
+  ).filter((list) => new Set(list).size > 1);
+
   const TH = `${STICKY_TH_DENSE} text-right whitespace-nowrap`;
   const num = `${TD} text-right`;
 
   return (
     <Card title="Pénztárgép forgalom - összes egység (könyvelés)">
+      {suspiciousGroups.length > 0 && (
+        <div className="mb-3 rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-900">
+          <p className="font-medium">Gyanúsan hasonló AP-számok – lehet, hogy ugyanaz a gép</p>
+          <ul className="mt-1 list-disc pl-5 text-xs">
+            {suspiciousGroups.map((list, i) => (
+              <li key={i}>{Array.from(new Set(list)).join('  ·  ')}</li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs">
+            Ezek külön sorban szerepelnek, mert külön pénztárgépként vannak rögzítve. Ha valóban egy
+            gépről van szó, az adatot kell javítani – addig a zárás-sorszám és a göngyölt forgalom is
+            kettészakad.
+          </p>
+        </div>
+      )}
       <p className="text-xs text-gray-500 mb-2">
         Pénztárgépenként összesítve, AP-szám szerint. Ha egy gép az időszakban több egységnél is
         dolgozott, itt <span className="font-semibold">egyetlen sorban</span> szerepel — a
