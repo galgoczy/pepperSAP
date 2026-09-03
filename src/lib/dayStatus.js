@@ -69,6 +69,16 @@ export function evaluateUnitDays(revenueRows) {
   return { byDate, dataDates };
 }
 
+// Egy adott nap állapota úgy, ahogy MENTÉS UTÁN kinézne: az előző napok sorai
+// mellé a nap még nem mentett zárásait tesszük, és a láncot így értékeljük ki.
+// A hívó a `closures` listában a cash_registers {ap_number, name} adatot is
+// átadja, hogy a hibalista géppel együtt olvasható legyen.
+export function evaluateDayCandidate(previousRows, date, closures) {
+  const rows = [...(previousRows || []).filter((r) => r.date !== date), { date, cash_register_revenue: closures || [] }];
+  const { byDate } = evaluateUnitDays(rows);
+  return byDate[date] || { hasData: false, unresolved: false, issues: [] };
+}
+
 // A kapu: a `date` előtti utolsó, adatot tartalmazó nap állapota. Az üres napokat
 // átugorja. Ha nincs ilyen nap (vagy a bevezetési dátum előtt van), nem tilt.
 export function previousDayGate(revenueRows, date, since) {

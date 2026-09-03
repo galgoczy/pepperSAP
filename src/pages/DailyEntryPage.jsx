@@ -133,6 +133,11 @@ export default function DailyEntryPage() {
     setAdminOverride(false);
   }, [selectedDate, effectiveUnitId]);
   const entryBlocked = strict.enabled && gate.blocked && !(isAdmin && adminOverride);
+  // Ha ez a nap után már van újabb rögzített nap, ez a nap csak rendezett
+  // („zöld”) állapotban menthető – a lánc legfrissebb napja viszont mindig.
+  const strictDateInScope = strict.enabled && (!strict.since || selectedDate >= strict.since);
+  const greenOnly = strictDateInScope && gate.hasLaterDataDay && !(isAdmin && adminOverride);
+  const strictDay = { greenOnly, rows: gate.rows || [] };
 
   // Get selected unit name
   const selectedUnitName = units.find(u => u.id === effectiveUnitId)?.name || '';
@@ -952,6 +957,41 @@ export default function DailyEntryPage() {
         </div>
       )}
 
+      {/* Szigorú elszámolás: korábbi nap, amely után már van rögzítés -> csak zölden menthető */}
+      {strictDateInScope && !gate.blocked && gate.hasLaterDataDay && (
+        <div
+          className={`no-print rounded-lg border-2 p-3 ${
+            greenOnly ? 'border-amber-400 bg-amber-50' : 'border-gray-300 bg-gray-50'
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <ShieldAlert className={`h-5 w-5 mt-0.5 shrink-0 ${greenOnly ? 'text-amber-600' : 'text-gray-500'}`} />
+            <div className="flex-1 min-w-0 text-sm">
+              <p className={`font-semibold ${greenOnly ? 'text-amber-800' : 'text-gray-700'}`}>
+                {greenOnly
+                  ? 'Ez a nap után már van újabb rögzítés, ezért csak rendezett (zöld) állapotban menthető.'
+                  : 'Admin felülbírálás: ez a korábbi nap most rendezetlen állapotban is menthető.'}
+              </p>
+              <p className="text-gray-600 mt-0.5">
+                Javítani lehet, a mentés pedig csak akkor megy át, ha minden eltéréshez megvan az elütés,
+                a zárás sorszáma és a göngyölt forgalom.
+              </p>
+              {isAdmin && (
+                <label className="mt-2 flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={adminOverride}
+                    onChange={(e) => setAdminOverride(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-pepper-red focus:ring-pepper-red"
+                  />
+                  Admin: erre az alkalomra rendezetlenül is menthető
+                </label>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Unit selector for admin */}
       {isAdmin && (
         <Card padding={false} className="p-4">
@@ -1048,6 +1088,7 @@ export default function DailyEntryPage() {
                 unitName={selectedUnitName}
                 focusRegisterAp={focusRegisterAp}
                 blocked={entryBlocked}
+                strictDay={strictDay}
               />
             </div>
 
@@ -1164,6 +1205,7 @@ export default function DailyEntryPage() {
               unitName={selectedUnitName}
               focusRegisterAp={focusRegisterAp}
               blocked={entryBlocked}
+              strictDay={strictDay}
             />
           </div>
         )}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark, Banknote, Radio, PartyPopper, AlertTriangle, CheckCircle, Plus, MessageCircle, Copy } from 'lucide-react';
+import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark, Banknote, Radio, PartyPopper, AlertTriangle, CheckCircle, Plus, MessageCircle, Copy, ShieldAlert } from 'lucide-react';
 import { useDailyRevenue } from '../../hooks/useDailyRevenue';
 import { useActiveCashRegisters, useAllCashRegisterRevenue, useRegisterClosureBaselines } from '../../hooks/useCashRegisterRevenue';
 import { useProtocolItems } from '../../hooks/useProtocolItems';
@@ -11,6 +11,7 @@ import ProtocolItemsSection from './ProtocolItemsSection';
 import { formatCurrency, formatDateWithWeekday } from '../../lib/utils';
 import { buildWhatsappDailySummary, whatsappShareUrl, unitSendsCashLine } from '../../lib/whatsappSummary';
 import { validatePaymentBreakdown, hasDocumentedDiscrepancy, hufDiscrepancyOf, isBlankClosure } from '../../lib/validations';
+import { evaluateDayCandidate } from '../../lib/dayStatus';
 import toast from 'react-hot-toast';
 
 const VAT_RATES = [
@@ -42,7 +43,11 @@ const closureTurnover = (data) =>
 
 const CUMULATIVE_TOLERANCE = 1; // Ft; rounding tolerance for the göngyölt check
 
-export default function DailyRevenueForm({ date, unitId, unitName, focusRegisterAp = null, blocked = false }) {
+// strictDay: { greenOnly, rows } – szigorú elszámolás mód. Ha greenOnly, ez a nap
+// (amely után már van újabb rögzítés) csak rendezett állapotban menthető; rows
+// az egység előző napjai, hogy a göngyölt lánc ugyanúgy értékelődjön, mint a
+// jelentésekben.
+export default function DailyRevenueForm({ date, unitId, unitName, focusRegisterAp = null, blocked = false, strictDay = null }) {
   const { revenue, loading: revenueLoading, saveRevenue, ensureRevenueExists } = useDailyRevenue(unitId, date);
   const { cashRegisters, loading: registersLoading } = useActiveCashRegisters(unitId, date);
   const { revenues: cashRegisterRevenues, loading: closuresLoading, saveAllRevenues } = useAllCashRegisterRevenue(revenue?.id);
@@ -95,6 +100,12 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
   const [extraClosures, setExtraClosures] = useState([]); // [{ registerId, closureNumber }]
   const [removedKeys, setRemovedKeys] = useState(() => new Set());
   const [closureValidations, setClosureValidations] = useState({}); // key -> warnings
+  // Szigorú elszámolás: az utolsó, visszautasított mentés hibalistája (a nap
+  // csak zölden menthető). Nap/egység váltáskor törlődik.
+  const [strictRefusal, setStrictRefusal] = useState(null);
+  useEffect(() => {
+    setStrictRefusal(null);
+  }, [date, unitId]);
 
   // "Ma nem volt zárás ezen a gépen": a bekapcsolt gépek zárását nem mentjük,
   // így egy tétlen gép nem termel üres zárás-sorokat. Alapból minden olyan gép
@@ -287,6 +298,32 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
     })
     .filter(Boolean);
   const undocumentedGaps = paymentGapClosures.filter((g) => !g.documented);
+
+  // Szigorú elszámolás: a visszautasított mentés hibalistája. Kétszer jelenik
+  // meg (a pénztárgép boxok után és a mentés gomb fölött), hogy ne kelljen
+  // keresni. A mentés újrapróbálásakor frissül.
+  const strictRefusalBox = strictRefusal && strictRefusal.length > 0 && (
+    <div className="rounded-lg border-2 border-red-500 bg-red-50 p-4">
+      <div className="flex items-start gap-3">
+        <ShieldAlert className="h-6 w-6 text-red-600 mt-0.5 shrink-0" />
+        <div className="text-sm text-red-800 flex-1 min-w-0">
+          <p className="font-bold text-base">Nem mentve – ez a nap csak rendezett állapotban menthető</p>
+          <ul className="mt-2 list-disc pl-5 space-y-0.5">
+            {strictRefusal.map((issue, i) => (
+              <li key={i}>
+                <span className="font-mono font-medium">{issue.ap}</span>
+                {issue.name && <span className="text-red-600"> ({issue.name})</span>}: {issue.reasons.join('; ')}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs">
+            Ez a nap után már van újabb rögzítés. Javítsd a fentieket (elütés a megfelelő fajtával,
+            zárás sorszáma, göngyölt forgalom), majd mentsd újra.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 
   // Recompute the cross-closure sums and the per-closure validations (closure
   // sequence number and cumulative "göngyölt" revenue). Returns the software
@@ -513,6 +550,37 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
       };
     });
 
+  // A nap zárásai úgy, ahogy a mentés után az adatbázisban állnának: a
+  // form aktuális állapota, plusz azok a már mentett zárások, amelyekhez a form
+  // nem nyúl (a mentés sem törli őket). Csak kiértékeléshez – nem ez megy az
+  // adatbázisba.
+  const buildCandidateClosures = () => {
+    const seen = new Set();
+    const candidates = closureList
+      .filter((c) => !(skippedRegisters.has(c.register.id) && isBlankClosure(mergedForKey(c.key))))
+      .map((c) => {
+        seen.add(c.key);
+        const src = mergedForKey(c.key);
+        const fields = {};
+        CLOSURE_FIELDS.forEach((f) => {
+          if (src[f] !== undefined) fields[f] = src[f];
+        });
+        return {
+          ...(existingByKey[c.key] || {}),
+          ...fields,
+          cash_register_id: c.register.id,
+          closure_number: c.closureNumber,
+          cash_registers: { id: c.register.id, ap_number: c.register.ap_number, name: c.register.name },
+        };
+      });
+    cashRegisterRevenues.forEach((r) => {
+      const key = closureKeyOf(r.cash_register_id, r.closure_number ?? 1);
+      if (seen.has(key) || removedKeys.has(key)) return;
+      candidates.push(r);
+    });
+    return candidates;
+  };
+
   // Save everything (daily revenue + closures). Callable both from the form's
   // submit buttons and from inside a cash register box (so the user doesn't have
   // to scroll down to save).
@@ -524,6 +592,25 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
       toast.error('Előbb az előző napot kell rendezni – addig ezt a napot nem lehet menteni.');
       return;
     }
+    // Szigorú elszámolás: ha ez a nap után már van újabb rögzítés, ez a nap csak
+    // rendezett állapotban menthető. Szintén a mentés ELŐTT dől el. Ha a
+    // kiértékelés maga hibázna, NEM tiltunk – a rögzítés fontosabb.
+    if (strictDay?.greenOnly) {
+      let status = null;
+      try {
+        status = evaluateDayCandidate(strictDay.rows, date, buildCandidateClosures());
+      } catch (error) {
+        console.error('Error evaluating day before save:', error);
+      }
+      if (status?.unresolved) {
+        setStrictRefusal(status.issues);
+        toast.error('Nem mentve: ez a nap csak rendezett állapotban menthető. Lásd a hibalistát.', {
+          duration: 7000,
+        });
+        return;
+      }
+    }
+    setStrictRefusal(null);
 
     setSaving(true);
     try {
@@ -883,6 +970,8 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
               </div>
             );
           })}
+
+          {strictRefusalBox}
 
           {/* Save/refresh right after the register boxes, so there's no need to
               scroll to the bottom of the form. */}
@@ -1257,6 +1346,8 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
           </div>
         </div>
       )}
+
+      {strictRefusalBox}
 
       {/* Submit button */}
       <div className="flex justify-end">
