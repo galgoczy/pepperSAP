@@ -79,11 +79,11 @@ Ezt másold be, és **csak a `PEPPER_DB_URI` sort** kell a sajátodra cserélni:
 # maradjon meg, tehát "...:<ref>:@aws-0-..." lesz belőle.
 PEPPER_DB_URI="postgresql://postgres.uqqcwfgmpegkdizkqbrd:@aws-0-eu-central-1.pooler.supabase.com:5432/postgres"
 
-# A jelszót tartalmazó fájl.
-PEPPER_DB_PASSWORD_FILE="/Users/pepper/.pepper-db-password"
+# A jelszót tartalmazó fájl. (Ha inkább a URI-ba írod a jelszót, ez a sor törölhető.)
+PEPPER_DB_PASSWORD_FILE="$HOME/.pepper-db-password"
 
 # A mentések helye a Mac mini belső lemezén.
-PEPPER_BACKUP_DIR="/Users/$USER/PepperBackup"
+PEPPER_BACKUP_DIR="$HOME/PepperBackup"
 
 # Másodpéldány a külső HDD-re. A kötet neve szóközös, de az idézőjel megoldja.
 PEPPER_BACKUP_SECONDARY_DIR="/Volumes/Geri háttér/PepperBackup"
@@ -105,9 +105,11 @@ script „unbound variable” hibával azonnal leáll, és megnevezi a fájlt é
 
 Két további dolog, amit érdemes tudni:
 
-- A `$USER` a fájlban **nem** helyettesítődik be automatikusan minden esetben,
-  ezért írd be a valódi felhasználónevet, például `/Users/pepper/PepperBackup`.
-  (Ellenőrzés: `echo $USER` a Terminálban.)
+- Az útvonalakban **`$HOME`-ot használj**, ne írd be kézzel a felhasználónevet.
+  A konfigot a script `source`-olja, tehát a `$HOME` behelyettesítődik, és a
+  launchd is a saját home mappáddal indítja a feladatot. Ha véletlenül más
+  felhasználó neve marad az útvonalban, a futás `Permission denied` hibával áll
+  meg (ezt a script megnevezi és kiírja a valódi home mappádat).
 - A **belső lemez az elsődleges hely, a „Geri háttér” a másodpéldány.** Ez
   szándékos: ha a külső lemez le van választva vagy épp nem csatolódott fel, a
   mentés akkor is elkészül, csak a másolat marad el, és ezt a napló és egy
@@ -122,11 +124,15 @@ cp ~/Documents/github/pepperSAP/scripts/backup/com.pepperhouse.sap-backup.plist 
 nano ~/Library/LaunchAgents/com.pepperhouse.sap-backup.plist
 ```
 
-A három `/PATH/TO` helyére (a `pepper` helyére a saját felhasználóneved):
+A három `/PATH/TO` helyére a teljes útvonal kerül. A plist **nem** érti a
+`$HOME`-ot, ide tényleg ki kell írni. A pontos útvonalakat ez a parancs adja meg,
+másold ki a kimenetét:
 
-- `/Users/pepper/Documents/github/pepperSAP/scripts/backup/pepper-backup.sh`
-- `/Users/pepper/PepperBackup/launchd.out.log`
-- `/Users/pepper/PepperBackup/launchd.err.log`
+```bash
+echo "$HOME/Documents/GitHub/pepperSAP/scripts/backup/pepper-backup.sh"
+echo "$HOME/PepperBackup/launchd.out.log"
+echo "$HOME/PepperBackup/launchd.err.log"
+```
 
 Betöltés és azonnali próba:
 
@@ -374,4 +380,5 @@ A mentés **személyes adatokat tartalmaz** (dolgozói nevek, bérek, EFO adatok
 | `server version mismatch` | Régi `pg_dump`. `brew upgrade libpq`, és a konfigurációban a Homebrew-s útvonal legyen. |
 | Nem fut hajnalban | `launchctl list | grep pepperhouse` – ha nincs benne, töltsd be újra. Nézd meg az automatikus bejelentkezést és az energiabeállításokat. |
 | „a mentés gyanúsan kicsi” | A kapcsolat megszakadt futás közben. A régi mentések érintetlenek; futtasd újra kézzel. |
+| `mkdir: /Users/valaki: Permission denied` | A konfigban más felhasználó neve maradt az útvonalban. Írd át `$HOME`-ra. |
 | „a másodpéldány célja nincs csatolva” | A „Geri háttér” nincs felcsatolva. A mentés elkészült a belső lemezen; csatlakoztasd a lemezt, és a következő futás pótolja a másolatot. |

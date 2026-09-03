@@ -65,7 +65,16 @@ STAMP="$(date +%Y-%m-%d)"
 NOW="$(date '+%Y-%m-%d %H:%M:%S')"
 TARGET="$DAILY_DIR/pepper-$STAMP.dump"
 
-mkdir -p "$DAILY_DIR" "$MONTHLY_DIR"
+# A mentési mappa létrehozása. Tipikus hiba, hogy a konfigban más felhasználó
+# neve maradt az útvonalban ("/Users/valaki-mas/..."), amit a rendszer
+# "Permission denied"-del utasít vissza – ezért mondjuk meg, mi a baj.
+if ! mkdir -p "$DAILY_DIR" "$MONTHLY_DIR" 2>/dev/null; then
+  echo "HIBA: nem sikerült létrehozni a mentési mappát: $BACKUP_DIR" >&2
+  echo "      A PEPPER_BACKUP_DIR értéke: ${PEPPER_BACKUP_DIR:-(nincs beállítva)}" >&2
+  echo "      A te home mappád: $HOME" >&2
+  echo "      Tipp: a konfigban használd a \$HOME-ot, pl. PEPPER_BACKUP_DIR=\"\$HOME/PepperBackup\"" >&2
+  exit 1
+fi
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
