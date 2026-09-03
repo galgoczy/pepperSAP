@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { Layout } from './components/layout';
 import { ProtectedRoute } from './components/auth';
-import { PageLoading } from './components/common';
+import { PageLoading, ErrorBoundary } from './components/common';
 
 // Pages (lazy-loaded so each route ships in its own chunk)
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -39,6 +39,7 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ErrorBoundary reloadOnChunkError>
         <Suspense fallback={<PageLoading />}>
         <Routes>
           {/* Public routes */}
@@ -220,6 +221,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </Suspense>
+        </ErrorBoundary>
       </AuthProvider>
     </BrowserRouter>
   );
