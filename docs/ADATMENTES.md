@@ -16,6 +16,112 @@ házon belüli másolat ettől független.
 
 ---
 
+## 0. A mi beállításunk (gyorsindítás)
+
+A konkrét gépünkre szabva. A részletes magyarázat a további pontokban.
+
+**Adottságok:** a Mac mini 0–24 üzemel, a git checkout a
+`~/Documents/github/pepperSAP` mappában van, a másodpéldány a **GeriDrive**
+külső HDD-re megy.
+
+> A Finder „Dokumentumok” néven mutatja a mappát, de a valódi útvonal
+> `~/Documents` – a parancsokban ezt kell írni.
+
+A scriptet **nem másoljuk sehova**: közvetlenül a git mappából fut, így egy
+`git pull` után rögtön a legfrissebb változat fut.
+
+```bash
+# 1) Postgres kliens
+brew install libpq
+/opt/homebrew/opt/libpq/bin/pg_dump --version    # jelenjen meg egy verziószám
+
+# 2) Futtathatóvá tétel
+chmod +x ~/Documents/github/pepperSAP/scripts/backup/pepper-backup.sh
+
+# 3) Külső lemez mappája
+mkdir -p /Volumes/GeriDrive/PepperBackup
+
+# 4) Konfiguráció
+nano ~/.pepper-backup.env      # tartalma lentebb
+chmod 600 ~/.pepper-backup.env
+
+# 5) Próbafuttatás
+~/Documents/github/pepperSAP/scripts/backup/pepper-backup.sh
+```
+
+### A `~/.pepper-backup.env` tartalma
+
+Ezt másold be, és **csak a `PEPPER_DB_URI` sort** kell a sajátodra cserélni:
+
+```bash
+# A Supabase kapcsolati sztringje. Honnan: Supabase → a projekt → Connect gomb
+# (jobb felül) → ORMs/PSQL fül → "Session pooler" sor. Másold ki egészben, és a
+# benne lévő [YOUR-PASSWORD] helyére írd be az adatbázis jelszavát.
+# Így néz ki (a régió és a jelszó a tiéd):
+PEPPER_DB_URI="postgresql://postgres.uqqcwfgmpegkdizkqbrd:IDE-A-JELSZO@aws-0-eu-central-1.pooler.supabase.com:5432/postgres"
+
+# A mentések helye a Mac mini belső lemezén.
+PEPPER_BACKUP_DIR="/Users/$USER/PepperBackup"
+
+# Másodpéldány a külső HDD-re.
+PEPPER_BACKUP_SECONDARY_DIR="/Volumes/GeriDrive/PepperBackup"
+
+# Megőrzés.
+PEPPER_KEEP_DAILY=30
+PEPPER_KEEP_MONTHLY=12
+
+# Apple Silicon Mac. Intel Macen: /usr/local/opt/libpq/bin/...
+PEPPER_PG_DUMP="/opt/homebrew/opt/libpq/bin/pg_dump"
+PEPPER_PG_RESTORE="/opt/homebrew/opt/libpq/bin/pg_restore"
+```
+
+Két dolog, amit érdemes tudni:
+
+- A `$USER` a fájlban **nem** helyettesítődik be automatikusan minden esetben,
+  ezért írd be a valódi felhasználónevet, például `/Users/pepper/PepperBackup`.
+  (Ellenőrzés: `echo $USER` a Terminálban.)
+- A **belső lemez az elsődleges hely, a GeriDrive a másodpéldány.** Ez
+  szándékos: ha a külső lemez le van választva vagy épp nem csatolódott fel, a
+  mentés akkor is elkészül, csak a másolat marad el, és ezt a napló és egy
+  értesítés is jelzi. Fordítva egy leválasztott lemez az egész napi mentést
+  elvinné.
+
+### Időzítés (0–24 üzemelő gép)
+
+```bash
+cp ~/Documents/github/pepperSAP/scripts/backup/com.pepperhouse.sap-backup.plist \
+   ~/Library/LaunchAgents/
+nano ~/Library/LaunchAgents/com.pepperhouse.sap-backup.plist
+```
+
+A három `/PATH/TO` helyére (a `pepper` helyére a saját felhasználóneved):
+
+- `/Users/pepper/Documents/github/pepperSAP/scripts/backup/pepper-backup.sh`
+- `/Users/pepper/PepperBackup/launchd.out.log`
+- `/Users/pepper/PepperBackup/launchd.err.log`
+
+Betöltés és azonnali próba:
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.pepperhouse.sap-backup.plist
+launchctl start com.pepperhouse.sap-backup
+tail -20 ~/PepperBackup/backup.log
+```
+
+Mivel a gép 0–24 megy, ébresztést nem kell ütemezni. Két dolgot viszont állíts be:
+
+- **Rendszerbeállítások → Felhasználók és csoportok → Automatikus bejelentkezés**:
+  legyen bekapcsolva. A LaunchAgent csak bejelentkezett felhasználónál fut, és
+  egy áramszünet utáni újraindulás után enélkül a bejelentkezőképernyőn állna meg.
+- **Rendszerbeállítások → Energiatakarékosság**: „Automatikus alvás
+  megakadályozása…” bekapcsolva, és „Indítás automatikusan áramkimaradás után”.
+
+Végül győződj meg róla, hogy a **GeriDrive automatikusan felcsatolódik**
+újraindulás után (a Finderben látszik-e). Ha nem, a mentés attól még elkészül a
+belső lemezen, de a külső másolat elmarad.
+
+---
+
 ## 1. Előkészítés a Mac minin
 
 ### 1.1 Homebrew és a Postgres kliens
@@ -137,7 +243,7 @@ launchctl start com.pepperhouse.sap-backup
 ### 2.1 Hogy a gép biztosan fusson hajnalban
 
 A LaunchAgent akkor fut, ha a felhasználó be van jelentkezve. Egy dedikált Mac minin
-állítsd be:
+állítsd be (0–24 üzemelő gépnél a `pmset` ébresztés elhagyható):
 
 - **Rendszerbeállítások → Felhasználók → Bejelentkezési opciók → Automatikus
   bejelentkezés**: legyen bekapcsolva.
@@ -162,7 +268,11 @@ Ha a gép mégis aludt, a launchd az ébredés után pótolja a kimaradt futást
 3. Csak ezután nevezi át a végleges névre.
 4. A hónap első mentéséről **havi példányt** is tesz félre.
 5. Ha be van állítva, **másodpéldányt** másol a külső lemezre vagy felhő mappába.
-6. **Forgat**: az utolsó 30 napi és 12 havi mentés marad meg.
+   Külső lemeznél előbb ellenőrzi, hogy a kötet tényleg csatolva van-e: a
+   `/Volumes` maga is írható, ezért egy leválasztott lemez esetén a másolat
+   észrevétlenül a belső lemezre kerülne, és a HDD később nem tudna a saját
+   nevén felcsatolódni.
+6. **Forgat**: az utolsó 30 napi és 12 havi mentés marad meg, a külső lemezen is.
 7. Mindent naplóz (`~/PepperBackup/backup.log`), és hiba esetén macOS értesítést dob,
    valamint nem nullával lép ki.
 
@@ -235,3 +345,4 @@ A mentés **személyes adatokat tartalmaz** (dolgozói nevek, bérek, EFO adatok
 | `server version mismatch` | Régi `pg_dump`. `brew upgrade libpq`, és a konfigurációban a Homebrew-s útvonal legyen. |
 | Nem fut hajnalban | `launchctl list | grep pepperhouse` – ha nincs benne, töltsd be újra. Nézd meg az automatikus bejelentkezést és az energiabeállításokat. |
 | „a mentés gyanúsan kicsi” | A kapcsolat megszakadt futás közben. A régi mentések érintetlenek; futtasd újra kézzel. |
+| „a másodpéldány célja nincs csatolva” | A GeriDrive nincs felcsatolva. A mentés elkészült a belső lemezen; csatlakoztasd a lemezt, és a következő futás pótolja a másolatot. |

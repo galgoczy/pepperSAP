@@ -108,9 +108,36 @@ fi
 
 # 4) Másodpéldány (külső lemez / felhő mappa), ha be van állítva. Ha a cél épp
 #    nem érhető el, az nem dönti el a mentést, de figyelmeztetünk rá.
+#
+#    Külső lemeznél ELŐBB ellenőrizzük, hogy a kötet tényleg csatolva van. A
+#    /Volumes maga is írható, ezért egy lecsatolt lemez esetén a mkdir simán
+#    létrehozná a mappát a belső lemezen: a mentés jónak látszana, valójában
+#    nem a külső HDD-re kerülne, ráadásul a lemez később nem tudna a saját
+#    nevén felcsatolódni.
+volume_mounted() {
+  local dir="$1"
+  case "$dir" in
+    /Volumes/*)
+      local rest="${dir#/Volumes/}"
+      local vol="/Volumes/${rest%%/*}"
+      mount | grep -q " on ${vol} " || return 1
+      ;;
+  esac
+  return 0
+}
+
 if [[ -n "$SECONDARY_DIR" ]]; then
-  if mkdir -p "$SECONDARY_DIR" 2>/dev/null && cp "$TARGET" "$SECONDARY_DIR/" 2>>"$LOG_FILE"; then
+  if ! volume_mounted "$SECONDARY_DIR"; then
+    log "FIGYELEM: a másodpéldány célja nincs csatolva, kimarad: $SECONDARY_DIR"
+    notify "A mentés kész, de a külső lemez nincs csatlakoztatva."
+  elif mkdir -p "$SECONDARY_DIR" 2>/dev/null && cp "$TARGET" "$SECONDARY_DIR/" 2>>"$LOG_FILE"; then
+    chmod 600 "$SECONDARY_DIR/$(basename "$TARGET")" 2>/dev/null || true
     log "Másodpéldány: $SECONDARY_DIR/$(basename "$TARGET")"
+    # A másodpéldányt is forgatjuk, különben a külső lemez idővel megtelik.
+    sec_old="$(ls -1t "$SECONDARY_DIR"/pepper-*.dump 2>/dev/null | tail -n +$((KEEP_DAILY + 1)) || true)"
+    if [[ -n "$sec_old" ]]; then
+      echo "$sec_old" | while read -r f; do rm -f "$f"; log "Törölve (másodpéldány forgatás): $f"; done
+    fi
   else
     log "FIGYELEM: a másodpéldány nem készült el ide: $SECONDARY_DIR"
     notify "A mentés kész, de a másodpéldány nem készült el."
