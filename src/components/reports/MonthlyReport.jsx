@@ -1002,7 +1002,9 @@ async function fetchCashRegisterAccounting(startDate, endDate) {
       if (!byAp[apNumber]) {
         byAp[apNumber] = {
           registerId: cr.cash_registers?.id || null,
-          ap_number: apNumber,
+          // A csoportosítási kulcs AP hiányában belső azonosító; megjeleníteni
+          // viszont olvasható címkét kell, nem az azonosítót.
+          ap_number: cr.cash_registers?.ap_number || '(nincs AP-szám)',
           name: cr.cash_registers?.name || '',
           // A sorrendezéshez: melyik egységnél bukkant fel először az időszakban.
           firstUnitName: unitName,
