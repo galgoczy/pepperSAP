@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Send, Building2, Wallet, Edit2, Trash2, History, LayoutGrid, ChevronDown, ChevronRight } from 'lucide-react';
+import { Send, Download, Building2, Wallet, Edit2, Trash2, History, LayoutGrid, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { useAppSettings } from '../hooks/useAppSettings';
@@ -13,7 +13,7 @@ import {
   useCashHistory,
   usePendingOpeningBalanceRevisions,
 } from '../hooks/useCashManagement';
-import { Card, Button, Input, Select, Modal, Badge } from '../components/common';
+import { Card, Button, Input, Select, Modal, Badge, DateInput } from '../components/common';
 import { Textarea } from '../components/common/Input';
 import BalanceCard from '../components/cash/BalanceCard';
 import TransferForm from '../components/cash/TransferForm';
@@ -79,6 +79,7 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
   } = useTransfers(unitId);
   const [showTransferForm, setShowTransferForm] = useState(false);
   const [showBankWithdrawal, setShowBankWithdrawal] = useState(false);
+  const [showIncomingTransfer, setShowIncomingTransfer] = useState(false);
   const [breakdownPocket, setBreakdownPocket] = useState(null);
 
   const restaurantUnits = units.filter(u => u.type === 'restaurant');
@@ -118,6 +119,10 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={() => setShowBankWithdrawal(true)}>
           Készpénzfelvét (bank)
+        </Button>
+        <Button variant="secondary" onClick={() => setShowIncomingTransfer(true)}>
+          <Download className="h-4 w-4" />
+          Nekem küldtek!
         </Button>
         <Button onClick={() => setShowTransferForm(true)}>
           <Send className="h-4 w-4" />
@@ -201,7 +206,129 @@ function UnitCashViewContent({ unitId, units, isAdmin = false, showReserve = tru
           refetchBalance();
         }}
       />
+
+      {/* Money received FROM somewhere (default: Központ) into this unit */}
+      <IncomingTransferModal
+        isOpen={showIncomingTransfer}
+        onClose={() => setShowIncomingTransfer(false)}
+        units={restaurantUnits}
+        unitId={unitId}
+        onSubmit={async (data) => {
+          await createTransfer(data);
+          refetchBalance();
+        }}
+      />
     </>
+  );
+}
+
+// "Nekem küldtek!" — the mirror image of an outgoing transfer: the unit records
+// money/reserve it RECEIVED (default from Központ). It needs no approval, and
+// lands in the admin's transfer list like any other transfer, because it IS one
+// — only initiated from the receiving side.
+function IncomingTransferModal({ isOpen, onClose, onSubmit, units, unitId }) {
+  const [loading, setLoading] = useState(false);
+  const initial = {
+    amount: '',
+    transfer_date: getToday(),
+    transfer_type: 'cash',
+    source: 'central',
+    notes: '',
+  };
+  const [formData, setFormData] = useState(initial);
+  const setField = (field, value) => setFormData((prev) => ({ ...prev, [field]: value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const fromCentral = formData.source === 'central';
+      await onSubmit({
+        source_type: fromCentral ? 'central' : 'unit',
+        source_unit_id: fromCentral ? null : formData.source,
+        destination_type: 'unit',
+        destination_unit_id: unitId,
+        amount: parseFloat(formData.amount),
+        transfer_date: formData.transfer_date,
+        transfer_type: formData.transfer_type,
+        notes: formData.notes,
+        // Recorded by the receiving side, so there is nothing left to approve.
+        status: 'approved',
+      });
+      onClose();
+      setFormData(initial);
+    } catch {
+      // Error handled in the hook
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Nekem küldtek!" size="md">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <p className="text-sm text-gray-500">
+          Ide rögzítsd, ha az egység készpénzt vagy tartalékot KAPOTT. Az összeg jóváhagyás nélkül
+          bekerül a házipénztárba, a küldő pénztárából pedig kikerül — ugyanúgy, mintha a küldő
+          rögzítette volna. Az admin az átküldések között látja és javíthatja.
+        </p>
+        <Input
+          label="Összeg"
+          type="number"
+          step="1"
+          min="1"
+          value={formData.amount}
+          onChange={(e) => setField('amount', e.target.value)}
+          suffix="Ft"
+          required
+        />
+        <Select
+          label="Típus"
+          value={formData.transfer_type}
+          onChange={(e) => setField('transfer_type', e.target.value)}
+          options={[
+            { value: 'cash', label: 'Készpénz' },
+            { value: 'reserve', label: 'Tartalék' },
+          ]}
+          required
+        />
+        <Select
+          label="Kitől kaptad"
+          value={formData.source}
+          onChange={(e) => setField('source', e.target.value)}
+          options={[
+            { value: 'central', label: 'Központ' },
+            ...units.filter((u) => u.id !== unitId).map((u) => ({ value: u.id, label: u.name })),
+          ]}
+          required
+        />
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-700">
+            Dátum<span className="text-red-500 ml-1">*</span>
+          </label>
+          <DateInput
+            value={formData.transfer_date}
+            onChange={(e) => setField('transfer_date', e.target.value)}
+            max={getToday()}
+            required
+          />
+        </div>
+        <Textarea
+          label="Megjegyzés"
+          value={formData.notes}
+          onChange={(e) => setField('notes', e.target.value)}
+          rows={2}
+          placeholder="Pl. kitől, milyen célra..."
+        />
+        <div className="flex justify-end gap-3 pt-4">
+          <Button type="button" variant="secondary" onClick={onClose}>Mégse</Button>
+          <Button type="submit" loading={loading}>
+            <Download className="h-4 w-4" />
+            Rögzítés
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

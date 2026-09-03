@@ -1448,7 +1448,7 @@ function RegisterClosureSummary({ register }) {
 
 // Dense column layout for the unit's own register report, shared by the daily
 // rows and the register subtotal so they line up.
-const UNIT_COLS = [64, 74, 74, 74, 82, 82, 82, 82, 88, 70, 32, 62, 70];
+const UNIT_COLS = [78, 88, 88, 88, 96, 96, 96, 96, 104, 84, 40, 80, 88];
 const UNIT_WIDTH = UNIT_COLS.reduce((s, w) => s + w, 0);
 
 function UnitColGroup() {
@@ -1481,14 +1481,14 @@ function CashRegisterReport({ data, totals, unitName }) {
     return parts.length ? parts.join(' · ') : undefined;
   };
 
-  const TD = 'px-2 py-1 whitespace-nowrap';
+  const TD = 'px-2.5 py-1.5 whitespace-nowrap';
   const num = `${TD} text-right`;
   const tableStyle = { minWidth: `${UNIT_WIDTH}px` };
 
   return (
     <Card title={unitName ? `Pénztárgép jelentés - ${unitName}` : 'Pénztárgép jelentés'}>
       <p className="text-xs text-gray-500 mb-3">
-        Kattints egy sorra a szerkesztéshez. Az összegek forintban (az Elütés oszlop EUR elütést is
+        Kattints egy sorra a szerkesztéshez. Oldalra görgetés: Shift + egérgörgő. Az összegek forintban (az Elütés oszlop EUR elütést is
         jelezhet, lásd a tooltipet).
         {' '}<span className="font-semibold">Jkv.</span> oszlop: eltérés esetén automatikus jelölés –{' '}
         <span className="text-green-600 font-bold">✓</span> jegyzőkönyv (elütés) rendben,{' '}
@@ -1507,9 +1507,9 @@ function CashRegisterReport({ data, totals, unitName }) {
               <div>Pénztárgép: {register.ap_number} {register.name && `(${register.name})`}</div>
               <RegisterClosureSummary register={register} />
             </div>
-            <div className="overflow-x-auto">
+            <div>
               <table
-                className="min-w-full divide-y divide-gray-200 text-[11px] tabular-nums table-fixed"
+                className="min-w-full divide-y divide-gray-200 text-xs tabular-nums table-fixed"
                 style={tableStyle}
               >
                 <UnitColGroup />
