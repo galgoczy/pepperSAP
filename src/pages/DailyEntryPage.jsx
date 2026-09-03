@@ -6,6 +6,8 @@ import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Select, LoadingSpinner, Modal, Badge, DateInput } from '../components/common';
 import { usePaymentItems, PAYMENT_KIND_META } from '../hooks/usePaymentItems';
 import { useAppSettings, resolveDefaultUnit } from '../hooks/useAppSettings';
+import { useStrictAccounting } from '../hooks/useStrictAccounting';
+import { usePreviousDayGate } from '../hooks/usePreviousDayGate';
 import DailyRevenueForm from '../components/daily/DailyRevenueForm';
 import HouseCashForm from '../components/daily/HouseCashForm';
 import DailyReport from '../components/daily/DailyReport';
@@ -18,7 +20,7 @@ import { getToday, formatCurrency, formatDate, formatDateWithWeekday, PAYMENT_ME
 import { supabase } from '../lib/supabase';
 import { REGISTER_TOLERANCE, validatePaymentBreakdown, validateCardPayments, hasDocumentedDiscrepancy, hufDiscrepancyOf, methodCardAdjustmentOf } from '../lib/validations';
 import { netCashDiscrepancy, isMethodDiscrepancy, describeDiscrepancy } from '../lib/discrepancies';
-import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote } from 'lucide-react';
+import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote, ShieldAlert } from 'lucide-react';
 
 // Shift a YYYY-MM-DD date string by whole days, using local date components so
 // there is no timezone drift.
@@ -119,6 +121,18 @@ export default function DailyEntryPage() {
 
   // Use user's unit if not admin
   const effectiveUnitId = isAdmin ? selectedUnit : unitId;
+
+  // Szigorú elszámolás: az előző, adatot tartalmazó nap rendben van-e. Ha nem,
+  // ez a nap nem rögzíthető (a mentés nem indul el), amíg azt nem rendezik.
+  // Admin egy alkalomra felülbírálhatja; a felülbírálás nap/egység váltáskor
+  // magától lejár.
+  const strict = useStrictAccounting();
+  const gate = usePreviousDayGate(effectiveUnitId, selectedDate, strict);
+  const [adminOverride, setAdminOverride] = useState(false);
+  useEffect(() => {
+    setAdminOverride(false);
+  }, [selectedDate, effectiveUnitId]);
+  const entryBlocked = strict.enabled && gate.blocked && !(isAdmin && adminOverride);
 
   // Get selected unit name
   const selectedUnitName = units.find(u => u.id === effectiveUnitId)?.name || '';
@@ -894,6 +908,50 @@ export default function DailyEntryPage() {
         </div>
       </div>
 
+      {/* Szigorú elszámolás: az előző nap rendezetlen -> ez a nap zárva */}
+      {strict.enabled && gate.blocked && (
+        <div
+          className={`no-print rounded-lg border-2 p-4 ${
+            entryBlocked ? 'border-red-500 bg-red-50' : 'border-amber-400 bg-amber-50'
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <ShieldAlert className={`h-6 w-6 mt-0.5 shrink-0 ${entryBlocked ? 'text-red-600' : 'text-amber-600'}`} />
+            <div className="flex-1 min-w-0">
+              <p className={`font-bold ${entryBlocked ? 'text-red-800' : 'text-amber-800'}`}>
+                {entryBlocked
+                  ? `Ez a nap nem rögzíthető, amíg a ${formatDate(gate.prevDate)} nincs rendben.`
+                  : `Admin felülbírálás: a ${formatDate(gate.prevDate)} rendezetlen, de ezt a napot most menteni lehet.`}
+              </p>
+              <ul className="mt-1 text-sm text-gray-800 list-disc pl-5 space-y-0.5">
+                {gate.issues.map((issue, i) => (
+                  <li key={i}>
+                    <span className="font-mono font-medium">{issue.ap}</span>
+                    {issue.name && <span className="text-gray-500"> ({issue.name})</span>}: {issue.reasons.join('; ')}
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <Button size="sm" onClick={() => changeDate(gate.prevDate)}>
+                  Ugrás a {formatDate(gate.prevDate)} napra
+                </Button>
+                {isAdmin && (
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={adminOverride}
+                      onChange={(e) => setAdminOverride(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-pepper-red focus:ring-pepper-red"
+                    />
+                    Admin: erre az alkalomra mégis engedélyezem
+                  </label>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Unit selector for admin */}
       {isAdmin && (
         <Card padding={false} className="p-4">
@@ -970,11 +1028,14 @@ export default function DailyEntryPage() {
                     unitId={effectiveUnitId}
                     selectedDate={selectedDate}
                     onSelectDate={changeDate}
+                    strict={strict}
                   />
                 </div>
               )}
             </Card>
 
+            {/* Zárt nap: szürkébb és nem kattintható, a piros sáv mondja meg, miért. */}
+            <div className={entryBlocked ? 'opacity-50 pointer-events-none select-none' : ''}>
             {/* Revenue Section */}
             <div>
               <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -986,11 +1047,12 @@ export default function DailyEntryPage() {
                 unitId={effectiveUnitId}
                 unitName={selectedUnitName}
                 focusRegisterAp={focusRegisterAp}
+                blocked={entryBlocked}
               />
             </div>
 
             {/* House Cash Section */}
-            <div>
+            <div className="mt-8">
               <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 <span className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-bold">2</span>
                 Házipénztár
@@ -1000,6 +1062,7 @@ export default function DailyEntryPage() {
                 unitId={effectiveUnitId}
                 onSaveSuccess={() => setActiveTab('report')}
               />
+            </div>
             </div>
 
             {/* Expenses Section */}
@@ -1094,20 +1157,25 @@ export default function DailyEntryPage() {
         )}
 
         {activeTab === 'revenue' && (
-          <DailyRevenueForm
-            date={selectedDate}
-            unitId={effectiveUnitId}
-            unitName={selectedUnitName}
-            focusRegisterAp={focusRegisterAp}
-          />
+          <div className={entryBlocked ? 'opacity-50 pointer-events-none select-none' : ''}>
+            <DailyRevenueForm
+              date={selectedDate}
+              unitId={effectiveUnitId}
+              unitName={selectedUnitName}
+              focusRegisterAp={focusRegisterAp}
+              blocked={entryBlocked}
+            />
+          </div>
         )}
 
         {activeTab === 'cash' && (
-          <HouseCashForm
-            date={selectedDate}
-            unitId={effectiveUnitId}
-            onSaveSuccess={() => setActiveTab('report')}
-          />
+          <div className={entryBlocked ? 'opacity-50 pointer-events-none select-none' : ''}>
+            <HouseCashForm
+              date={selectedDate}
+              unitId={effectiveUnitId}
+              onSaveSuccess={() => setActiveTab('report')}
+            />
+          </div>
         )}
 
         {activeTab === 'expenses' && (

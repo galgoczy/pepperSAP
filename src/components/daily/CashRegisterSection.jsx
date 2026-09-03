@@ -123,6 +123,9 @@ export default function CashRegisterSection({
   validation = null,
   onSave = null,
   saving = false,
+  // "Ma nem volt zárás ezen a gépen" – a doboz összecsukva, a zárás nem mentődik.
+  skipped = false,
+  onToggleSkip = null,
 }) {
   const [formData, setFormData] = useState(() => computeFormData(existingData));
   const prevExistingDataRef = useRef(existingData);
@@ -337,6 +340,48 @@ export default function CashRegisterSection({
   const tipWithdrawnAmount = formData.terminal_tip_withdrawn
     ? terminalCardTip * TERMINAL_TIP_WITHDRAW_RATE
     : 0;
+
+  if (skipped) {
+    return (
+      <Card className="border border-dashed border-gray-300 bg-gray-50">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 bg-gray-200 rounded-lg">
+              <Calculator className="h-5 w-5 text-gray-500" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono font-bold text-gray-700">{register.ap_number}</span>
+                {register.name && <span className="text-gray-500">({register.name})</span>}
+                <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 rounded-full">
+                  Ma nem volt zárás
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Ezen a gépen ma nem rögzítünk zárást. Ha mégis volt, kapcsold ki, vagy kezdj el
+                írni a mezőibe.
+              </p>
+            </div>
+          </div>
+          {onToggleSkip && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={true}
+              onClick={() => onToggleSkip(false)}
+              className="flex items-center gap-2 text-sm text-gray-700 shrink-0"
+              title="Volt zárás – megnyitom a gépet"
+            >
+              <span className="relative inline-flex h-5 w-9 items-center rounded-full bg-gray-400">
+                <span className="inline-block h-4 w-4 transform translate-x-4 rounded-full bg-white" />
+              </span>
+              <span className="hidden sm:inline">nem volt zárás</span>
+            </button>
+          )}
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-2 border-pepper-red border-opacity-30">
@@ -883,6 +928,28 @@ export default function CashRegisterSection({
               </div>
             )}
           </div>
+
+          {/* "Ma nem volt zárás" – a gép végén, ahogy kérték. Bekapcsolva a doboz
+              összecsukódik, és ennek a gépnek a zárása nem kerül mentésre. */}
+          {onToggleSkip && (
+            <div className="pt-3 border-t border-gray-100 flex items-center justify-between gap-3">
+              <p className="text-xs text-gray-500">
+                Ha ezen a gépen ma nem készült zárás, kapcsold be – így nem keletkezik üres sor.
+              </p>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={false}
+                onClick={() => onToggleSkip(true)}
+                className="flex items-center gap-2 text-sm text-gray-700 shrink-0"
+              >
+                <span className="relative inline-flex h-5 w-9 items-center rounded-full bg-gray-300">
+                  <span className="inline-block h-4 w-4 transform translate-x-1 rounded-full bg-white" />
+                </span>
+                Ma nem volt zárás
+              </button>
+            </div>
+          )}
 
           {/* Remove this (additional) closure */}
           {onRemove && (

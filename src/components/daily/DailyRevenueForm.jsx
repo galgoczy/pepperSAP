@@ -10,7 +10,7 @@ import CashRegisterSection from './CashRegisterSection';
 import ProtocolItemsSection from './ProtocolItemsSection';
 import { formatCurrency, formatDateWithWeekday } from '../../lib/utils';
 import { buildWhatsappDailySummary, whatsappShareUrl, unitSendsCashLine } from '../../lib/whatsappSummary';
-import { validatePaymentBreakdown, hasDocumentedDiscrepancy, hufDiscrepancyOf } from '../../lib/validations';
+import { validatePaymentBreakdown, hasDocumentedDiscrepancy, hufDiscrepancyOf, isBlankClosure } from '../../lib/validations';
 import toast from 'react-hot-toast';
 
 const VAT_RATES = [
@@ -42,10 +42,10 @@ const closureTurnover = (data) =>
 
 const CUMULATIVE_TOLERANCE = 1; // Ft; rounding tolerance for the göngyölt check
 
-export default function DailyRevenueForm({ date, unitId, unitName, focusRegisterAp = null }) {
+export default function DailyRevenueForm({ date, unitId, unitName, focusRegisterAp = null, blocked = false }) {
   const { revenue, loading: revenueLoading, saveRevenue, ensureRevenueExists } = useDailyRevenue(unitId, date);
   const { cashRegisters, loading: registersLoading } = useActiveCashRegisters(unitId, date);
-  const { revenues: cashRegisterRevenues, saveAllRevenues } = useAllCashRegisterRevenue(revenue?.id);
+  const { revenues: cashRegisterRevenues, loading: closuresLoading, saveAllRevenues } = useAllCashRegisterRevenue(revenue?.id);
   const { settings: revenueSettings, loading: settingsLoading, updateSettings: updateRevenueSettings } = useUnitRevenueSettings(unitId);
   const multiClosuresEnabled = revenueSettings?.multiple_closures_enabled ?? false;
   const { items: protocolItems, totalAmount: protocolItemsTotal, createItem: createProtocolItem, updateItem: updateProtocolItem, deleteItem: deleteProtocolItem, setDailyRevenueId } = useProtocolItems(revenue?.id);
@@ -96,6 +96,19 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
   const [removedKeys, setRemovedKeys] = useState(() => new Set());
   const [closureValidations, setClosureValidations] = useState({}); // key -> warnings
 
+  // "Ma nem volt zárás ezen a gépen": a bekapcsolt gépek zárását nem mentjük,
+  // így egy tétlen gép nem termel üres zárás-sorokat. Alapból minden olyan gép
+  // ilyen, aminek a napra nincs érdemi mentett adata; az első beírt karakterre
+  // magától kikapcsol. Naponként/egységenként egyszer inicializáljuk, hogy a
+  // felhasználó döntését egy újratöltés ne írja felül.
+  const [skippedRegisters, setSkippedRegisters] = useState(() => new Set());
+  // Amíg a felhasználó nem nyúlt a kapcsolókhoz/mezőkhöz ezen a napon, a
+  // kiindulóállapotot az aktuális adatból számoljuk újra (dátumváltás után a
+  // hook-ok egy pillanatig még a régi nap adatát mutathatják, ezért nem elég
+  // egyszer). Az első érintés után az állapot rögzül.
+  const skipTouchedRef = useRef(false);
+  const skipKeyRef = useRef(null);
+
   // Chronologically-previous closure per register (for sequence / cumulative checks)
   const registerIds = useMemo(() => cashRegisters.map((r) => r.id), [cashRegisters]);
   const { baselines } = useRegisterClosureBaselines(registerIds, date);
@@ -108,6 +121,44 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
     });
     return map;
   }, [cashRegisterRevenues]);
+
+  useEffect(() => {
+    const key = `${unitId || ''}|${date || ''}`;
+    if (skipKeyRef.current !== key) {
+      skipKeyRef.current = key;
+      skipTouchedRef.current = false;
+    }
+    if (revenueLoading || registersLoading || closuresLoading) return;
+    if (skipTouchedRef.current) return;
+    const initial = new Set();
+    cashRegisters.forEach((register) => {
+      const hasData = cashRegisterRevenues.some(
+        (r) => r.cash_register_id === register.id && !isBlankClosure(r)
+      );
+      if (!hasData) initial.add(register.id);
+    });
+    setSkippedRegisters(initial);
+  }, [unitId, date, revenueLoading, registersLoading, closuresLoading, cashRegisters, cashRegisterRevenues]);
+
+  const activateRegister = useCallback((registerId) => {
+    skipTouchedRef.current = true;
+    setSkippedRegisters((prev) => {
+      if (!prev.has(registerId)) return prev;
+      const next = new Set(prev);
+      next.delete(registerId);
+      return next;
+    });
+  }, []);
+
+  const setRegisterSkipped = (registerId, skipped) => {
+    skipTouchedRef.current = true;
+    setSkippedRegisters((prev) => {
+      const next = new Set(prev);
+      if (skipped) next.add(registerId);
+      else next.delete(registerId);
+      return next;
+    });
+  };
 
   // The list of closures to render: every register has closure #1, plus any
   // extra closures the user added, minus the ones they removed. Ordered by
@@ -444,7 +495,12 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
   ];
 
   const buildClosuresToSave = () =>
-    closureList.map((c) => {
+    closureList
+      // Tétlen gép ("ma nem volt zárás") kimarad – de CSAK ha tényleg üres. Ha
+      // bármi adat van rajta, mentjük, bármit is mond a kapcsoló: adat soha nem
+      // veszhet el egy kapcsoló-állapot miatt.
+      .filter((c) => !(skippedRegisters.has(c.register.id) && isBlankClosure(mergedForKey(c.key))))
+      .map((c) => {
       const src = mergedForKey(c.key);
       const fields = {};
       CLOSURE_FIELDS.forEach((f) => {
@@ -462,6 +518,12 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
   // to scroll down to save).
   const saveAll = async () => {
     if (!unitId) return;
+    // Szigorú elszámolás: amíg az előző nap rendezetlen, új nap nem menthető.
+    // Ez a mentés ELŐTT dől el, semmi nem íródik.
+    if (blocked) {
+      toast.error('Előbb az előző napot kell rendezni – addig ezt a napot nem lehet menteni.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -789,7 +851,14 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
                     key={c.key}
                     register={register}
                     existingData={existingByKey[c.key]}
-                    onChange={(data) => handleCashRegisterChange(c.key, data)}
+                    onChange={(data) => {
+                      activateRegister(register.id);
+                      handleCashRegisterChange(c.key, data);
+                    }}
+                    skipped={skippedRegisters.has(register.id)}
+                    onToggleSkip={
+                      c.closureNumber === 1 ? (skip) => setRegisterSkipped(register.id, skip) : null
+                    }
                     expanded={expandedRegisters[c.key]}
                     onToggleExpand={() => toggleExpand(c.key)}
                     unitName={unitName}
@@ -801,7 +870,7 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
                     saving={saving}
                   />
                 ))}
-                {multiClosuresEnabled && (
+                {multiClosuresEnabled && !skippedRegisters.has(register.id) && (
                   <button
                     type="button"
                     onClick={() => addClosure(register.id)}
@@ -818,7 +887,7 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
           {/* Save/refresh right after the register boxes, so there's no need to
               scroll to the bottom of the form. */}
           <div className="flex justify-end">
-            <Button type="button" variant="outline" onClick={saveAll} loading={saving}>
+            <Button type="button" variant="outline" onClick={saveAll} loading={saving} disabled={blocked}>
               <Save className="h-4 w-4" />
               {revenue ? 'Frissítés' : 'Mentés'}
             </Button>
@@ -1191,7 +1260,7 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
 
       {/* Submit button */}
       <div className="flex justify-end">
-        <Button type="submit" loading={saving} size="lg">
+        <Button type="submit" loading={saving} size="lg" disabled={blocked}>
           <Save className="h-4 w-4" />
           {revenue ? 'Frissítés' : 'Mentés'}
         </Button>

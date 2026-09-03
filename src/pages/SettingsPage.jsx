@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { User, Lock, Bell, Shield, Eye, Settings2, Star, Building, Landmark, Radio, PartyPopper, Calculator } from 'lucide-react';
+import { User, Lock, Bell, Shield, Eye, Settings2, Star, Building, Landmark, Radio, PartyPopper, Calculator, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { useAllUnitRevenueSettings } from '../hooks/useUnitRevenueSettings';
+import { useStrictAccounting } from '../hooks/useStrictAccounting';
+import { getToday } from '../lib/utils';
 import { useUnits } from '../hooks/useSupabase';
-import { Card, Button, Input, Select, LoadingSpinner } from '../components/common';
+import { Card, Button, Input, Select, LoadingSpinner, DateInput } from '../components/common';
 import CashRegisterOrderCard from '../components/units/CashRegisterOrderCard';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
@@ -25,6 +27,21 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [orderUnitId, setOrderUnitId] = useState('');
+  const strict = useStrictAccounting();
+  const [strictSaving, setStrictSaving] = useState(false);
+
+  const saveStrict = async (next) => {
+    setStrictSaving(true);
+    try {
+      await strict.update(next);
+      toast.success('Szigorú elszámolás mód mentve');
+    } catch (error) {
+      console.error(error);
+      toast.error('Nem sikerült menteni a beállítást');
+    } finally {
+      setStrictSaving(false);
+    }
+  };
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
@@ -267,6 +284,70 @@ export default function SettingsPage() {
               </div>
             </label>
           </div>
+        </Card>
+      )}
+
+      {/* Strict accounting mode (Admin only, system-wide) */}
+      {isAdmin && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-gray-400" />
+              Szigorú elszámolás mód
+            </div>
+          }
+        >
+          <p className="text-sm text-gray-500 mb-4">
+            Bekapcsolva egy egység addig nem tud új napot rögzíteni, amíg az előző, adatot
+            tartalmazó napja nincs rendben: minden eltérést fed a megfelelő elütés, és a zárás
+            sorszáma meg a göngyölt forgalom ki van töltve. Az aznapi mentést nem tiltja, csak a
+            továbblépést. Üres nap nem akadály. Adminnak van felülbírálás a rögzítő oldalon.
+          </p>
+          {!strict.available ? (
+            <p className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-lg p-3">
+              Ehhez előbb futtasd le a <code>20260903_system_settings.sql</code> migrációt a
+              Supabase-ben. Addig a mód kikapcsoltnak számít.
+            </p>
+          ) : (
+            <div className="space-y-4 max-w-md">
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <p className="font-medium text-gray-900">Szigorú elszámolás</p>
+                  <p className="text-sm text-gray-500">
+                    {strict.enabled ? 'Bekapcsolva – minden egységre érvényes' : 'Kikapcsolva'}
+                  </p>
+                </div>
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={strict.enabled}
+                    disabled={strictSaving || strict.loading}
+                    onChange={(e) =>
+                      saveStrict({
+                        enabled: e.target.checked,
+                        // Bekapcsoláskor a mai nap a kezdet, ha még nincs dátum.
+                        since: e.target.checked ? strict.since || getToday() : strict.since,
+                      })
+                    }
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-pepper-red/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pepper-red"></div>
+                </div>
+              </label>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Ettől a naptól számít</label>
+                <DateInput
+                  value={strict.since || ''}
+                  onChange={(e) => saveStrict({ since: e.target.value || null })}
+                  disabled={strictSaving || strict.loading}
+                />
+                <p className="text-xs text-gray-500">
+                  A korábbi napok rendezetlensége nem zár le semmit – a bevezetés napjától indul a
+                  szabály. Ez a beállítás az adatbázisban él, minden admin ugyanazt látja.
+                </p>
+              </div>
+            </div>
+          )}
         </Card>
       )}
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getToday } from '../../lib/utils';
+import { evaluateUnitDays } from '../../lib/dayStatus';
 
 const MONTH_NAMES = [
   'Január', 'Február', 'Március', 'Április', 'Május', 'Június',
@@ -15,6 +16,12 @@ const shiftYm = (ym, delta) => {
   const [y, m] = ym.split('-').map(Number);
   const d = new Date(y, m - 1 + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+// A hónap első napja előtti `days` nappal (ISO dátum).
+const shiftYmStart = (ym, days) => {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m - 1, 1 + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const monthLabel = (ym) => {
   const [y, m] = ym.split('-').map(Number);
@@ -37,9 +44,12 @@ function shortAmount(v) {
 // Month grid for the daily entry page: shows which days already have revenue
 // recorded (with the amount on desktop), highlights the day being edited, and
 // jumps the form to any day that is clicked.
-export default function MonthCalendar({ unitId, selectedDate, onSelectDate }) {
+// `strict`: { enabled, since } – szigorú elszámolás módban a rendezetlen napok
+// pirosak (csak a bevezetési dátumtól).
+export default function MonthCalendar({ unitId, selectedDate, onSelectDate, strict = null }) {
   const [ym, setYm] = useState(ymOf(selectedDate));
   const [totals, setTotals] = useState({});
+  const [unresolved, setUnresolved] = useState({});
   const today = getToday();
 
   // Follow the edited date into its own month (e.g. when the arrows cross a
@@ -56,21 +66,38 @@ export default function MonthCalendar({ unitId, selectedDate, onSelectDate }) {
     const [y, m] = ym.split('-').map(Number);
     const last = new Date(y, m, 0).getDate();
     try {
+      const strictOn = !!strict?.enabled;
+      // Szigorú módban a zárásokat is lekérjük, hogy a rendezetlen napokat
+      // jelölni tudjuk. A göngyölt lánc miatt pár nappal a hónap elé is nézünk.
+      const select = strictOn
+        ? 'date, total_revenue, cash_register_revenue(cash_register_id, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, terminal_discrepancy_note, closure_number, closure_sequence, cumulative_revenue, discrepancies, discrepancy_note, discrepancy_amount, software_revenue, guest_count, terminal_card_total, terminal_szep, cash_registers(id, ap_number, name))'
+        : 'date, total_revenue';
+      const from = strictOn ? shiftYmStart(ym, -7) : `${ym}-01`;
       const { data, error } = await supabase
         .from('daily_revenue')
-        .select('date, total_revenue')
+        .select(select)
         .eq('unit_id', unitId)
-        .gte('date', `${ym}-01`)
+        .gte('date', from)
         .lte('date', `${ym}-${String(last).padStart(2, '0')}`);
       if (error) throw error;
       const map = {};
-      (data || []).forEach((r) => { map[r.date] = parseFloat(r.total_revenue) || 0; });
+      (data || []).forEach((r) => { if (r.date >= `${ym}-01`) map[r.date] = parseFloat(r.total_revenue) || 0; });
       setTotals(map);
+      if (strictOn) {
+        const { byDate } = evaluateUnitDays(data || []);
+        const flags = {};
+        Object.keys(byDate).forEach((d) => {
+          if (byDate[d].unresolved && (!strict?.since || d >= strict.since)) flags[d] = byDate[d].issues;
+        });
+        setUnresolved(flags);
+      } else {
+        setUnresolved({});
+      }
     } catch (e) {
       console.error('Error loading calendar totals:', e);
       setTotals({});
     }
-  }, [unitId, ym]);
+  }, [unitId, ym, strict?.enabled, strict?.since]);
 
   // Refetch on month/unit change and whenever the edited day changes, so an
   // amount that was just saved shows up.
@@ -130,6 +157,7 @@ export default function MonthCalendar({ unitId, selectedDate, onSelectDate }) {
           const isFuture = date > today;
           const amount = totals[date];
           const hasData = amount !== undefined;
+          const isUnresolved = !!unresolved[date];
 
           // Exactly one background/border variant per cell, so there is no
           // ambiguity between conflicting Tailwind utilities.
@@ -138,7 +166,12 @@ export default function MonthCalendar({ unitId, selectedDate, onSelectDate }) {
           // does the talking.
           let look;
           if (isSelected) {
-            look = 'border-pepper-red ring-2 ring-pepper-red bg-pepper-red/10';
+            look = isUnresolved
+              ? 'border-red-600 ring-2 ring-red-600 bg-red-100'
+              : 'border-pepper-red ring-2 ring-pepper-red bg-pepper-red/10';
+          } else if (isUnresolved) {
+            // Rendezetlen nap (szigorú mód): mindig piros, asztalon is.
+            look = 'bg-red-100 border-red-400';
           } else if (isFuture) {
             look = 'bg-gray-50 border-gray-100';
           } else if (hasData) {
@@ -153,7 +186,14 @@ export default function MonthCalendar({ unitId, selectedDate, onSelectDate }) {
               type="button"
               disabled={isFuture}
               onClick={() => onSelectDate(date)}
-              title={isFuture ? 'Jövőbeli nap' : undefined}
+              title={
+                isFuture
+                  ? 'Jövőbeli nap'
+                  : isUnresolved
+                    ? 'Rendezetlen nap: ' +
+                      unresolved[date].map((i) => `${i.ap}: ${i.reasons.join(', ')}`).join(' · ')
+                    : undefined
+              }
               className={[
                 'rounded-lg border text-left px-1.5 py-1 transition-colors',
                 'min-h-[38px] sm:min-h-[52px] flex flex-col justify-between',
@@ -164,7 +204,7 @@ export default function MonthCalendar({ unitId, selectedDate, onSelectDate }) {
               <span
                 className={[
                   'text-xs leading-none',
-                  isSelected ? 'font-bold text-pepper-red' : 'text-gray-700',
+                  isSelected ? 'font-bold text-pepper-red' : isUnresolved ? 'font-bold text-red-700' : 'text-gray-700',
                   isToday && !isSelected ? 'font-bold underline decoration-dotted' : '',
                 ].join(' ')}
               >
