@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { useAppSettings } from '../hooks/useAppSettings';
-import { Card, Button, Select, DateInput } from '../components/common';
+import { Card, Button, Select, DateInput, ErrorBoundary } from '../components/common';
 import MonthlyReport from '../components/reports/MonthlyReport';
 import MonthlyTableReport from '../components/reports/MonthlyTableReport';
 import HouseCashReport from '../components/reports/HouseCashReport';
@@ -405,12 +405,14 @@ export default function ReportsPage() {
           />
         </div>
       ) : (
-        <MonthlyReport
-          startDate={startDate}
-          endDate={endDate}
-          reportType={reportType}
-          unitId={effectiveUnitId}
-        />
+        <ErrorBoundary resetKey={reportType} title="Hiba a jelentés megjelenítésekor">
+          <MonthlyReport
+            startDate={startDate}
+            endDate={endDate}
+            reportType={reportType}
+            unitId={effectiveUnitId}
+          />
+        </ErrorBoundary>
       )}
 
       {/* Export modal */}

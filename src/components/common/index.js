@@ -7,4 +7,5 @@ export { default as DateInput } from './DateInput';
 export { default as Table, TableHead, TableBody, TableRow, TableHeader, TableCell, EmptyState } from './Table';
 export { default as Modal, ConfirmModal } from './Modal';
 export { default as Badge, StatusBadge } from './Badge';
+export { default as ErrorBoundary } from './ErrorBoundary';
 export { default as LoadingSpinner, LoadingOverlay, PageLoading, Skeleton } from './LoadingSpinner';
