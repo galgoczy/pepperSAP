@@ -581,10 +581,11 @@ export default function CashRegistersManager({ unitId, unitName }) {
             <label className="block text-sm font-medium text-gray-700">
               Áthelyezés dátuma<span className="text-red-500 ml-1">*</span>
             </label>
+            {/* Jövőbeli dátum is megadható: a költözés napja gyakran előre
+                tudott, és a hozzárendelés onnantól kezdve érvényes. */}
             <DateInput
               value={moveData.effectiveDate}
               onChange={(e) => setMoveData((p) => ({ ...p, effectiveDate: e.target.value }))}
-              max={getToday()}
               required
             />
           </div>
