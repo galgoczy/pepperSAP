@@ -18,8 +18,12 @@
 --   1) Futtasd le az 1. lépés lekérdezését, és nézd meg, melyik a helyes AP-szám
 --      (a gépen olvasható szám a mérvadó).
 --   2) A 2. lépésben állítsd be a KEEP_AP és a MERGE_AP értéket, majd futtasd.
---   3) Utána a 3. lépés lekérdezésével ellenőrizd az eredményt, és az Egységek
---      menüben nézd át a gép "Érvényes ettől" dátumát / áthelyezését.
+--   3) Utána a 3. lépés lekérdezésével ellenőrizd az eredményt.
+--   4) Ha a gép új helyre kerül: Egységek -> a pénztárgép -> Áthelyezés, cél az
+--      új egység, dátum a költözés napja. Ez lezárja az összes korábbi
+--      hozzárendelést, és az új egységnél nyit egyet – a napi rögzítés onnantól
+--      ott kínálja fel. A múltbeli forgalom nem mozdul: az a naphoz és az akkori
+--      egységhez tartozik, nem a gép jelenlegi helyéhez.
 --
 -- Idempotens: ha a MERGE_AP már nem létezik, nem csinál semmit.
 -- =============================================================================
