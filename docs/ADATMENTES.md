@@ -125,22 +125,29 @@ nano ~/Library/LaunchAgents/com.pepperhouse.sap-backup.plist
 ```
 
 A három `/PATH/TO` helyére a teljes útvonal kerül. A plist **nem** érti a
-`$HOME`-ot, ide tényleg ki kell írni. A pontos útvonalakat ez a parancs adja meg,
-másold ki a kimenetét:
+`$HOME`-ot, ide tényleg ki kell írni – de nem kell kézzel szerkeszteni, ez a
+parancs kitölti (macOS sed, ezért az üres `''` a `-i` után):
 
 ```bash
-echo "$HOME/Documents/GitHub/pepperSAP/scripts/backup/pepper-backup.sh"
-echo "$HOME/PepperBackup/launchd.out.log"
-echo "$HOME/PepperBackup/launchd.err.log"
+sed -i '' \
+  -e "s|/PATH/TO/pepper-backup.sh|$HOME/Documents/GitHub/pepperSAP/scripts/backup/pepper-backup.sh|" \
+  -e "s|/PATH/TO/PepperBackup|$HOME/PepperBackup|g" \
+  ~/Library/LaunchAgents/com.pepperhouse.sap-backup.plist
+
+grep -A1 -e ProgramArguments -e StandardOutPath ~/Library/LaunchAgents/com.pepperhouse.sap-backup.plist
 ```
 
 Betöltés és azonnali próba:
 
 ```bash
 launchctl load ~/Library/LaunchAgents/com.pepperhouse.sap-backup.plist
+launchctl list | grep pepperhouse     # meg kell jelennie egy sornak
 launchctl start com.pepperhouse.sap-backup
 tail -20 ~/PepperBackup/backup.log
 ```
+
+Ha a `load` azt írja, hogy „service already loaded”, előbb `launchctl unload
+~/Library/LaunchAgents/com.pepperhouse.sap-backup.plist`, aztán újra `load`.
 
 Mivel a gép 0–24 megy, ébresztést nem kell ütemezni. Két dolgot viszont állíts be:
 
@@ -153,6 +160,13 @@ Mivel a gép 0–24 megy, ébresztést nem kell ütemezni. Két dolgot viszont �
 Végül győződj meg róla, hogy a **„Geri háttér” automatikusan felcsatolódik**
 újraindulás után (a Finderben látszik-e). Ha nem, a mentés attól még elkészül a
 belső lemezen, de a külső másolat elmarad.
+
+> **Ha kézzel indítva elkészül a külső másolat, időzítve viszont nem:** a macOS
+> adatvédelme (TCC) a háttérben futó folyamatoktól külön engedélyt kér a
+> cserélhető kötetekhez. Ilyenkor Rendszerbeállítások → Adatvédelem és biztonság
+> → **Teljes lemez-hozzáférés**, és vedd fel a `/bin/bash` programot (a Finder
+> ablakban ⌘⇧G, majd `/bin/bash`). A napló ilyenkor a „másodpéldány nem készült
+> el” sort írja.
 
 ---
 
@@ -362,6 +376,45 @@ A mentés **személyes adatokat tartalmaz** (dolgozói nevek, bérek, EFO adatok
   céges fiókba tedd, amihez csak az arra jogosultak férnek hozzá.
 
 ---
+
+## 6a. Az első mentés ellenőrzése
+
+A script minden futáskor ellenőrzi a méretet és azt, hogy az archívum
+végigolvasható. Ezen felül érdemes egyszer ránézni, mi van benne:
+
+```bash
+ls -lh ~/PepperBackup/daily/
+
+# Hány tábla adata van benne, és megvannak-e a fontosak?
+/opt/homebrew/opt/libpq/bin/pg_restore --list ~/PepperBackup/daily/pepper-*.dump \
+  | grep -c 'TABLE DATA'
+/opt/homebrew/opt/libpq/bin/pg_restore --list ~/PepperBackup/daily/pepper-*.dump \
+  | grep -E 'daily_revenue|cash_register_revenue|expenses|house_cash|cash_transfers'
+```
+
+**A teljes bizonyosság: egy próba-visszatöltés helyben.** Ezt elég egyszer
+megcsinálni, de akkor tudod, hogy a mentés tényleg használható:
+
+```bash
+brew install postgresql@17
+brew services start postgresql@17
+export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
+
+createdb pepper_teszt
+pg_restore --dbname=pepper_teszt --no-owner --no-privileges \
+  ~/PepperBackup/daily/pepper-$(date +%F).dump
+
+psql pepper_teszt -c "select count(*) from daily_revenue;"
+psql pepper_teszt -c "select count(*) from cash_register_revenue;"
+
+# Takarítás
+dropdb pepper_teszt
+brew services stop postgresql@17
+```
+
+Ha a darabszámok nagyságrendileg stimmelnek az éles adattal, a mentés jó. A
+`pg_restore` közben kiírhat néhány figyelmeztetést hiányzó szerepkörökről vagy
+kiterjesztésekről – ezek a Supabase-specifikus dolgok, helyben nem gond.
 
 ## 6. Ellenőrzés – mit nézz meg havonta
 
