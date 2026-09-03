@@ -21,8 +21,8 @@ házon belüli másolat ettől független.
 A konkrét gépünkre szabva. A részletes magyarázat a további pontokban.
 
 **Adottságok:** a Mac mini 0–24 üzemel, a git checkout a
-`~/Documents/github/pepperSAP` mappában van, a másodpéldány a **GeriDrive**
-külső HDD-re megy.
+`~/Documents/github/pepperSAP` mappában van, a másodpéldány a **„Geri háttér”**
+nevű külső HDD-re megy.
 
 > A Finder „Dokumentumok” néven mutatja a mappát, de a valódi útvonal
 > `~/Documents` – a parancsokban ezt kell írni.
@@ -38,8 +38,8 @@ brew install libpq
 # 2) Futtathatóvá tétel
 chmod +x ~/Documents/github/pepperSAP/scripts/backup/pepper-backup.sh
 
-# 3) Külső lemez mappája
-mkdir -p /Volumes/GeriDrive/PepperBackup
+# 3) Külső lemez mappája (a név szóközt tartalmaz, ezért idézőjelben!)
+mkdir -p "/Volumes/Geri háttér/PepperBackup"
 
 # 4) Konfiguráció
 nano ~/.pepper-backup.env      # tartalma lentebb
@@ -63,8 +63,8 @@ PEPPER_DB_URI="postgresql://postgres.uqqcwfgmpegkdizkqbrd:IDE-A-JELSZO@aws-0-eu-
 # A mentések helye a Mac mini belső lemezén.
 PEPPER_BACKUP_DIR="/Users/$USER/PepperBackup"
 
-# Másodpéldány a külső HDD-re.
-PEPPER_BACKUP_SECONDARY_DIR="/Volumes/GeriDrive/PepperBackup"
+# Másodpéldány a külső HDD-re. A kötet neve szóközös, de az idézőjel megoldja.
+PEPPER_BACKUP_SECONDARY_DIR="/Volumes/Geri háttér/PepperBackup"
 
 # Megőrzés.
 PEPPER_KEEP_DAILY=30
@@ -80,7 +80,7 @@ Két dolog, amit érdemes tudni:
 - A `$USER` a fájlban **nem** helyettesítődik be automatikusan minden esetben,
   ezért írd be a valódi felhasználónevet, például `/Users/pepper/PepperBackup`.
   (Ellenőrzés: `echo $USER` a Terminálban.)
-- A **belső lemez az elsődleges hely, a GeriDrive a másodpéldány.** Ez
+- A **belső lemez az elsődleges hely, a „Geri háttér” a másodpéldány.** Ez
   szándékos: ha a külső lemez le van választva vagy épp nem csatolódott fel, a
   mentés akkor is elkészül, csak a másolat marad el, és ezt a napló és egy
   értesítés is jelzi. Fordítva egy leválasztott lemez az egész napi mentést
@@ -116,7 +116,7 @@ Mivel a gép 0–24 megy, ébresztést nem kell ütemezni. Két dolgot viszont �
 - **Rendszerbeállítások → Energiatakarékosság**: „Automatikus alvás
   megakadályozása…” bekapcsolva, és „Indítás automatikusan áramkimaradás után”.
 
-Végül győződj meg róla, hogy a **GeriDrive automatikusan felcsatolódik**
+Végül győződj meg róla, hogy a **„Geri háttér” automatikusan felcsatolódik**
 újraindulás után (a Finderben látszik-e). Ha nem, a mentés attól még elkészül a
 belső lemezen, de a külső másolat elmarad.
 
@@ -345,4 +345,4 @@ A mentés **személyes adatokat tartalmaz** (dolgozói nevek, bérek, EFO adatok
 | `server version mismatch` | Régi `pg_dump`. `brew upgrade libpq`, és a konfigurációban a Homebrew-s útvonal legyen. |
 | Nem fut hajnalban | `launchctl list | grep pepperhouse` – ha nincs benne, töltsd be újra. Nézd meg az automatikus bejelentkezést és az energiabeállításokat. |
 | „a mentés gyanúsan kicsi” | A kapcsolat megszakadt futás közben. A régi mentések érintetlenek; futtasd újra kézzel. |
-| „a másodpéldány célja nincs csatolva” | A GeriDrive nincs felcsatolva. A mentés elkészült a belső lemezen; csatlakoztasd a lemezt, és a következő futás pótolja a másolatot. |
+| „a másodpéldány célja nincs csatolva” | A „Geri háttér” nincs felcsatolva. A mentés elkészült a belső lemezen; csatlakoztasd a lemezt, és a következő futás pótolja a másolatot. |

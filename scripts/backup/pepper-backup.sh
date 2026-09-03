@@ -114,13 +114,33 @@ fi
 #    létrehozná a mappát a belső lemezen: a mentés jónak látszana, valójában
 #    nem a külső HDD-re kerülne, ráadásul a lemez később nem tudna a saját
 #    nevén felcsatolódni.
+#
+#    A csatoltságot az eszközazonosítón keresztül nézzük (a csatolási pont más
+#    eszközön van, mint a szülő mappája), nem a `mount` kimenetének szövegén.
+#    Így a szóközös és ékezetes kötetnév (pl. "Geri háttér") sem tudja
+#    félrevinni: a macOS a fájlneveket NFD alakban tárolja, a szöveges
+#    összehasonlítás emiatt hamis nemleges választ adhatna.
+#    A `stat` kapcsolói platformonként mást jelentenek (a GNU `stat -f %d` nem
+#    eszközazonosítót ad, hanem szabad blokkszámot), ezért explicit a döntés.
+dev_id() {
+  if stat --version >/dev/null 2>&1; then
+    stat -c %d "$1" 2>/dev/null   # GNU coreutils
+  else
+    stat -f %d "$1" 2>/dev/null   # BSD / macOS
+  fi
+}
+
 volume_mounted() {
   local dir="$1"
   case "$dir" in
     /Volumes/*)
       local rest="${dir#/Volumes/}"
       local vol="/Volumes/${rest%%/*}"
-      mount | grep -q " on ${vol} " || return 1
+      [[ -d "$vol" ]] || return 1
+      local vol_dev parent_dev
+      vol_dev="$(dev_id "$vol")"
+      parent_dev="$(dev_id /Volumes)"
+      [[ -n "$vol_dev" && -n "$parent_dev" && "$vol_dev" != "$parent_dev" ]] || return 1
       ;;
   esac
   return 0
