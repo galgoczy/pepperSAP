@@ -4,7 +4,7 @@ import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
 import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown, validateCardPayments, methodCardAdjustmentOf } from '../../lib/validations';
-import { buildClosureChecks, computeRegisterProtocolMarks } from '../../lib/registerChecks';
+import { buildClosureChecks, computeRegisterProtocolMarks, sortClosuresForDisplay } from '../../lib/registerChecks';
 import { useAuth } from '../../hooks/useAuth';
 import { useCumulativeChecks } from '../../hooks/useCumulativeChecks';
 import toast from 'react-hot-toast';
@@ -479,6 +479,7 @@ async function fetchCashRegisterData(startDate, endDate, unitId) {
   Object.values(registerData).forEach((reg) => {
     reg.totals.cardDiscrepancy = reg.totals.card - reg.totals.terminal_card;
     Object.assign(reg, closureSummary(reg.closures));
+    sortClosuresForDisplay(reg.days);
     computeRegisterProtocolMarks(reg.days || []);
     reg.totals.hufDiscrepancy = (reg.days || []).reduce((s, d) => s + (d.hufDiscrepancy || 0), 0);
     reg.totals.eurDiscrepancy = (reg.days || []).reduce((s, d) => s + (d.eurDiscrepancy || 0), 0);
@@ -1209,6 +1210,7 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
       if (reg.totals) {
         reg.totals.discrepancy = reg.totals.card - reg.totals.terminal_card;
       }
+      sortClosuresForDisplay(reg.days);
       computeRegisterProtocolMarks(reg.days || []);
     });
   });

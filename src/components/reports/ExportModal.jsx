@@ -8,7 +8,7 @@ import { supabase } from '../../lib/supabase';
 import { formatDate, formatCurrency } from '../../lib/utils';
 import { fetchHouseCashSeries, fetchCentralHouseCashSeries } from '../../lib/houseCashSeries';
 import { isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown } from '../../lib/validations';
-import { buildClosureChecks, computeRegisterProtocolMarks } from '../../lib/registerChecks';
+import { buildClosureChecks, computeRegisterProtocolMarks, sortClosuresForDisplay } from '../../lib/registerChecks';
 import { fetchCumulativeCheckSet } from '../../hooks/useCumulativeChecks';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppSettings } from '../../hooks/useAppSettings';
@@ -553,6 +553,7 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
   Object.values(registerData).forEach((reg) => {
     reg.totals.cardDiscrepancy = reg.totals.card - reg.totals.terminal_card;
     Object.assign(reg, exportClosureSummary(reg.closures));
+    sortClosuresForDisplay(reg.days);
     computeRegisterProtocolMarks(reg.days || []);
     reg.totals.hufDiscrepancy = (reg.days || []).reduce((s2, d) => s2 + (d.hufDiscrepancy || 0), 0);
   });
@@ -1568,7 +1569,8 @@ async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
       const registerLabel = reg.name ? `Pénztárgép: ${reg.ap_number} (${reg.name})` : `Pénztárgép: ${reg.ap_number}`;
       data.push({ ...blanks(), 'Dátum': registerLabel, _rowType: 'registerHeader' });
 
-      // Day rows
+      // Day rows – a same-day closures in Z-report order, as on screen.
+      sortClosuresForDisplay(reg.days);
       reg.days.forEach((day) => {
         data.push({
           'Zárás': day.closureSeq ?? '',

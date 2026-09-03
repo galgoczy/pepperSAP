@@ -67,6 +67,21 @@ export function buildClosureChecks(cr) {
   };
 }
 
+// Egy napon ugyanazon a gépen több zárás is lehet. A lekérdezés a beágyazott
+// zárásokat nem rendezetten adja vissza (a PostgREST nem garantál sorrendet a
+// beágyazott listán), ezért a megjelenítés előtt itt tesszük sorba: dátum, majd
+// a Z-jelentés zárás-sorszáma szerint. Ez az egyetlen olyan sorrend, ami a
+// göngyölt lánccal is egyezik.
+export function sortClosuresForDisplay(days) {
+  return (days || []).sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    const av = a.closureSeq ?? a.closureNumber ?? 0;
+    const bv = b.closureSeq ?? b.closureNumber ?? 0;
+    if (av !== bv) return av - bv;
+    return (a.closureNumber ?? 0) - (b.closureNumber ?? 0);
+  });
+}
+
 // Marks each closure (day row) of ONE register: whether a discrepancy exists and
 // whether the matching jegyzőkönyv is there. Sets day.protocolMark to 'ok'
 // (discrepancy, everything documented), 'missing' (something is not) or null (no
