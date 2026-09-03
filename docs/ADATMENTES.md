@@ -92,6 +92,12 @@ PEPPER_BACKUP_SECONDARY_DIR="/Volumes/Geri háttér/PepperBackup"
 PEPPER_KEEP_DAILY=30
 PEPPER_KEEP_MONTHLY=12
 
+# Telegram értesítés (opcionális). A tokent külön fájlba tesszük.
+PEPPER_TELEGRAM_TOKEN_FILE="$HOME/.pepper-telegram-token"
+PEPPER_TELEGRAM_CHAT_ID="5275561903"
+# never | weekly | always – ez csak a SIKERES futásra vonatkozik.
+PEPPER_TELEGRAM_ON_SUCCESS="weekly"
+
 # Apple Silicon Mac. Intel Macen: /usr/local/opt/libpq/bin/...
 PEPPER_PG_DUMP="/opt/homebrew/opt/libpq/bin/pg_dump"
 PEPPER_PG_RESTORE="/opt/homebrew/opt/libpq/bin/pg_restore"
@@ -115,6 +121,41 @@ Két további dolog, amit érdemes tudni:
   mentés akkor is elkészül, csak a másolat marad el, és ezt a napló és egy
   értesítés is jelzi. Fordítva egy leválasztott lemez az egész napi mentést
   elvinné.
+
+### Telegram értesítés
+
+```bash
+nano ~/.pepper-telegram-token    # egyetlen sor: a bot tokenje (123456789:AA...)
+chmod 600 ~/.pepper-telegram-token
+```
+
+**Mielőtt működne:** a Telegramban nyisd meg a botot és nyomj rá a `/start`-ra.
+Amíg ez nem történt meg, a Telegram nem engedi, hogy a bot elsőként írjon
+neked – a mentés attól még lefut, csak üzenet nem érkezik.
+
+Mikor küld üzenetet:
+
+| Esemény | Üzenet |
+| --- | --- |
+| Sikertelen mentés (bármi okból) | mindig |
+| A mentés kész, de a külső másolat kimaradt | mindig |
+| Sikeres, hibátlan mentés | a `PEPPER_TELEGRAM_ON_SUCCESS` szerint: `weekly` (alapértelmezés, hétfőnként), `always` vagy `never` |
+
+A napi „minden rendben” üzenetet pár hét után senki nem olvassa el, és pont a
+fontosat nyomná el – ezért alapból csak hétfőnként megy összefoglaló, hibáról
+viszont mindig. Az üzenetküldés soha nem befolyásolja a mentést: ha épp nincs
+hálózat, a mentés akkor is elkészül.
+
+Próba (a mentés futtatása nélkül):
+
+```bash
+curl -sS "https://api.telegram.org/bot$(cat ~/.pepper-telegram-token)/sendMessage" \
+  --data-urlencode "chat_id=5275561903" \
+  --data-urlencode "text=pepperSAP teszt üzenet"
+```
+
+Ha `"ok":true` a válasz, működik. Ha `"chat not found"` vagy „bot can't
+initiate conversation”, akkor a `/start` hiányzik.
 
 ### Időzítés (0–24 üzemelő gép)
 
@@ -434,5 +475,6 @@ kiterjesztésekről – ezek a Supabase-specifikus dolgok, helyben nem gond.
 | `server version mismatch` | Régi `pg_dump`. `brew upgrade libpq`, és a konfigurációban a Homebrew-s útvonal legyen. |
 | Nem fut hajnalban | `launchctl list | grep pepperhouse` – ha nincs benne, töltsd be újra. Nézd meg az automatikus bejelentkezést és az energiabeállításokat. |
 | „a mentés gyanúsan kicsi” | A kapcsolat megszakadt futás közben. A régi mentések érintetlenek; futtasd újra kézzel. |
+| Nem jön Telegram üzenet | Elküldted a `/start`-ot a botnak? A `PEPPER_TELEGRAM_CHAT_ID` és a token fájl stimmel? Próbáld a fenti `curl` paranccsal. |
 | `mkdir: /Users/valaki: Permission denied` | A konfigban más felhasználó neve maradt az útvonalban. Írd át `$HOME`-ra. |
 | „a másodpéldány célja nincs csatolva” | A „Geri háttér” nincs felcsatolva. A mentés elkészült a belső lemezen; csatlakoztasd a lemezt, és a következő futás pótolja a másolatot. |

@@ -49,6 +49,32 @@ fi
 if [[ -n "${PEPPER_DB_PASSWORD:-}" ]]; then
   export PGPASSWORD="$PEPPER_DB_PASSWORD"
 fi
+
+# --- Telegram értesítés (opcionális) -----------------------------------------
+# A bot tokenje jöhet fájlból (ajánlott) vagy közvetlenül a konfigból.
+TELEGRAM_TOKEN="${PEPPER_TELEGRAM_TOKEN:-}"
+if [[ -n "${PEPPER_TELEGRAM_TOKEN_FILE:-}" ]]; then
+  if [[ ! -f "$PEPPER_TELEGRAM_TOKEN_FILE" ]]; then
+    echo "HIBA: nem található a Telegram token fájl: $PEPPER_TELEGRAM_TOKEN_FILE" >&2
+    exit 1
+  fi
+  TELEGRAM_TOKEN="$(<"$PEPPER_TELEGRAM_TOKEN_FILE")"
+fi
+TELEGRAM_CHAT_ID="${PEPPER_TELEGRAM_CHAT_ID:-}"
+# never | weekly (hétfőnként) | always – a SIKERES futásra vonatkozik.
+# A hibáról és a kimaradt külső másolatról mindig megy üzenet.
+TELEGRAM_ON_SUCCESS="${PEPPER_TELEGRAM_ON_SUCCESS:-weekly}"
+
+# Az üzenetküldés soha nem dönti el a mentést: hálózati hiba esetén is csendben
+# továbbmegyünk (a mentés akkor is elkészült). A tokent nem naplózzuk.
+tg_send() {
+  [[ -n "$TELEGRAM_TOKEN" && -n "$TELEGRAM_CHAT_ID" ]] || return 0
+  curl -sS --max-time 15 -o /dev/null \
+    "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+    --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+    --data-urlencode "text=$1" >/dev/null 2>&1 || true
+}
+
 BACKUP_DIR="${PEPPER_BACKUP_DIR:-$HOME/PepperBackup}"
 SECONDARY_DIR="${PEPPER_BACKUP_SECONDARY_DIR:-}"
 KEEP_DAILY="${PEPPER_KEEP_DAILY:-30}"
@@ -73,6 +99,7 @@ if ! mkdir -p "$DAILY_DIR" "$MONTHLY_DIR" 2>/dev/null; then
   echo "      A PEPPER_BACKUP_DIR értéke: ${PEPPER_BACKUP_DIR:-(nincs beállítva)}" >&2
   echo "      A te home mappád: $HOME" >&2
   echo "      Tipp: a konfigban használd a \$HOME-ot, pl. PEPPER_BACKUP_DIR=\"\$HOME/PepperBackup\"" >&2
+  tg_send "❌ pepperSAP mentés: nem sikerült létrehozni a mentési mappát ($BACKUP_DIR)."
   exit 1
 fi
 
@@ -88,6 +115,11 @@ notify() {
 fail() {
   log "HIBA: $*"
   notify "SIKERTELEN mentés: $*"
+  tg_send "❌ pepperSAP mentés SIKERTELEN ($(date '+%Y-%m-%d %H:%M'))
+
+$*
+
+Napló: $LOG_FILE"
   exit 1
 }
 
@@ -191,12 +223,15 @@ volume_mounted() {
   return 0
 }
 
+SECONDARY_STATUS="nincs beállítva"
 if [[ -n "$SECONDARY_DIR" ]]; then
   if ! volume_mounted "$SECONDARY_DIR"; then
+    SECONDARY_STATUS="KIMARADT (a lemez nincs csatlakoztatva)"
     log "FIGYELEM: a másodpéldány célja nincs csatolva, kimarad: $SECONDARY_DIR"
     notify "A mentés kész, de a külső lemez nincs csatlakoztatva."
   elif mkdir -p "$SECONDARY_DIR" 2>/dev/null && cp "$TARGET" "$SECONDARY_DIR/" 2>>"$LOG_FILE"; then
     chmod 600 "$SECONDARY_DIR/$(basename "$TARGET")" 2>/dev/null || true
+    SECONDARY_STATUS="kész"
     log "Másodpéldány: $SECONDARY_DIR/$(basename "$TARGET")"
     # A másodpéldányt is forgatjuk, különben a külső lemez idővel megtelik.
     sec_old="$(ls -1t "$SECONDARY_DIR"/pepper-*.dump 2>/dev/null | tail -n +$((KEEP_DAILY + 1)) || true)"
@@ -204,6 +239,7 @@ if [[ -n "$SECONDARY_DIR" ]]; then
       echo "$sec_old" | while read -r f; do rm -f "$f"; log "Törölve (másodpéldány forgatás): $f"; done
     fi
   else
+    SECONDARY_STATUS="NEM KÉSZÜLT EL"
     log "FIGYELEM: a másodpéldány nem készült el ide: $SECONDARY_DIR"
     notify "A mentés kész, de a másodpéldány nem készült el."
   fi
@@ -227,3 +263,24 @@ prune "$MONTHLY_DIR" "$KEEP_MONTHLY"
 DAILY_COUNT="$(ls -1 "$DAILY_DIR"/pepper-*.dump 2>/dev/null | wc -l | tr -d ' ')"
 log "=== Mentés kész. Napi mentések száma: $DAILY_COUNT ==="
 notify "Napi mentés kész ($((SIZE / 1024 / 1024)) MB)."
+
+# Sikeres futásról alapból csak hetente megy üzenet: egy naponta érkező „minden
+# rendben” pár hét után olvasatlan marad, és pont a fontosat nyomná el. A külső
+# másolat kimaradásáról viszont mindig szólunk.
+summary="✅ pepperSAP mentés kész ($(date '+%Y-%m-%d %H:%M'))
+
+Méret: $((SIZE / 1024 / 1024)) MB · Táblák: $TABLES
+Külső másolat: $SECONDARY_STATUS
+Megőrzött napi mentések: $DAILY_COUNT"
+
+case "$TELEGRAM_ON_SUCCESS" in
+  always) tg_send "$summary" ;;
+  weekly) [[ "$(date +%u)" == "1" ]] && tg_send "$summary" ;;
+  *) ;;
+esac
+# A kimaradt külső másolat akkor is szóljon, ha épp nem küldenénk összefoglalót.
+if [[ "$SECONDARY_STATUS" != "kész" && "$SECONDARY_STATUS" != "nincs beállítva" ]]; then
+  if [[ "$TELEGRAM_ON_SUCCESS" == "never" ]] || { [[ "$TELEGRAM_ON_SUCCESS" == "weekly" ]] && [[ "$(date +%u)" != "1" ]]; }; then
+    tg_send "⚠️ pepperSAP mentés kész, de a külső másolat: $SECONDARY_STATUS ($(date '+%Y-%m-%d %H:%M'))"
+  fi
+fi
