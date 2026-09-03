@@ -96,6 +96,17 @@ log "=== Mentés indul ($NOW) ==="
 [[ -x "$PG_DUMP" ]] || fail "nem található a pg_dump itt: $PG_DUMP (brew install libpq)"
 [[ -x "$PG_RESTORE" ]] || fail "nem található a pg_restore itt: $PG_RESTORE"
 
+# Gyakori elgépelés: a Session poolerhez a felhasználónév "postgres.<projekt-ref>",
+# a sima "postgres" a KÖZVETLEN kapcsolaté. Poolerrel a szerver ilyenkor
+# "password authentication failed for user postgres" hibát ad, ami a jelszóra
+# tereli a gyanút, pedig a felhasználónév a hibás. Ezt előre megfogjuk.
+uri_user="${PEPPER_DB_URI#*://}"
+uri_user="${uri_user%%@*}"
+uri_user="${uri_user%%:*}"
+if [[ "$PEPPER_DB_URI" == *pooler.supabase.com* && "$uri_user" == "postgres" ]]; then
+  fail "a Session poolerhez a felhasználónév 'postgres.<projekt-ref>' (nálad: postgres.uqqcwfgmpegkdizkqbrd), nem a sima 'postgres'. Javítsd a PEPPER_DB_URI-t a konfigban."
+fi
+
 # 1) Mentés ideiglenes fájlba, hogy egy megszakadt futás soha ne írja felül a
 #    tegnapi jó mentést egy féllel.
 TMP_FILE="$(mktemp "$DAILY_DIR/.pepper-$STAMP.XXXXXX")"

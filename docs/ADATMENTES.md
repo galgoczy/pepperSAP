@@ -375,6 +375,7 @@ A mentés **személyes adatokat tartalmaz** (dolgozói nevek, bérek, EFO adatok
 | Tünet | Ok és megoldás |
 | --- | --- |
 | `could not translate host name` | IPv6-only direct connection egy IPv4 hálózaton. Válts a Session poolerre a Supabase Connect ablakában. |
+| `password authentication failed for user "postgres"` | A poolernél a felhasználónév `postgres.<projekt-ref>`, nem a sima `postgres` (az a közvetlen kapcsolaté). A hibaüzenet a jelszóra terel, pedig a felhasználónév a baj. A script ezt már előre jelzi. |
 | `password authentication failed` | Rossz vagy időközben lecserélt adatbázis jelszó. Frissítsd a `~/.pepper-db-password` fájlt. |
 | `unbound variable` a konfig egy sorára | A jelszóban `$` van, és dupla idézőjelben szerepel. Tedd külön fájlba, vagy használj egyszeres idézőjelet. |
 | `server version mismatch` | Régi `pg_dump`. `brew upgrade libpq`, és a konfigurációban a Homebrew-s útvonal legyen. |
