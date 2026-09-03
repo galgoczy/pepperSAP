@@ -20,10 +20,35 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
   echo "HIBA: hiányzik a konfiguráció: $CONFIG_FILE" >&2
   exit 1
 fi
+# A beolvasás `set -u` alatt történik: ha a konfigban idézőjelezetlen $ van (pl.
+# egy jelszóban), a shell "unbound variable" hibával azonnal kilép. Ez jobb, mint
+# csendben egy megcsonkított jelszóval próbálkozni – a hibaüzenet megnevezi a
+# fájlt és a sort. A megoldás: PEPPER_DB_PASSWORD_FILE, vagy egyszeres idézőjel.
 # shellcheck disable=SC1090
 source "$CONFIG_FILE"
 
 : "${PEPPER_DB_URI:?HIBA: a PEPPER_DB_URI nincs beállítva a konfigurációban}"
+
+# A jelszó háromféleképpen adható meg. Mindegyiknél a URI-ban a jelszó helye
+# üresen marad (…postgres.<ref>:@aws-0-…):
+#
+#   a) PEPPER_DB_PASSWORD_FILE – egy fájl, amiben CSAK a jelszó áll. Ez a
+#      legbiztosabb: a fájl tartalmát nem értelmezi a shell, tehát semmilyen
+#      idézőjelezési vagy URI-kódolási szabály nem vonatkozik rá.
+#   b) PEPPER_DB_PASSWORD – a jelszó a konfigban, EGYSZERES idézőjelben.
+#   c) a jelszó beleírva a PEPPER_DB_URI-be (ilyenkor URI-kódolni kell).
+if [[ -n "${PEPPER_DB_PASSWORD_FILE:-}" ]]; then
+  if [[ ! -f "$PEPPER_DB_PASSWORD_FILE" ]]; then
+    echo "HIBA: nem található a jelszófájl: $PEPPER_DB_PASSWORD_FILE" >&2
+    exit 1
+  fi
+  # A $(<fájl) forma levágja a záró sortörést, tehát a nano-val mentett fájl is jó.
+  PEPPER_DB_PASSWORD="$(<"$PEPPER_DB_PASSWORD_FILE")"
+fi
+
+if [[ -n "${PEPPER_DB_PASSWORD:-}" ]]; then
+  export PGPASSWORD="$PEPPER_DB_PASSWORD"
+fi
 BACKUP_DIR="${PEPPER_BACKUP_DIR:-$HOME/PepperBackup}"
 SECONDARY_DIR="${PEPPER_BACKUP_SECONDARY_DIR:-}"
 KEEP_DAILY="${PEPPER_KEEP_DAILY:-30}"

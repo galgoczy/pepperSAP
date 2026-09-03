@@ -42,6 +42,8 @@ chmod +x ~/Documents/github/pepperSAP/scripts/backup/pepper-backup.sh
 mkdir -p "/Volumes/Geri háttér/PepperBackup"
 
 # 4) Konfiguráció
+nano ~/.pepper-db-password     # egyetlen sor: maga a jelszó
+chmod 600 ~/.pepper-db-password
 nano ~/.pepper-backup.env      # tartalma lentebb
 chmod 600 ~/.pepper-backup.env
 
@@ -49,16 +51,36 @@ chmod 600 ~/.pepper-backup.env
 ~/Documents/github/pepperSAP/scripts/backup/pepper-backup.sh
 ```
 
+### A jelszó – a legegyszerűbb út
+
+A jelszót **külön fájlba** tesszük, nem a kapcsolati sztringbe. Így semmilyen
+idézőjelezési vagy kódolási szabályra nem kell figyelni: a fájlban egyetlen sor
+áll, maga a jelszó, ahogy van.
+
+```bash
+nano ~/.pepper-db-password     # egyetlen sor: maga a jelszó, idézőjel nélkül
+chmod 600 ~/.pepper-db-password
+```
+
+Miért így: ha a jelszó a kapcsolati sztringbe kerül, a benne lévő `@ : / ? # %`
+karaktereket URI-kódolni kellene (`@` → `%40`, `#` → `%23` és így tovább),
+különben a `pg_dump` rossz helyre próbál csatlakozni. Ha pedig a konfigban
+dupla idézőjelbe kerül és `$` van benne, a shell változónak nézi. A külön
+fájlnál ezek egyike sem játszik.
+
 ### A `~/.pepper-backup.env` tartalma
 
 Ezt másold be, és **csak a `PEPPER_DB_URI` sort** kell a sajátodra cserélni:
 
 ```bash
 # A Supabase kapcsolati sztringje. Honnan: Supabase → a projekt → Connect gomb
-# (jobb felül) → ORMs/PSQL fül → "Session pooler" sor. Másold ki egészben, és a
-# benne lévő [YOUR-PASSWORD] helyére írd be az adatbázis jelszavát.
-# Így néz ki (a régió és a jelszó a tiéd):
-PEPPER_DB_URI="postgresql://postgres.uqqcwfgmpegkdizkqbrd:IDE-A-JELSZO@aws-0-eu-central-1.pooler.supabase.com:5432/postgres"
+# (jobb felül) → ORMs/PSQL fül → "Session pooler" sor. Másold ki egészben, majd
+# a [YOUR-PASSWORD] részt TÖRÖLD KI – a jelszó a külön fájlból jön. A kettőspont
+# maradjon meg, tehát "...:<ref>:@aws-0-..." lesz belőle.
+PEPPER_DB_URI="postgresql://postgres.uqqcwfgmpegkdizkqbrd:@aws-0-eu-central-1.pooler.supabase.com:5432/postgres"
+
+# A jelszót tartalmazó fájl.
+PEPPER_DB_PASSWORD_FILE="/Users/pepper/.pepper-db-password"
 
 # A mentések helye a Mac mini belső lemezén.
 PEPPER_BACKUP_DIR="/Users/$USER/PepperBackup"
@@ -75,7 +97,13 @@ PEPPER_PG_DUMP="/opt/homebrew/opt/libpq/bin/pg_dump"
 PEPPER_PG_RESTORE="/opt/homebrew/opt/libpq/bin/pg_restore"
 ```
 
-Két dolog, amit érdemes tudni:
+Ha mégis inkább a konfigba írnád a jelszót, akkor **egyszeres** idézőjellel:
+`PEPPER_DB_PASSWORD='ide-a-jelszo'`. Egyszeres idézőjelben semmi nem
+helyettesítődik be. Dupla idézőjelnél egy `$` a jelszóban elrontaná; ilyenkor a
+script „unbound variable” hibával azonnal leáll, és megnevezi a fájlt és a sort
+– tehát nem fut le rossz jelszóval, de a hiba oka nem magától értetődő.
+
+Két további dolog, amit érdemes tudni:
 
 - A `$USER` a fájlban **nem** helyettesítődik be automatikusan minden esetben,
   ezért írd be a valódi felhasználónevet, például `/Users/pepper/PepperBackup`.
@@ -341,7 +369,8 @@ A mentés **személyes adatokat tartalmaz** (dolgozói nevek, bérek, EFO adatok
 | Tünet | Ok és megoldás |
 | --- | --- |
 | `could not translate host name` | IPv6-only direct connection egy IPv4 hálózaton. Válts a Session poolerre a Supabase Connect ablakában. |
-| `password authentication failed` | Rossz vagy időközben lecserélt adatbázis jelszó. Frissítsd a `~/.pepper-backup.env` fájlt. |
+| `password authentication failed` | Rossz vagy időközben lecserélt adatbázis jelszó. Frissítsd a `~/.pepper-db-password` fájlt. |
+| `unbound variable` a konfig egy sorára | A jelszóban `$` van, és dupla idézőjelben szerepel. Tedd külön fájlba, vagy használj egyszeres idézőjelet. |
 | `server version mismatch` | Régi `pg_dump`. `brew upgrade libpq`, és a konfigurációban a Homebrew-s útvonal legyen. |
 | Nem fut hajnalban | `launchctl list | grep pepperhouse` – ha nincs benne, töltsd be újra. Nézd meg az automatikus bejelentkezést és az energiabeállításokat. |
 | „a mentés gyanúsan kicsi” | A kapcsolat megszakadt futás közben. A régi mentések érintetlenek; futtasd újra kézzel. |
