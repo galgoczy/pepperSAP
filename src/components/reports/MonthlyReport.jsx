@@ -122,6 +122,10 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
           const result = await fetchCashRegisterAllUnitsDetailed(startDate, endDate);
           reportData = result.data;
           reportTotals = result.totals;
+        } else if (reportType === 'cash_register_all_accounting') {
+          const result = await fetchCashRegisterAccounting(startDate, endDate);
+          reportData = result.data;
+          reportTotals = result.totals;
         } else if (reportType === 'events_all') {
           const result = await fetchEventsAllUnits(startDate, endDate);
           reportData = result.data;
@@ -189,6 +193,9 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
   }
   if (reportType === 'cash_register_all_detailed') {
     return <CashRegisterAllUnitsDetailedReport data={data} totals={totals} />;
+  }
+  if (reportType === 'cash_register_all_accounting') {
+    return <CashRegisterAccountingReport data={data} totals={totals} startDate={startDate} endDate={endDate} />;
   }
   if (reportType === 'events_all') {
     return <EventsAllUnitsReport data={data} totals={totals} eventsList={eventsList} />;
@@ -964,6 +971,96 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
     terminal_card: data.reduce((sum, r) => sum + r.terminal_card, 0),
     eur: data.reduce((sum, r) => sum + (r.eur || 0), 0),
   };
+
+  return { data, totals };
+}
+
+// Könyvelési nézet: NEM egységre, hanem PÉNZTÁRGÉPRE bontva. Egy gép AP-száma
+// akkor is egyetlen sor, ha az időszakban több egységnél is dolgozott — a
+// zárás-sorszám és a göngyölt forgalom a gép saját, folyamatos számlálója,
+// tehát csak így áll össze értelmes sorrá. Az egység csak a sorrendezéshez
+// kell, oszlopként nem jelenik meg.
+async function fetchCashRegisterAccounting(startDate, endDate) {
+  const { data: revenues } = await supabase
+    .from('daily_revenue')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, software_revenue, guest_count, terminal_card_total, terminal_szep, closure_number, closure_sequence, cumulative_revenue, discrepancies, discrepancy_note, discrepancy_amount, cash_registers(id, ap_number, name))')
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  const byAp = {};
+  (revenues || []).forEach((row) => {
+    const unitName = row.units?.name || 'Ismeretlen';
+    const crRevenues = (row.cash_register_revenue || []).filter((cr) => !isBlankClosure(cr));
+
+    crRevenues.forEach((cr) => {
+      const apNumber = cr.cash_registers?.ap_number || 'ismeretlen';
+
+      if (!byAp[apNumber]) {
+        byAp[apNumber] = {
+          registerId: cr.cash_registers?.id || null,
+          ap_number: apNumber,
+          name: cr.cash_registers?.name || '',
+          // A sorrendezéshez: melyik egységnél bukkant fel először az időszakban.
+          firstUnitName: unitName,
+          firstDate: row.date,
+          unitNames: new Set([unitName]),
+          vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0,
+          cash: 0, card: 0, szep: 0, terminal_card: 0,
+          eur: 0, huf: 0,
+          closures: [],
+        };
+      }
+
+      const reg = byAp[apNumber];
+      reg.unitNames.add(unitName);
+      if (row.date < reg.firstDate) {
+        reg.firstDate = row.date;
+        reg.firstUnitName = unitName;
+      }
+      if (!reg.name && cr.cash_registers?.name) reg.name = cr.cash_registers.name;
+
+      reg.vat_0 += parseFloat(cr.vat_0_percent) || 0;
+      reg.vat_5 += parseFloat(cr.vat_5_percent) || 0;
+      reg.vat_18 += parseFloat(cr.vat_18_percent) || 0;
+      reg.vat_27 += parseFloat(cr.vat_27_percent) || 0;
+      reg.cash += parseFloat(cr.cash_payment) || 0;
+      reg.card += parseFloat(cr.card_payment) || 0;
+      reg.szep += parseFloat(cr.szep_card_payment) || 0;
+      reg.terminal_card += parseFloat(cr.terminal_card) || 0;
+      reg.eur += eurDiscrepancyOf(cr);
+      reg.huf += hufDiscrepancyOf(cr);
+
+      reg.closures.push({
+        date: row.date,
+        closure_number: cr.closure_number ?? 1,
+        sequence: cr.closure_sequence == null || cr.closure_sequence === '' ? null : Number(cr.closure_sequence),
+        cumulative: cr.cumulative_revenue == null || cr.cumulative_revenue === '' ? null : Number(cr.cumulative_revenue),
+      });
+    });
+  });
+
+  const data = Object.values(byAp)
+    .map((reg) => ({
+      ...reg,
+      unitNames: Array.from(reg.unitNames).sort((a, b) => a.localeCompare(b)),
+      // Időszaki forgalom: az ÁFA-kulcsok összege, borravaló nélkül.
+      total: reg.vat_0 + reg.vat_5 + reg.vat_18 + reg.vat_27,
+      ...closureSummary(reg.closures),
+    }))
+    // Egységek szerint sorrendben, azon belül AP-szám szerint.
+    .sort(
+      (a, b) =>
+        a.firstUnitName.localeCompare(b.firstUnitName) ||
+        (a.ap_number || '').localeCompare(b.ap_number || '')
+    );
+
+  const sum = (key) => data.reduce((s, r) => s + (r[key] || 0), 0);
+  const totals = {
+    vat_0: sum('vat_0'), vat_5: sum('vat_5'), vat_18: sum('vat_18'), vat_27: sum('vat_27'),
+    cash: sum('cash'), card: sum('card'), szep: sum('szep'),
+    terminal_card: sum('terminal_card'), total: sum('total'), eur: sum('eur'),
+  };
+  totals.discrepancy = totals.card - totals.terminal_card;
 
   return { data, totals };
 }
@@ -2290,6 +2387,173 @@ function DetailedColGroup() {
 }
 
 const TD = 'px-2 py-1 whitespace-nowrap';
+
+function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
+  const { isAdmin } = useAuth();
+  const { checks, available: checksAvailable, setChecked } = useCumulativeChecks(startDate, endDate);
+  const [savingCheck, setSavingCheck] = useState(null);
+
+  // Ugyanaz az ellenőrzés, mint az egyszerű nézetben: az ÁFA-kulcsok összegének
+  // ki kell adnia a KP + kártya + SZÉP összegét, a rögzített Ft elütést beszámítva.
+  const paymentGapOf = (r) => {
+    const check = validatePaymentBreakdown({
+      vatTotal: r.total,
+      cash: r.cash,
+      card: r.card,
+      szep: r.szep,
+      hufDiscrepancy: r.huf,
+    });
+    return { paid: check.paid, diff: check.difference, gap: check.applicable && !check.isValid, r };
+  };
+  const gapTitle = ({ paid, diff, r }) =>
+    `Az ÁFA-kulcsok szerinti forgalom (${denseAmount(r.total)} Ft, borravaló nélkül) nem egyezik ` +
+    `a fizetési módok összegével: KP ${denseAmount(r.cash)} + kártya ${denseAmount(r.card)}` +
+    `${(r.szep || 0) !== 0 ? ` + SZÉP ${denseAmount(r.szep)}` : ''} = ${denseAmount(paid)} Ft. ` +
+    `Eltérés: ${diff > 0 ? '+' : ''}${denseAmount(diff)} Ft.` +
+    `${(r.huf || 0) !== 0 ? ` Rögzített Ft elütés: ${denseAmount(r.huf)} Ft – nem fedi az eltérést.` : ' Nincs rögzített Ft elütés.'}`;
+
+  const toggleCheck = async (reg, checked) => {
+    if (!reg.registerId) return;
+    setSavingCheck(reg.registerId);
+    try {
+      await setChecked(reg.registerId, checked);
+    } catch (error) {
+      console.error('Error saving cumulative check:', error);
+      toast.error('A pipát nem sikerült elmenteni.');
+    } finally {
+      setSavingCheck(null);
+    }
+  };
+
+  const TH = `${STICKY_TH_DENSE} text-right whitespace-nowrap`;
+  const num = `${TD} text-right`;
+
+  return (
+    <Card title="Pénztárgép forgalom - összes egység (könyvelés)">
+      <p className="text-xs text-gray-500 mb-2">
+        Pénztárgépenként összesítve, AP-szám szerint. Ha egy gép az időszakban több egységnél is
+        dolgozott, itt <span className="font-semibold">egyetlen sorban</span> szerepel — a
+        zárás-sorszám és a göngyölt forgalom a gép saját, folyamatos számlálója. A sorrend az
+        egységeket követi, de az egység nem jelenik meg oszlopként (a gép neve fölé állva látszik,
+        hol dolgozott).
+        {' '}Az összegek forintban (az EUR elütés kivételével).
+        {' '}Az <span className="font-semibold">Időszaki</span> piros, ha az ÁFA-kulcsok összege nem
+        egyezik a KP + kártya + SZÉP összegével.
+        {' '}A <span className="font-semibold">göngyölt</span> mellett pipálható, hogy ellenőrizve van.
+        {!checksAvailable && (
+          <span className="text-orange-600">
+            {' '}(A göngyölt pipához futtasd a 20260902_register_cumulative_checks migrációt.)
+          </span>
+        )}
+      </p>
+      <WideTable>
+        <table className="min-w-full divide-y divide-gray-200 text-[11px] tabular-nums">
+          <thead>
+            <tr>
+              <th className={`${STICKY_TH_DENSE} left-0 z-30 text-left whitespace-nowrap`}>Pénztárgép</th>
+              <th className={TH}>Első z.</th>
+              <th className={TH}>Utolsó z.</th>
+              <th className={TH}>0%</th>
+              <th className={TH}>5%</th>
+              <th className={TH}>18%</th>
+              <th className={TH}>27%</th>
+              <th className={TH}>KP</th>
+              <th className={TH}>Kártya</th>
+              <th className={TH}>Terminál</th>
+              <th className={TH}>Időszaki</th>
+              <th className={TH}>Eltérés</th>
+              <th className={TH}>Göngyölt</th>
+              <th className={TH}>EUR elütés</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {data.map((reg, idx) => {
+              const discrepancy = reg.card - (reg.terminal_card || 0);
+              const pay = paymentGapOf(reg);
+              const checked = !!(reg.registerId && checks[reg.registerId]);
+              const canTick = checksAvailable && !!reg.registerId && reg.lastCumulative != null;
+              return (
+                <tr key={`acc-${idx}-${reg.ap_number}`} className="hover:bg-gray-50">
+                  <td
+                    className={`sticky left-0 z-10 bg-white ${TD} font-medium text-gray-700 cursor-help`}
+                    title={`Egység(ek) az időszakban: ${reg.unitNames.join(', ')}`}
+                  >
+                    {reg.ap_number} {reg.name && <span className="font-normal text-gray-500">({reg.name})</span>}
+                    {reg.unitNames.length > 1 && (
+                      <span className="ml-1 text-[10px] text-blue-700">· {reg.unitNames.length} egység</span>
+                    )}
+                  </td>
+                  <td className={num}>{reg.firstSequence ?? '-'}</td>
+                  <td className={num}>{reg.lastSequence ?? '-'}</td>
+                  <td className={num}>{denseAmount(reg.vat_0)}</td>
+                  <td className={num}>{denseAmount(reg.vat_5)}</td>
+                  <td className={num}>{denseAmount(reg.vat_18)}</td>
+                  <td className={num}>{denseAmount(reg.vat_27)}</td>
+                  <td className={num}>{denseAmount(reg.cash)}</td>
+                  <td className={num}>{denseAmount(reg.card)}</td>
+                  <td className={num}>{denseAmount(reg.terminal_card)}</td>
+                  <td
+                    className={`${num} font-medium ${pay.gap ? 'text-red-600 bg-red-50 cursor-help' : ''}`}
+                    title={pay.gap ? gapTitle(pay) : undefined}
+                  >
+                    {denseAmount(reg.total)}
+                  </td>
+                  <td className={`${num} ${discrepancy !== 0 ? 'text-orange-600 font-medium' : ''}`}>
+                    {denseAmount(discrepancy)}
+                  </td>
+                  <td className={`${num} ${checked ? 'text-green-700 font-medium' : ''}`}>
+                    <span className="inline-flex items-center justify-end gap-1.5">
+                      <span>{reg.lastCumulative == null ? '-' : denseAmount(reg.lastCumulative)}</span>
+                      {canTick && (
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5 accent-green-600 cursor-pointer disabled:cursor-not-allowed"
+                          checked={checked}
+                          disabled={!isAdmin || savingCheck === reg.registerId}
+                          onChange={(e) => toggleCheck(reg, e.target.checked)}
+                          title={
+                            checked
+                              ? `Ellenőrizve${checks[reg.registerId]?.checkedAt ? ` (${formatDate(checks[reg.registerId].checkedAt)})` : ''}`
+                              : 'Göngyölt forgalom ellenőrizve – pipáld be, ha rendben van'
+                          }
+                        />
+                      )}
+                    </span>
+                  </td>
+                  <td className={`${num} ${(reg.eur || 0) !== 0 ? 'text-orange-600 font-medium' : 'text-gray-400'}`}>
+                    {eurCell(reg.eur)}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="bg-pepper-red bg-opacity-10 font-bold">
+              <td className={`sticky left-0 z-10 bg-red-50 ${TD}`}>Mindösszesen</td>
+              <td className={TD} colSpan={2}></td>
+              <td className={num}>{denseAmount(totals.vat_0)}</td>
+              <td className={num}>{denseAmount(totals.vat_5)}</td>
+              <td className={num}>{denseAmount(totals.vat_18)}</td>
+              <td className={num}>{denseAmount(totals.vat_27)}</td>
+              <td className={num}>{denseAmount(totals.cash)}</td>
+              <td className={num}>{denseAmount(totals.card)}</td>
+              {/* A terminál szerinti bankkártya összesen a jelentés fő száma. */}
+              <td className={`${num} bg-yellow-200 text-gray-900`} title="Terminál szerinti bankkártya összesen (időszak)">
+                {denseAmount(totals.terminal_card)}
+              </td>
+              <td className={num}>{denseAmount(totals.total)}</td>
+              <td className={`${num} ${totals.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
+                {denseAmount(totals.discrepancy)}
+              </td>
+              <td className={TD}></td>
+              <td className={`${num} ${(totals.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
+                {eurCell(totals.eur)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </WideTable>
+    </Card>
+  );
+}
 
 function CashRegisterAllUnitsDetailedReport({ data, totals }) {
   const navigate = useNavigate();

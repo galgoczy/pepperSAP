@@ -37,6 +37,7 @@ const adminAggregateReportTypes = [
   { value: 'cash_revenue_all', label: 'Készpénz bevételek - összes egység' },
   { value: 'cash_register_all_simple', label: 'Pénztárgép forgalom - összes egység (egyszerű)' },
   { value: 'cash_register_all_detailed', label: 'Pénztárgép forgalom - összes egység (részletes)' },
+  { value: 'cash_register_all_accounting', label: 'Pénztárgép forgalom - könyvelés' },
   { value: 'house_cash', label: 'Házipénztár - összes egység' },
   { value: 'events_all', label: 'Rendezvény összesítő - összes egység' },
 ];
@@ -149,6 +150,7 @@ export default function ReportsPage() {
       return [
         { value: 'cash_register_all_simple', label: 'Pénztárgép forgalom - összes egység (egyszerű)' },
         { value: 'cash_register_all_detailed', label: 'Pénztárgép forgalom - összes egység (részletes)' },
+        { value: 'cash_register_all_accounting', label: 'Pénztárgép forgalom - könyvelés' },
         { value: 'house_cash', label: 'Házipénztár - összes egység (tartalék nélkül)' },
       ];
     }

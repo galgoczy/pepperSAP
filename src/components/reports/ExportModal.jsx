@@ -24,6 +24,7 @@ const reportTypeLabels = {
   cash_revenue_all: 'Készpénz bevételek - összes egység',
   cash_register_all_simple: 'Pénztárgép forgalom - összes egység (egyszerű)',
   cash_register_all_detailed: 'Pénztárgép forgalom - összes egység (részletes)',
+  cash_register_all_accounting: 'Pénztárgép forgalom - könyvelés',
   events_all: 'Rendezvény összesítő - összes egység',
   monthly_table: 'Havi tábla (költség-bevétel)',
   house_cash: 'Házipénztár',
@@ -152,6 +153,11 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
         data = result.data;
         headers = result.headers;
         filename = `penztargep_osszes_reszletes_${startDate}_${endDate}`;
+      } else if (reportType === 'cash_register_all_accounting') {
+        const result = await fetchCashRegisterAccountingExport(startDate, endDate);
+        data = result.data;
+        headers = result.headers;
+        filename = `penztargep_konyveles_${startDate}_${endDate}`;
       } else if (reportType === 'events_all') {
         const result = await fetchEventsAllUnitsExport(startDate, endDate);
         data = result.data;
@@ -1330,6 +1336,107 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
   return { data, headers };
 }
 
+// Könyvelési nézet exportja: pénztárgépenként (AP-szám), az egységeket
+// összefésülve. A képernyős oszlopsorrendet követi, plusz az ott csak
+// színnel/tooltippel jelölt két információ külön oszlopként.
+async function fetchCashRegisterAccountingExport(startDate, endDate) {
+  const { data: revenues } = await supabase
+    .from('daily_revenue')
+    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, software_revenue, guest_count, terminal_card_total, terminal_szep, closure_number, closure_sequence, cumulative_revenue, discrepancies, discrepancy_note, discrepancy_amount, cash_registers(id, ap_number, name))')
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  const checkedRegisters = await fetchCumulativeCheckSet(startDate, endDate);
+
+  const byAp = {};
+  (revenues || []).forEach((row) => {
+    const unitName = row.units?.name || 'Ismeretlen';
+    const crRevenues = (row.cash_register_revenue || []).filter((cr) => !isBlankClosure(cr));
+
+    crRevenues.forEach((cr) => {
+      const apNumber = cr.cash_registers?.ap_number || 'ismeretlen';
+      if (!byAp[apNumber]) {
+        byAp[apNumber] = {
+          registerId: cr.cash_registers?.id || null,
+          ap_number: apNumber,
+          name: cr.cash_registers?.name || '',
+          firstUnitName: unitName,
+          firstDate: row.date,
+          vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0,
+          cash: 0, card: 0, szep: 0, terminal_card: 0,
+          eur: 0, huf: 0,
+          closures: [],
+        };
+      }
+      const reg = byAp[apNumber];
+      if (row.date < reg.firstDate) {
+        reg.firstDate = row.date;
+        reg.firstUnitName = unitName;
+      }
+      if (!reg.name && cr.cash_registers?.name) reg.name = cr.cash_registers.name;
+
+      reg.vat_0 += parseFloat(cr.vat_0_percent) || 0;
+      reg.vat_5 += parseFloat(cr.vat_5_percent) || 0;
+      reg.vat_18 += parseFloat(cr.vat_18_percent) || 0;
+      reg.vat_27 += parseFloat(cr.vat_27_percent) || 0;
+      reg.cash += parseFloat(cr.cash_payment) || 0;
+      reg.card += parseFloat(cr.card_payment) || 0;
+      reg.szep += parseFloat(cr.szep_card_payment) || 0;
+      reg.terminal_card += parseFloat(cr.terminal_card) || 0;
+      reg.eur += exportEurDiscrepancy(cr);
+      reg.huf += hufDiscrepancyOf(cr);
+      reg.closures.push({
+        date: row.date,
+        closure_number: cr.closure_number ?? 1,
+        sequence: cr.closure_sequence == null || cr.closure_sequence === '' ? null : Number(cr.closure_sequence),
+        cumulative: cr.cumulative_revenue == null || cr.cumulative_revenue === '' ? null : Number(cr.cumulative_revenue),
+      });
+    });
+  });
+
+  const headers = [
+    'Pénztárgép', 'Első zárás', 'Utolsó zárás',
+    '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA',
+    'Készpénz', 'Kártya', 'Terminál', 'Időszaki', 'Időszaki eltérés', 'Eltérés',
+    'Göngyölt forgalom', 'Göngyölt ellenőrizve', 'EUR elütés',
+  ];
+
+  const data = Object.values(byAp)
+    .sort(
+      (a, b) =>
+        a.firstUnitName.localeCompare(b.firstUnitName) ||
+        (a.ap_number || '').localeCompare(b.ap_number || '')
+    )
+    .map((reg) => {
+      const summary = exportClosureSummary(reg.closures);
+      const total = reg.vat_0 + reg.vat_5 + reg.vat_18 + reg.vat_27;
+      const check = validatePaymentBreakdown({
+        vatTotal: total, cash: reg.cash, card: reg.card, szep: reg.szep, hufDiscrepancy: reg.huf,
+      });
+      const paymentGap = check.applicable && !check.isValid;
+      return {
+        'Pénztárgép': `${reg.ap_number}${reg.name ? ` (${reg.name})` : ''}`,
+        'Első zárás': summary.firstSequence ?? '',
+        'Utolsó zárás': summary.lastSequence ?? '',
+        '0% ÁFA': reg.vat_0,
+        '5% ÁFA': reg.vat_5,
+        '18% ÁFA': reg.vat_18,
+        '27% ÁFA': reg.vat_27,
+        'Készpénz': reg.cash,
+        'Kártya': reg.card,
+        'Terminál': reg.terminal_card,
+        'Időszaki': total,
+        'Időszaki eltérés': paymentGap ? check.difference : '',
+        'Eltérés': reg.card - reg.terminal_card,
+        'Göngyölt forgalom': summary.lastCumulative ?? '',
+        'Göngyölt ellenőrizve': reg.registerId && checkedRegisters.has(reg.registerId) ? 'igen' : '',
+        'EUR elütés': reg.eur,
+      };
+    });
+
+  return { data, headers };
+}
+
 async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
@@ -1894,6 +2001,10 @@ async function fetchEventsAllUnitsExport(startDate, endDate) {
 const NON_SUMMABLE_HEADERS = new Set(['Zárás', 'Első zárás', 'Utolsó zárás', 'Göngyölt forgalom', 'Göngyölt ellenőrizve', 'Időszaki eltérés', 'Jkv.', 'Utolsó göngyölt']);
 
 function calculateTotalsRow(data, headers) {
+  // Az "Összesen" felirat az első olyan azonosító oszlopba kerül, ami létezik –
+  // így a pénztárgépenkénti (könyvelési) exportban sem marad címke nélkül a sor,
+  // és nem is kerül két helyre ott, ahol Egység és Pénztárgép is van.
+  const labelKey = ['Dátum', 'Egység', 'Pénztárgép'].find((k) => headers.includes(k));
   const totalsRow = {};
   headers.forEach((key) => {
     const firstRow = data[0];
@@ -1901,7 +2012,7 @@ function calculateTotalsRow(data, headers) {
       totalsRow[key] = '';
     } else if (firstRow && typeof firstRow[key] === 'number') {
       totalsRow[key] = data.reduce((sum, row) => sum + (row[key] || 0), 0);
-    } else if (key === 'Dátum' || key === 'Egység') {
+    } else if (key === labelKey) {
       totalsRow[key] = 'Összesen';
     } else {
       totalsRow[key] = '';
