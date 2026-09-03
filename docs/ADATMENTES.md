@@ -258,7 +258,7 @@ nano ~/Library/LaunchAgents/com.pepperhouse.sap-backup.plist
 ```
 
 A fájlban a három `/PATH/TO` helyére írd a valódi útvonalat, például
-`/Users/pepper/pepper-backup.sh` és `/Users/pepper/PepperBackup/...`.
+például `/Users/<felhasznalonev>/pepper-backup.sh`. A pontos értéket az `echo $HOME` adja meg — a plist nem érti a `$HOME`-ot, ide teljes útvonal kell.
 
 Betöltés:
 
