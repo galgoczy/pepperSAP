@@ -1354,7 +1354,11 @@ async function fetchCashRegisterAccountingExport(startDate, endDate) {
     const crRevenues = (row.cash_register_revenue || []).filter((cr) => !isBlankClosure(cr));
 
     crRevenues.forEach((cr) => {
-      const apNumber = cr.cash_registers?.ap_number || 'ismeretlen';
+      // A csoportosítás kulcsa az AP-szám (az azonosítja a fizikai gépet), NEM a
+      // név: két egységben lévő, azonos nevű kassza két külön AP, tehát két sor.
+      // AP-szám hiányában a gép saját azonosítója a kulcs, különben minden ilyen
+      // rekord egyetlen sorba olvadna össze.
+      const apNumber = cr.cash_registers?.ap_number || (cr.cash_registers?.id ? `#${cr.cash_registers.id}` : 'ismeretlen');
       if (!byAp[apNumber]) {
         byAp[apNumber] = {
           registerId: cr.cash_registers?.id || null,
