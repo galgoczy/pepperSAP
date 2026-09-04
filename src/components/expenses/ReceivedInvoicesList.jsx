@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Receipt, ChevronUp, ChevronDown } from 'lucide-react';
+import { Receipt, ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import {
@@ -14,7 +14,7 @@ import {
   LoadingSpinner,
   Select,
 } from '../common';
-import { formatCurrency, formatDate, PAYMENT_METHODS } from '../../lib/utils';
+import { formatCurrency, formatDate, PAYMENT_METHODS, matchesSearch } from '../../lib/utils';
 import toast from 'react-hot-toast';
 
 // The three admin-side states an official invoice can be marked with. These are
@@ -65,6 +65,8 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
   const [savingId, setSavingId] = useState(null);
   const [stateFilter, setStateFilter] = useState('');
   const [methodFilter, setMethodFilter] = useState('');
+  // Gépelés közben szűrő kereső: számla neve, tétel, számlaszám.
+  const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState('date');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -176,6 +178,9 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
     } else if (methodFilter && item.payment_method !== methodFilter) {
       return false;
     }
+    if (!matchesSearch(search, item.supplier_name, item.item_description, item.invoice_number)) {
+      return false;
+    }
     if (stateFilter === 'not_received') return !item.received;
     if (stateFilter === 'not_scanned') return !item.scanned;
     if (stateFilter === 'not_paid') return item.payment_method === 'transfer' && !item.paid;
@@ -271,6 +276,29 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
           className="w-52"
         />
 
+        {/* Kereső: ahogy gépel, úgy szűkül a lista (név, tétel, számlaszám). */}
+        <div className="relative w-full sm:w-64">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Keresés név szerint…"
+            aria-label="Keresés a számlák között"
+            className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-8 text-sm focus:border-transparent focus:ring-2 focus:ring-pepper-red"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              title="Keresés törlése"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:text-gray-700"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
         {/* Legend */}
         <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
           {STATES.map((s) => (
@@ -291,7 +319,11 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
         <EmptyState
           icon={Receipt}
           title="Nincsenek számlák"
-          description="A megadott időszakban és szűrésre nem található számla"
+          description={
+            search.trim()
+              ? `Nincs találat erre: „${search.trim()}” – próbálj rövidebb szót, vagy bővítsd az időszakot`
+              : 'A megadott időszakban és szűrésre nem található számla'
+          }
         />
       ) : (
         <Table>

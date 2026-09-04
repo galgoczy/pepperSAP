@@ -147,3 +147,19 @@ export const debounce = (func, wait) => {
 // Share of a withdrawn bankkártya (terminal) tip that is booked as a reserve
 // (tartalék) cost at day end.
 export const TERMINAL_TIP_WITHDRAW_RATE = 0.6;
+
+// Ékezet- és kisbetű-független szöveges keresés a listákhoz ("metro" megtalálja
+// a „METRO Kft.”-t, "matrai" a „Mátrai”-t). Több szó esetén mindegyiknek
+// szerepelnie kell valamelyik mezőben.
+export const normalizeForSearch = (value) =>
+  String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+
+export const matchesSearch = (query, ...fields) => {
+  const terms = normalizeForSearch(query).trim().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = fields.map(normalizeForSearch).join(' ');
+  return terms.every((t) => haystack.includes(t));
+};
