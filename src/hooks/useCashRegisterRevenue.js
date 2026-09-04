@@ -287,6 +287,8 @@ export function useAllCashRegisterRevenue(dailyRevenueId) {
 // `date` (across all days and units — a register's Z-counter is continuous even
 // if it moves units). Used to validate the closure sequence number and the
 // cumulative ("göngyölt") revenue of the first closure of the day.
+const BASELINE_DAYS_LIMIT = 120;
+
 export function useRegisterClosureBaselines(registerIds, date) {
   const idsKey = (registerIds || []).slice().sort().join(',');
   const [baselines, setBaselines] = useState({});
@@ -299,19 +301,27 @@ export function useRegisterClosureBaselines(registerIds, date) {
     }
 
     try {
+      // A napok felől kérdezünk, hogy a dátum szerinti rendezés a TALÁLATI
+      // LISTÁRA vonatkozzon. (Korábban a zárások felől jött a lista, és a
+      // kapcsolt tábla dátuma szerinti rendezés ott nem a listát rendezte:
+      // valójában csak a napon belüli zárásszám szerint volt sorrend, így egy
+      // régi többzárásos nap 2. zárása lett az „előző zárás”, és a rendszer egy
+      // jóval alacsonyabb sorszámra hivatkozott.)
+      // Az utolsó BASELINE_DAYS_LIMIT olyan nap elég, amelyen e gépek
+      // valamelyike zárt; egy ennél régebben zárt gépnél nincs viszonyítási
+      // alap, és az ellenőrzés kimarad (nem jelez hamisan).
       const { data, error } = await supabase
-        .from('cash_register_revenue')
+        .from('daily_revenue')
         .select(
-          'cash_register_id, closure_number, closure_sequence, cumulative_revenue, daily_revenue!inner(date)'
+          'date, cash_register_revenue!inner(cash_register_id, closure_number, closure_sequence, cumulative_revenue)'
         )
-        .in('cash_register_id', ids)
-        .lt('daily_revenue.date', date)
-        .order('date', { referencedTable: 'daily_revenue', ascending: false })
-        .order('closure_number', { ascending: false });
+        .in('cash_register_revenue.cash_register_id', ids)
+        .lt('date', date)
+        .order('date', { ascending: false })
+        .limit(BASELINE_DAYS_LIMIT);
 
       if (error) throw error;
 
-      // First row per register is the most recent closure before `date`.
       // Normalize to number-or-null so that a missing sequence / cumulative on
       // the previous closure (common for older imported data) is treated as
       // "no baseline" and skips the check rather than flagging a false error.
@@ -319,14 +329,33 @@ export function useRegisterClosureBaselines(registerIds, date) {
         v === null || v === undefined || v === '' || Number.isNaN(Number(v))
           ? null
           : Number(v);
+
+      // Zárások időrendben visszafelé: dátum csökkenő, azon belül a napon belüli
+      // zárásszám csökkenő. Az első olyan zárás gépenként, amin van sorszám vagy
+      // göngyölt, az előző zárás. (Egy csupa üres sor – „nem volt zárás” – nem
+      // viszonyítási alap, azt átugorjuk.)
+      const closures = [];
+      for (const day of data || []) {
+        for (const cr of day.cash_register_revenue || []) {
+          closures.push({
+            registerId: cr.cash_register_id,
+            date: day.date,
+            closureNumber: Number(cr.closure_number) || 1,
+            sequence: toNumberOrNull(cr.closure_sequence),
+            cumulative: toNumberOrNull(cr.cumulative_revenue),
+          });
+        }
+      }
+      closures.sort((a, b) => {
+        if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+        return b.closureNumber - a.closureNumber;
+      });
+
       const map = {};
-      for (const row of data || []) {
-        if (map[row.cash_register_id]) continue;
-        map[row.cash_register_id] = {
-          sequence: toNumberOrNull(row.closure_sequence),
-          cumulative: toNumberOrNull(row.cumulative_revenue),
-          date: row.daily_revenue?.date,
-        };
+      for (const c of closures) {
+        if (map[c.registerId]) continue;
+        if (c.sequence == null && c.cumulative == null) continue;
+        map[c.registerId] = { sequence: c.sequence, cumulative: c.cumulative, date: c.date };
       }
       setBaselines(map);
     } catch (error) {
