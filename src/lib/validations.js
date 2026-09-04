@@ -1,5 +1,6 @@
 import {
   amountDiscrepancyHuf,
+  eurDiscrepancyAmount,
   methodAdjustments,
   listDiscrepancies,
   isMethodDiscrepancy,
@@ -72,26 +73,47 @@ export const validateSzepPayments = (cashRegisterSzep, terminalSzep) => {
 // A recorded forint elütés (jegyzőkönyv) explains the gap: the mis-keyed amount
 // sits in the register's turnover but not in the money that actually came in,
 // so a gap that equals the elütés total is in order.
-export const validatePaymentBreakdown = ({ vatTotal, cash, card, szep, hufDiscrepancy = 0 }) => {
+//
+// An EUR elütés explains the gap too, when the gap in forints is EXACTLY the
+// number recorded in EUR (an EUR amount keyed into the register as forints:
+// "50" EUR leaves a 50 Ft hole between the ÁFA buckets and KP + kártya). This
+// one is an exact match — only the rounding of a decimal EUR amount is allowed,
+// not the usual few-forint tolerance. Recorded together with a forint elütés,
+// the two together cover the gap.
+const EUR_EXACT_TOLERANCE = 0.5; // Ft – decimal rounding only
+
+export const validatePaymentBreakdown = ({
+  vatTotal, cash, card, szep, hufDiscrepancy = 0, eurDiscrepancy = 0,
+}) => {
   const paid = (cash || 0) + (card || 0) + (szep || 0);
   const difference = (vatTotal || 0) - paid;
+  const gap = Math.abs(difference);
   const elutes = Math.abs(hufDiscrepancy || 0);
-  const rawOk = Math.abs(difference) <= REGISTER_TOLERANCE;
+  const eur = Math.abs(eurDiscrepancy || 0);
+  const rawOk = gap <= REGISTER_TOLERANCE;
   // Sign-agnostic: the elütés amount is recorded as a positive figure whichever
   // side it inflated.
   const explainedByDiscrepancy =
-    !rawOk && elutes > 0 && Math.abs(Math.abs(difference) - elutes) <= REGISTER_TOLERANCE;
+    !rawOk && elutes > 0 && Math.abs(gap - elutes) <= REGISTER_TOLERANCE;
+  const explainedByEur =
+    !rawOk &&
+    !explainedByDiscrepancy &&
+    eur > 0 &&
+    (Math.abs(gap - eur) <= EUR_EXACT_TOLERANCE ||
+      (elutes > 0 && Math.abs(gap - (elutes + eur)) <= REGISTER_TOLERANCE));
 
   return {
     paid,
     difference,
     hufDiscrepancy: elutes,
+    eurDiscrepancy: eur,
     explainedByDiscrepancy,
+    explainedByEur,
     // Only checked once BOTH sides carry a value. A closure that is still being
     // filled in (turnover typed, payment methods not yet) must stay saveable —
     // losing a half-entered day would be worse than a late warning.
     applicable: (vatTotal || 0) > 0 && paid > 0,
-    isValid: rawOk || explainedByDiscrepancy,
+    isValid: rawOk || explainedByDiscrepancy || explainedByEur,
   };
 };
 
@@ -99,6 +121,10 @@ export const validatePaymentBreakdown = ({ vatTotal, cash, card, szep, hufDiscre
 // inflates the register turnover. "Rossz fizetési mód" entries and EUR entries
 // are not part of it (they do not change the turnover).
 export const hufDiscrepancyOf = (cr) => amountDiscrepancyHuf(cr);
+
+// Total EUR elütés recorded on a closure (reported separately; also explains a
+// payment-breakdown gap of exactly that many forints).
+export const eurDiscrepancyOf = (cr) => eurDiscrepancyAmount(cr);
 
 // real card − register card implied by the closure's "rossz fizetési mód"
 // elütés — what validateCardPayments needs to see a card/terminal difference

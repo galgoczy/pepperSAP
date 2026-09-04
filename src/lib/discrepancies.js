@@ -64,6 +64,14 @@ export const amountDiscrepancyHuf = (crOrList) => {
   }, 0);
 };
 
+// Sum of the EUR elütés (always 'amount' kind). Reported in its own column, and
+// it explains an ÁFA-vs-fizetési-mód gap of exactly the same NUMBER of forints
+// (see validatePaymentBreakdown).
+export const eurDiscrepancyAmount = (crOrList) => {
+  const list = Array.isArray(crOrList) ? crOrList : listDiscrepancies(crOrList);
+  return list.reduce((sum, d) => ((d?.currency || 'HUF') === 'EUR' ? sum + num(d?.amount) : sum), 0);
+};
+
 // Real-vs-register corrections implied by the 'method' elütés, per payment
 // method (HUF only): real = register + adjustment. "Kártya KP helyett 5000":
 // keyed=card, actual=cash -> { card: -5000, cash: +5000 }.

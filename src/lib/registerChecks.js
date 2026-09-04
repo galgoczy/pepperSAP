@@ -15,6 +15,7 @@ import {
   validatePaymentBreakdown,
   hasDocumentedDiscrepancy,
   hufDiscrepancyOf,
+  eurDiscrepancyOf,
   methodCardAdjustmentOf,
 } from './validations';
 import { listDiscrepancies } from './discrepancies';
@@ -42,6 +43,7 @@ export function buildClosureChecks(cr) {
     card,
     szep,
     hufDiscrepancy: hufDiscrepancyOf(cr),
+    eurDiscrepancy: eurDiscrepancyOf(cr),
   });
 
   return {
@@ -58,10 +60,7 @@ export function buildClosureChecks(cr) {
     discrepancyCount: listDiscrepancies(cr).length,
     // Recorded elütés, for the reports' own "Elütés" column.
     hufDiscrepancy: hufDiscrepancyOf(cr),
-    eurDiscrepancy: listDiscrepancies(cr).reduce(
-      (sum, d) => sum + (d?.currency === 'EUR' ? n(d.amount) : 0),
-      0
-    ),
+    eurDiscrepancy: eurDiscrepancyOf(cr),
     cumulative: n(cr.cumulative_revenue),
     closureSeq: cr.closure_sequence ?? cr.closure_number ?? null,
   };

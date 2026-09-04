@@ -1161,6 +1161,7 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
         card: dayData.card,
         szep: dayData.szep,
         hufDiscrepancy: dayData.huf,
+        eurDiscrepancy: dayData.eur,
       });
       dayData.paid = breakdown.paid;
       dayData.paymentDiff = breakdown.difference;
@@ -2157,6 +2158,17 @@ function WideTable({ children, maxHeight = '70vh' }) {
 // EUR elütés cell: only shown when there actually was one in the period.
 const eurCell = (v) => (Math.abs(v || 0) < 0.005 ? '-' : formatCurrency(v, 'EUR'));
 
+// Tooltip tail for an unexplained payment-breakdown gap: which elütés are
+// recorded (Ft and/or EUR) and that they do not cover the gap. `row` carries
+// `huf` (Ft elütés) and `eur` (EUR elütés) as every report row does.
+const recordedElutesText = (row) => {
+  const parts = [];
+  if ((row?.huf || 0) !== 0) parts.push(`Ft elütés: ${denseAmount(row.huf)} Ft`);
+  if ((row?.eur || 0) !== 0) parts.push(`EUR elütés: ${formatCurrency(row.eur, 'EUR')}`);
+  if (parts.length === 0) return ' Nincs rögzített elütés.';
+  return ` Rögzített ${parts.join(', ')} – nem fedi az eltérést.`;
+};
+
 // Sticky column headers. The header can only stick to a scroll container, so the
 // table lives in a box that scrolls BOTH ways (a plain overflow-x-auto wrapper
 // makes `sticky top-0` a no-op — the wrapper never scrolls vertically). The
@@ -2186,6 +2198,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
       card: r.card,
       szep: r.szep,
       hufDiscrepancy: r.huf,
+      eurDiscrepancy: r.eur,
     });
     return { turnover, paid: check.paid, diff: check.difference, gap: check.applicable && !check.isValid, r };
   };
@@ -2194,7 +2207,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
     `a fizetési módok összegével: KP ${denseAmount(r.cash)} + kártya ${denseAmount(r.card)}` +
     `${(r.szep || 0) !== 0 ? ` + SZÉP ${denseAmount(r.szep)}` : ''} = ${denseAmount(paid)} Ft. ` +
     `Eltérés: ${diff > 0 ? '+' : ''}${denseAmount(diff)} Ft.` +
-    `${(r.huf || 0) !== 0 ? ` Rögzített Ft elütés: ${denseAmount(r.huf)} Ft – nem fedi az eltérést.` : ' Nincs rögzített Ft elütés.'}`;
+    recordedElutesText(r);
 
   const toggleCheck = async (reg, checked) => {
     if (!reg.registerId) return;
@@ -2410,6 +2423,7 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
       card: r.card,
       szep: r.szep,
       hufDiscrepancy: r.huf,
+      eurDiscrepancy: r.eur,
     });
     return { paid: check.paid, diff: check.difference, gap: check.applicable && !check.isValid, r };
   };
@@ -2418,7 +2432,7 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
     `a fizetési módok összegével: KP ${denseAmount(r.cash)} + kártya ${denseAmount(r.card)}` +
     `${(r.szep || 0) !== 0 ? ` + SZÉP ${denseAmount(r.szep)}` : ''} = ${denseAmount(paid)} Ft. ` +
     `Eltérés: ${diff > 0 ? '+' : ''}${denseAmount(diff)} Ft.` +
-    `${(r.huf || 0) !== 0 ? ` Rögzített Ft elütés: ${denseAmount(r.huf)} Ft – nem fedi az eltérést.` : ' Nincs rögzített Ft elütés.'}`;
+    recordedElutesText(r);
 
   const toggleCheck = async (reg, checked) => {
     if (!reg.registerId) return;
@@ -2703,7 +2717,7 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                             title={
                               day.paymentGap
                                 ? `A fizetési módok nem adják ki a forgalmat: eltérés ${formatCurrency(day.paymentDiff)}` +
-                                  (day.huf ? ` (rögzített Ft elütés: ${formatCurrency(day.huf)}, nem fedi az eltérést)` : '')
+                                  recordedElutesText(day)
                                 : undefined
                             }
                           >

@@ -18,7 +18,7 @@ import WagePaymentForm from '../components/expenses/WagePaymentForm';
 import PaymentEditModal from '../components/expenses/PaymentEditModal';
 import { getToday, formatCurrency, formatDate, formatDateWithWeekday, PAYMENT_METHODS, TERMINAL_TIP_WITHDRAW_RATE } from '../lib/utils';
 import { supabase } from '../lib/supabase';
-import { REGISTER_TOLERANCE, validatePaymentBreakdown, validateCardPayments, hasDocumentedDiscrepancy, hufDiscrepancyOf, methodCardAdjustmentOf } from '../lib/validations';
+import { REGISTER_TOLERANCE, validatePaymentBreakdown, validateCardPayments, hasDocumentedDiscrepancy, hufDiscrepancyOf, eurDiscrepancyOf, methodCardAdjustmentOf } from '../lib/validations';
 import { netCashDiscrepancy, isMethodDiscrepancy, describeDiscrepancy } from '../lib/discrepancies';
 import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote, ShieldAlert } from 'lucide-react';
 
@@ -1701,6 +1701,7 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
                 card: parseFloat(cr.card_payment) || 0,
                 szep: parseFloat(cr.szep_card_payment) || 0,
                 hufDiscrepancy: hufDiscrepancyOf(cr),
+                eurDiscrepancy: eurDiscrepancyOf(cr),
               });
               if (breakdown.applicable && !breakdown.isValid) {
                 const protocolData = {

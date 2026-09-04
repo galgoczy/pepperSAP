@@ -10,6 +10,7 @@ import {
   discrepancyKind,
   isMethodDiscrepancy,
   amountDiscrepancyHuf,
+  eurDiscrepancyAmount,
   methodAdjustments,
   describeDiscrepancy,
 } from '../../lib/discrepancies';
@@ -144,6 +145,7 @@ export default function CashRegisterSection({
   // "rossz fizetési mód" entries are summarised separately as per-method
   // corrections (real = register + adjustment).
   const totalHufDiscrepancy = amountDiscrepancyHuf(formData.discrepancies || []);
+  const totalEurDiscrepancy = eurDiscrepancyAmount(formData.discrepancies || []);
   const methodAdj = methodAdjustments(formData.discrepancies || []);
 
   // Generate discrepancy protocol PDF
@@ -322,8 +324,10 @@ export default function CashRegisterSection({
     cash: parseFloat(formData.cash_payment) || 0,
     card: parseFloat(formData.card_payment) || 0,
     szep: parseFloat(formData.szep_card_payment) || 0,
-    // A recorded forint elütés explains a gap of the same size.
+    // A recorded forint elütés explains a gap of the same size; an EUR elütés
+    // explains a gap of exactly that many forints.
     hufDiscrepancy: totalHufDiscrepancy,
+    eurDiscrepancy: totalEurDiscrepancy,
   });
   const paymentGap = paymentBreakdown.applicable && !paymentBreakdown.isValid;
   const paymentGapDocumented = hasDocumentedDiscrepancy(formData.discrepancies);
@@ -804,6 +808,12 @@ export default function CashRegisterSection({
                     </p>
                   </div>
                 </div>
+              </div>
+            )}
+            {paymentBreakdown.applicable && paymentBreakdown.explainedByEur && (
+              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                A fizetési módok és a forgalom eltérése {formatCurrency(Math.abs(paymentBreakdown.difference))} –
+                pontosan a rögzített EUR elütés számértéke ({formatCurrency(totalEurDiscrepancy, 'EUR')}), rendben.
               </div>
             )}
           </div>

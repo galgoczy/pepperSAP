@@ -1306,7 +1306,8 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
         const summary = exportClosureSummary(reg.closures);
         const turnover = reg.vat_0 + reg.vat_5 + reg.vat_18 + reg.vat_27;
         const check = validatePaymentBreakdown({
-          vatTotal: turnover, cash: reg.cash, card: reg.card, szep: reg.szep, hufDiscrepancy: reg.huf,
+          vatTotal: turnover, cash: reg.cash, card: reg.card, szep: reg.szep,
+          hufDiscrepancy: reg.huf, eurDiscrepancy: reg.eur,
         });
         const paid = check.paid;
         const paymentGap = check.applicable && !check.isValid;
@@ -1420,7 +1421,8 @@ async function fetchCashRegisterAccountingExport(startDate, endDate) {
       const summary = exportClosureSummary(reg.closures);
       const total = reg.vat_0 + reg.vat_5 + reg.vat_18 + reg.vat_27;
       const check = validatePaymentBreakdown({
-        vatTotal: total, cash: reg.cash, card: reg.card, szep: reg.szep, hufDiscrepancy: reg.huf,
+        vatTotal: total, cash: reg.cash, card: reg.card, szep: reg.szep,
+        hufDiscrepancy: reg.huf, eurDiscrepancy: reg.eur,
       });
       const paymentGap = check.applicable && !check.isValid;
       // Ugyanaz a címke, mint a képernyőn: zárójelben az egység; több egységnél

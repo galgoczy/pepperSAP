@@ -10,7 +10,7 @@ import CashRegisterSection from './CashRegisterSection';
 import ProtocolItemsSection from './ProtocolItemsSection';
 import { formatCurrency, formatDateWithWeekday } from '../../lib/utils';
 import { buildWhatsappDailySummary, whatsappShareUrl, unitSendsCashLine } from '../../lib/whatsappSummary';
-import { validatePaymentBreakdown, hasDocumentedDiscrepancy, hufDiscrepancyOf, isBlankClosure } from '../../lib/validations';
+import { validatePaymentBreakdown, hasDocumentedDiscrepancy, hufDiscrepancyOf, eurDiscrepancyOf, isBlankClosure } from '../../lib/validations';
 import { evaluateDayCandidate } from '../../lib/dayStatus';
 import toast from 'react-hot-toast';
 
@@ -288,6 +288,7 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
         card: parseFloat(d.card_payment) || 0,
         szep: parseFloat(d.szep_card_payment) || 0,
         hufDiscrepancy: hufDiscrepancyOf(d),
+        eurDiscrepancy: eurDiscrepancyOf(d),
       });
       if (!check.applicable || check.isValid) return null;
       return {
