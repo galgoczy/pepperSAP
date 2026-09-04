@@ -155,7 +155,7 @@ export const normalizeForSearch = (value) =>
   String(value ?? '')
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
+    .replace(/[\u0300-\u036f]/g, '');
 
 export const matchesSearch = (query, ...fields) => {
   const terms = normalizeForSearch(query).trim().split(/\s+/).filter(Boolean);
