@@ -1369,6 +1369,7 @@ async function fetchCashRegisterAccountingExport(startDate, endDate) {
           name: cr.cash_registers?.name || '',
           firstUnitName: unitName,
           firstDate: row.date,
+          unitNames: new Set([unitName]),
           vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0,
           cash: 0, card: 0, szep: 0, terminal_card: 0,
           eur: 0, huf: 0,
@@ -1376,6 +1377,7 @@ async function fetchCashRegisterAccountingExport(startDate, endDate) {
         };
       }
       const reg = byAp[apNumber];
+      reg.unitNames.add(unitName);
       if (row.date < reg.firstDate) {
         reg.firstDate = row.date;
         reg.firstUnitName = unitName;
@@ -1421,8 +1423,15 @@ async function fetchCashRegisterAccountingExport(startDate, endDate) {
         vatTotal: total, cash: reg.cash, card: reg.card, szep: reg.szep, hufDiscrepancy: reg.huf,
       });
       const paymentGap = check.applicable && !check.isValid;
+      // Ugyanaz a címke, mint a képernyőn: zárójelben az egység; több egységnél
+      // járt gépnél a gép neve és az egységek felsorolása.
+      const units = Array.from(reg.unitNames).sort((a, b) => a.localeCompare(b));
+      const label =
+        units.length === 1
+          ? `${reg.ap_number} (${units[0]})`
+          : `${reg.ap_number}${reg.name ? ` (${reg.name})` : ''} · ${units.length} egység: ${units.join(', ')}`;
       return {
-        'Pénztárgép': `${reg.ap_number}${reg.name ? ` (${reg.name})` : ''}`,
+        'Pénztárgép': label,
         'Első zárás': summary.firstSequence ?? '',
         'Utolsó zárás': summary.lastSequence ?? '',
         '0% ÁFA': reg.vat_0,

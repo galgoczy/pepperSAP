@@ -2469,9 +2469,9 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
       <p className="text-xs text-gray-500 mb-2">
         Pénztárgépenként összesítve, AP-szám szerint. Ha egy gép az időszakban több egységnél is
         dolgozott, itt <span className="font-semibold">egyetlen sorban</span> szerepel — a
-        zárás-sorszám és a göngyölt forgalom a gép saját, folyamatos számlálója. A sorrend az
-        egységeket követi, de az egység nem jelenik meg oszlopként (a gép neve fölé állva látszik,
-        hol dolgozott).
+        zárás-sorszám és a göngyölt forgalom a gép saját, folyamatos számlálója. Az AP-szám után
+        zárójelben az egység áll, ahol a gép van; a több egységnél járt gépnél a gép neve és a
+        „N egység” jelzés (fölé állva látszik, hol dolgozott).
         {' '}Az összegek forintban (az EUR elütés kivételével).
         {' '}Az <span className="font-semibold">Időszaki</span> piros, ha az ÁFA-kulcsok összege nem
         egyezik a KP + kártya + SZÉP összegével.
@@ -2514,7 +2514,15 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
                     className={`sticky left-0 z-10 bg-white ${TD} font-medium text-gray-700 cursor-help`}
                     title={`Egység(ek) az időszakban: ${reg.unitNames.join(', ')}`}
                   >
-                    {reg.ap_number} {reg.name && <span className="font-normal text-gray-500">({reg.name})</span>}
+                    {/* Zárójelben az egység, ahol a gép van – az azonosít. Ha az
+                        időszakban több egységnél is dolgozott, a gép neve marad, és
+                        a „N egység” jelzés mutatja (fölé állva a lista). */}
+                    {reg.ap_number}{' '}
+                    {reg.unitNames.length === 1 ? (
+                      <span className="font-normal text-gray-500">({reg.unitNames[0]})</span>
+                    ) : (
+                      reg.name && <span className="font-normal text-gray-500">({reg.name})</span>
+                    )}
                     {reg.unitNames.length > 1 && (
                       <span className="ml-1 text-[10px] text-blue-700">· {reg.unitNames.length} egység</span>
                     )}
