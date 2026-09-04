@@ -31,6 +31,7 @@ export function useUnitRevenueSettings(unitId) {
         show_mckinsey: false,
         show_ordit: false,
         show_event_revenue: false,
+        multiple_closures_enabled: false,
       });
     } catch (error) {
       console.error('Error fetching unit revenue settings:', error);
@@ -40,6 +41,7 @@ export function useUnitRevenueSettings(unitId) {
         show_mckinsey: false,
         show_ordit: false,
         show_event_revenue: false,
+        multiple_closures_enabled: false,
       });
     } finally {
       setLoading(false);
@@ -50,7 +52,38 @@ export function useUnitRevenueSettings(unitId) {
     fetchSettings();
   }, [fetchSettings]);
 
-  return { settings, loading, refetch: fetchSettings };
+  // Persist a partial settings change for this unit (upsert).
+  const updateSettings = useCallback(async (partial) => {
+    if (!unitId) return;
+    // Optimistic local update.
+    setSettings((prev) => ({ ...(prev || {}), ...partial }));
+    try {
+      const { data: existing } = await supabase
+        .from('unit_revenue_settings')
+        .select('id')
+        .eq('unit_id', unitId)
+        .single();
+
+      if (existing) {
+        const { error } = await supabase
+          .from('unit_revenue_settings')
+          .update(partial)
+          .eq('unit_id', unitId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('unit_revenue_settings')
+          .insert([{ unit_id: unitId, ...partial }]);
+        if (error) throw error;
+      }
+    } catch (error) {
+      console.error('Error updating unit revenue settings:', error);
+      toast.error('Hiba a beállítás mentésekor');
+      fetchSettings(); // revert to server state on failure
+    }
+  }, [unitId, fetchSettings]);
+
+  return { settings, loading, refetch: fetchSettings, updateSettings };
 }
 
 export function useAllUnitRevenueSettings() {

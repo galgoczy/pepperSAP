@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { fetchHouseCashSeries, openingForDate } from '../lib/houseCashSeries';
+import { TERMINAL_TIP_WITHDRAW_RATE } from '../lib/utils';
 import toast from 'react-hot-toast';
 
 export function useDailyRevenue(unitId, date) {
@@ -128,7 +130,7 @@ export function useDailyRevenue(unitId, date) {
       'vip_loading', 'vip_revenue',
       'protocol_net', 'protocol_gross', 'protocol_vat_rate',
       'mckinsey_net', 'mckinsey_gross', 'mckinsey_vat_rate',
-      'extra_cash_revenue',
+      'extra_cash_revenue', 'actual_tips',
       'ordit_net', 'ordit_gross', 'ordit_vat_rate',
       'event_revenue_net', 'event_revenue_gross', 'event_revenue_vat_rate'
     ];
@@ -140,6 +142,13 @@ export function useDailyRevenue(unitId, date) {
         value === '' ? null : (numericFields.includes(key) ? parseFloat(value) || null : value)
       ])
     );
+
+    // total_revenue is NOT NULL (DEFAULT 0) in the schema, so an empty/cleared
+    // value must be saved as 0 rather than null (e.g. when deleting the daily
+    // software revenue), otherwise the insert/update violates the constraint.
+    if (cleanedData.total_revenue === null || cleanedData.total_revenue === undefined) {
+      cleanedData.total_revenue = 0;
+    }
 
     const dataToSave = {
       ...cleanedData,
@@ -164,10 +173,14 @@ export function useDailyRevenue(unitId, date) {
         if (error) throw error;
         result = data;
       } else {
-        // Insert new
+        // Upsert on the natural key (unit_id, date). A blind INSERT threw a
+        // duplicate-key error whenever a row for this unit+date already existed
+        // but the form's `revenue` state was still null (e.g. created by
+        // ensureRevenueExists, another tab, or a retried save) — which made the
+        // save fail and the form revert, losing the entry.
         const { data, error } = await supabase
           .from('daily_revenue')
-          .insert([dataToSave])
+          .upsert(dataToSave, { onConflict: 'unit_id,date' })
           .select()
           .single();
 
@@ -230,6 +243,7 @@ export function useDailyRevenue(unitId, date) {
 export function useHouseCash(unitId, date) {
   const [houseCash, setHouseCash] = useState(null);
   const [previousDayClosing, setPreviousDayClosing] = useState(null);
+  const [previousDayReserveClosing, setPreviousDayReserveClosing] = useState(null);
   const [calculatedData, setCalculatedData] = useState({
     officialExpenses: 0,         // Hivatalos (számlás) kifizetések összesen
     nonOfficialExpenses: 0,      // Nem számlás kifizetések összesen
@@ -239,9 +253,13 @@ export function useHouseCash(unitId, date) {
     softwareRevenue: 0,          // Szoftver bevétel
     totalDiscrepancies: 0,       // Összes HUF elütés
     adjustedCash: 0,             // Készpénz - elütések (korrigált készpénz)
-    wageTypePayments: 0,         // Bér jellegű kifizetések (EFO + wage összesen)
+    wageTypePayments: 0,         // Bér jellegű kifizetések hivatalos része (EFO + wage)
     efoPaymentsTotal: 0,         // EFO kifizetések hivatalos összege
     wagePaymentsTotal: 0,        // Heti bér kifizetések hivatalos összege
+    wageTypeExtra: 0,            // Bér jellegű kifizetések nem hivatalos része
+    officialCashExpenses: 0,     // Hivatalos KÉSZPÉNZES kifizetések
+    cashTransfersToday: 0,       // Napi nettó készpénz átküldés (be - ki)
+    reserveTransfersToday: 0,    // Napi nettó tartalék átküldés (be - ki)
   });
   const [discrepancyDetails, setDiscrepancyDetails] = useState([]); // All discrepancy entries
   const [loading, setLoading] = useState(true);
@@ -250,6 +268,7 @@ export function useHouseCash(unitId, date) {
     if (!unitId || !date) {
       setHouseCash(null);
       setPreviousDayClosing(null);
+      setPreviousDayReserveClosing(null);
       setCalculatedData({
         officialExpenses: 0,
         nonOfficialExpenses: 0,
@@ -262,6 +281,7 @@ export function useHouseCash(unitId, date) {
         wageTypePayments: 0,
         efoPaymentsTotal: 0,
         wagePaymentsTotal: 0,
+        wageTypeExtra: 0,
       });
       setDiscrepancyDetails([]);
       setLoading(false);
@@ -269,25 +289,21 @@ export function useHouseCash(unitId, date) {
     }
 
     try {
-      // Calculate previous day
-      const currentDate = new Date(date);
-      currentDate.setDate(currentDate.getDate() - 1);
-      const previousDay = currentDate.toISOString().split('T')[0];
+      // The opening balance is the closing of the most recent previous house_cash
+      // entry - NOT necessarily yesterday (there can be gaps with no entry).
 
       // Fetch all needed data in parallel
-      const [currentResult, previousResult, expensesResult, dailyRevenueResult, efoPaymentsResult, wagePaymentsResult] = await Promise.all([
+      const [currentResult, seriesResult, expensesResult, dailyRevenueResult, efoPaymentsResult, wagePaymentsResult] = await Promise.all([
         supabase
           .from('house_cash')
           .select('*')
           .eq('unit_id', unitId)
           .eq('date', date)
           .maybeSingle(),
-        supabase
-          .from('house_cash')
-          .select('official_total')
-          .eq('unit_id', unitId)
-          .eq('date', previousDay)
-          .maybeSingle(),
+        // Opening balances are computed live from the full history (so a day's
+        // closing always equals the next day's opening, regardless of gaps or
+        // whether the házipénztár tab was explicitly saved).
+        fetchHouseCashSeries(unitId, date),
         supabase
           .from('expenses')
           .select('amount, is_official, payment_method')
@@ -301,26 +317,31 @@ export function useHouseCash(unitId, date) {
           .maybeSingle(),
         supabase
           .from('efo_payments')
-          .select('official_amount')
+          .select('official_amount, extra_amount')
           .eq('unit_id', unitId)
           .eq('payment_date', date),
         supabase
           .from('wage_payments')
-          .select('official_amount')
+          .select('official_amount, extra_amount')
           .eq('unit_id', unitId)
           .eq('payment_date', date),
       ]);
 
       if (currentResult.error) throw currentResult.error;
-      if (previousResult.error && previousResult.error.code !== 'PGRST116') {
-        console.error('Error fetching previous day:', previousResult.error);
-      }
+      const opening = openingForDate(seriesResult, date);
+      const seriesRow = seriesResult.byDate.get(date);
+      const cashTransfersToday = seriesRow?.cashTransfers || 0;
+      const reserveTransfersToday = seriesRow?.reserveTransfers || 0;
 
       // Calculate expenses
       const expenses = expensesResult.data || [];
       // Hivatalos (számlás) kifizetések - minden is_official=true
       const officialExpenses = expenses
         .filter(e => e.is_official === true)
+        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      // Hivatalos KÉSZPÉNZES kifizetések (ezek mozgatják a Pénztár zsebet)
+      const officialCashExpenses = expenses
+        .filter(e => e.is_official === true && e.payment_method === 'cash')
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
       // Nem számlás kifizetések - is_official=false
       const nonOfficialExpenses = expenses
@@ -336,6 +357,7 @@ export function useHouseCash(unitId, date) {
             cash_payment, card_payment,
             vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips,
             discrepancies, discrepancy_amount, discrepancy_currency, discrepancy_note,
+            terminal_card_tip, terminal_tip_withdrawn,
             cash_registers (ap_number, name)
           `)
           .eq('daily_revenue_id', dailyRevenueResult.data.id);
@@ -411,8 +433,24 @@ export function useHouseCash(unitId, date) {
       );
       const wageTypePayments = efoPaymentsTotal + wagePaymentsTotal;
 
+      // Non-official (extra) part of EFO and wage payments - goes to Tartalék
+      const efoExtraTotal = (efoPaymentsResult.data || []).reduce(
+        (sum, p) => sum + (parseFloat(p.extra_amount) || 0), 0
+      );
+      const wageExtraTotal = (wagePaymentsResult.data || []).reduce(
+        (sum, p) => sum + (parseFloat(p.extra_amount) || 0), 0
+      );
+      const wageTypeExtra = efoExtraTotal + wageExtraTotal;
+
+      // Withdrawn bankkártya tip -> 60% is a reserve (tartalék) cost.
+      const terminalTipReserveCost = cashRegisterRevenues.reduce(
+        (sum, cr) => sum + (cr.terminal_tip_withdrawn ? (parseFloat(cr.terminal_card_tip) || 0) * TERMINAL_TIP_WITHDRAW_RATE : 0),
+        0
+      );
+
       setHouseCash(currentResult.data || null);
-      setPreviousDayClosing(previousResult.data?.official_total || null);
+      setPreviousDayClosing(opening.cash || 0);
+      setPreviousDayReserveClosing(opening.reserve || 0);
       setDiscrepancyDetails(allDiscrepancies);
       setCalculatedData({
         officialExpenses,
@@ -426,6 +464,11 @@ export function useHouseCash(unitId, date) {
         wageTypePayments,
         efoPaymentsTotal,
         wagePaymentsTotal,
+        wageTypeExtra,
+        terminalTipReserveCost,
+        officialCashExpenses,
+        cashTransfersToday,
+        reserveTransfersToday,
       });
     } catch (error) {
       console.error('Error fetching house cash:', error);
@@ -490,6 +533,7 @@ export function useHouseCash(unitId, date) {
   return {
     houseCash,
     previousDayClosing,
+    previousDayReserveClosing,
     calculatedData,
     discrepancyDetails,
     loading,

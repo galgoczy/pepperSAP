@@ -1,0 +1,286 @@
+#!/bin/bash
+#
+# pepperSAP – napi biztonsági mentés a Supabase adatbázisról.
+#
+# Egy teljes pg_dump-ot készít (custom formátum, tömörítve), ELLENŐRZI, hogy az
+# archívum olvasható, majd forgatja a régi mentéseket. Bármi hiba esetén nem
+# nullával lép ki, és értesítést dob a macOS-en, hogy a hiba ne maradjon némán.
+#
+# Beállítás és időzítés: docs/ADATMENTES.md
+#
+# A konfigurációt (benne a jelszavas kapcsolati sztringgel) NEM ez a fájl
+# tartalmazza, hanem ~/.pepper-backup.env (chmod 600). Így a jelszó soha nem
+# kerül a git-be.
+
+set -euo pipefail
+
+CONFIG_FILE="${PEPPER_BACKUP_CONFIG:-$HOME/.pepper-backup.env}"
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  echo "HIBA: hiányzik a konfiguráció: $CONFIG_FILE" >&2
+  exit 1
+fi
+# A beolvasás `set -u` alatt történik: ha a konfigban idézőjelezetlen $ van (pl.
+# egy jelszóban), a shell "unbound variable" hibával azonnal kilép. Ez jobb, mint
+# csendben egy megcsonkított jelszóval próbálkozni – a hibaüzenet megnevezi a
+# fájlt és a sort. A megoldás: PEPPER_DB_PASSWORD_FILE, vagy egyszeres idézőjel.
+# shellcheck disable=SC1090
+source "$CONFIG_FILE"
+
+: "${PEPPER_DB_URI:?HIBA: a PEPPER_DB_URI nincs beállítva a konfigurációban}"
+
+# A jelszó háromféleképpen adható meg. Mindegyiknél a URI-ban a jelszó helye
+# üresen marad (…postgres.<ref>:@aws-0-…):
+#
+#   a) PEPPER_DB_PASSWORD_FILE – egy fájl, amiben CSAK a jelszó áll. Ez a
+#      legbiztosabb: a fájl tartalmát nem értelmezi a shell, tehát semmilyen
+#      idézőjelezési vagy URI-kódolási szabály nem vonatkozik rá.
+#   b) PEPPER_DB_PASSWORD – a jelszó a konfigban, EGYSZERES idézőjelben.
+#   c) a jelszó beleírva a PEPPER_DB_URI-be (ilyenkor URI-kódolni kell).
+if [[ -n "${PEPPER_DB_PASSWORD_FILE:-}" ]]; then
+  if [[ ! -f "$PEPPER_DB_PASSWORD_FILE" ]]; then
+    echo "HIBA: nem található a jelszófájl: $PEPPER_DB_PASSWORD_FILE" >&2
+    exit 1
+  fi
+  # A $(<fájl) forma levágja a záró sortörést, tehát a nano-val mentett fájl is jó.
+  PEPPER_DB_PASSWORD="$(<"$PEPPER_DB_PASSWORD_FILE")"
+fi
+
+if [[ -n "${PEPPER_DB_PASSWORD:-}" ]]; then
+  export PGPASSWORD="$PEPPER_DB_PASSWORD"
+fi
+
+# --- Telegram értesítés (opcionális) -----------------------------------------
+# A bot tokenje jöhet fájlból (ajánlott) vagy közvetlenül a konfigból.
+TELEGRAM_TOKEN="${PEPPER_TELEGRAM_TOKEN:-}"
+if [[ -n "${PEPPER_TELEGRAM_TOKEN_FILE:-}" ]]; then
+  if [[ ! -f "$PEPPER_TELEGRAM_TOKEN_FILE" ]]; then
+    echo "HIBA: nem található a Telegram token fájl: $PEPPER_TELEGRAM_TOKEN_FILE" >&2
+    exit 1
+  fi
+  TELEGRAM_TOKEN="$(<"$PEPPER_TELEGRAM_TOKEN_FILE")"
+fi
+TELEGRAM_CHAT_ID="${PEPPER_TELEGRAM_CHAT_ID:-}"
+# never | weekly (hétfőnként) | always – a SIKERES futásra vonatkozik.
+# A hibáról és a kimaradt külső másolatról mindig megy üzenet.
+TELEGRAM_ON_SUCCESS="${PEPPER_TELEGRAM_ON_SUCCESS:-weekly}"
+
+# Az üzenetküldés soha nem dönti el a mentést: hálózati hiba esetén is csendben
+# továbbmegyünk (a mentés akkor is elkészült). A tokent nem naplózzuk.
+tg_send() {
+  [[ -n "$TELEGRAM_TOKEN" && -n "$TELEGRAM_CHAT_ID" ]] || return 0
+  curl -sS --max-time 15 -o /dev/null \
+    "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+    --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+    --data-urlencode "text=$1" >/dev/null 2>&1 || true
+}
+
+BACKUP_DIR="${PEPPER_BACKUP_DIR:-$HOME/PepperBackup}"
+SECONDARY_DIR="${PEPPER_BACKUP_SECONDARY_DIR:-}"
+KEEP_DAILY="${PEPPER_KEEP_DAILY:-30}"
+KEEP_MONTHLY="${PEPPER_KEEP_MONTHLY:-12}"
+# Egy valódi mentés jóval nagyobb ennél; ez alatt hibát jelzünk (üres/csonka dump).
+MIN_SIZE_BYTES="${PEPPER_MIN_SIZE_BYTES:-51200}"
+PG_DUMP="${PEPPER_PG_DUMP:-/opt/homebrew/opt/libpq/bin/pg_dump}"
+PG_RESTORE="${PEPPER_PG_RESTORE:-/opt/homebrew/opt/libpq/bin/pg_restore}"
+
+DAILY_DIR="$BACKUP_DIR/daily"
+MONTHLY_DIR="$BACKUP_DIR/monthly"
+LOG_FILE="$BACKUP_DIR/backup.log"
+STAMP="$(date +%Y-%m-%d)"
+NOW="$(date '+%Y-%m-%d %H:%M:%S')"
+TARGET="$DAILY_DIR/pepper-$STAMP.dump"
+
+# A mentési mappa létrehozása. Tipikus hiba, hogy a konfigban más felhasználó
+# neve maradt az útvonalban ("/Users/valaki-mas/..."), amit a rendszer
+# "Permission denied"-del utasít vissza – ezért mondjuk meg, mi a baj.
+if ! mkdir -p "$DAILY_DIR" "$MONTHLY_DIR" 2>/dev/null; then
+  echo "HIBA: nem sikerült létrehozni a mentési mappát: $BACKUP_DIR" >&2
+  echo "      A PEPPER_BACKUP_DIR értéke: ${PEPPER_BACKUP_DIR:-(nincs beállítva)}" >&2
+  echo "      A te home mappád: $HOME" >&2
+  echo "      Tipp: a konfigban használd a \$HOME-ot, pl. PEPPER_BACKUP_DIR=\"\$HOME/PepperBackup\"" >&2
+  tg_send "❌ pepperSAP mentés: nem sikerült létrehozni a mentési mappát ($BACKUP_DIR)."
+  exit 1
+fi
+
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+}
+
+notify() {
+  # Látható visszajelzés a Mac minin; ha nincs GUI munkamenet, csendben elbukik.
+  /usr/bin/osascript -e "display notification \"$1\" with title \"pepperSAP mentés\"" 2>/dev/null || true
+}
+
+fail() {
+  log "HIBA: $*"
+  notify "SIKERTELEN mentés: $*"
+  tg_send "❌ pepperSAP mentés SIKERTELEN ($(date '+%Y-%m-%d %H:%M'))
+
+$*
+
+Napló: $LOG_FILE"
+  exit 1
+}
+
+log "=== Mentés indul ($NOW) ==="
+
+[[ -x "$PG_DUMP" ]] || fail "nem található a pg_dump itt: $PG_DUMP (brew install libpq)"
+[[ -x "$PG_RESTORE" ]] || fail "nem található a pg_restore itt: $PG_RESTORE"
+
+# Gyakori elgépelés: a Session poolerhez a felhasználónév "postgres.<projekt-ref>",
+# a sima "postgres" a KÖZVETLEN kapcsolaté. Poolerrel a szerver ilyenkor
+# "password authentication failed for user postgres" hibát ad, ami a jelszóra
+# tereli a gyanút, pedig a felhasználónév a hibás. Ezt előre megfogjuk.
+uri_user="${PEPPER_DB_URI#*://}"
+uri_user="${uri_user%%@*}"
+uri_user="${uri_user%%:*}"
+if [[ "$PEPPER_DB_URI" == *pooler.supabase.com* && "$uri_user" == "postgres" ]]; then
+  fail "a Session poolerhez a felhasználónév 'postgres.<projekt-ref>' (nálad: postgres.uqqcwfgmpegkdizkqbrd), nem a sima 'postgres'. Javítsd a PEPPER_DB_URI-t a konfigban."
+fi
+
+# 1) Mentés ideiglenes fájlba, hogy egy megszakadt futás soha ne írja felül a
+#    tegnapi jó mentést egy féllel.
+TMP_FILE="$(mktemp "$DAILY_DIR/.pepper-$STAMP.XXXXXX")"
+cleanup() { rm -f "$TMP_FILE"; }
+trap cleanup EXIT
+
+log "pg_dump indul..."
+if ! "$PG_DUMP" \
+      --dbname="$PEPPER_DB_URI" \
+      --format=custom \
+      --compress=9 \
+      --no-owner \
+      --no-privileges \
+      --schema=public \
+      --file="$TMP_FILE" 2>>"$LOG_FILE"; then
+  fail "a pg_dump hibára futott (részletek a logban: $LOG_FILE)"
+fi
+
+# 2) Ellenőrzés: van-e értelmes méret, és olvasható-e az archívum. A
+#    pg_restore --list végigolvassa a tartalomjegyzéket, tehát egy csonka vagy
+#    sérült fájl itt kibukik – nem csak a fájl létezését nézzük.
+SIZE="$(stat -f%z "$TMP_FILE" 2>/dev/null || stat -c%s "$TMP_FILE")"
+if (( SIZE < MIN_SIZE_BYTES )); then
+  fail "a mentés gyanúsan kicsi ($SIZE bájt, elvárt minimum $MIN_SIZE_BYTES)"
+fi
+
+TABLES="$("$PG_RESTORE" --list "$TMP_FILE" 2>/dev/null | grep -c 'TABLE DATA' || true)"
+if (( TABLES < 1 )); then
+  fail "az archívum nem olvasható, vagy egyetlen tábla adatát sem tartalmazza"
+fi
+
+mv "$TMP_FILE" "$TARGET"
+trap - EXIT
+chmod 600 "$TARGET"
+log "Kész: $TARGET ($((SIZE / 1024 / 1024)) MB, $TABLES tábla)"
+
+# 3) Havi példány: a hónap első mentése megmarad hosszú távra is.
+MONTH_FILE="$MONTHLY_DIR/pepper-$(date +%Y-%m).dump"
+if [[ ! -f "$MONTH_FILE" ]]; then
+  cp "$TARGET" "$MONTH_FILE"
+  chmod 600 "$MONTH_FILE"
+  log "Havi példány létrehozva: $MONTH_FILE"
+fi
+
+# 4) Másodpéldány (külső lemez / felhő mappa), ha be van állítva. Ha a cél épp
+#    nem érhető el, az nem dönti el a mentést, de figyelmeztetünk rá.
+#
+#    Külső lemeznél ELŐBB ellenőrizzük, hogy a kötet tényleg csatolva van. A
+#    /Volumes maga is írható, ezért egy lecsatolt lemez esetén a mkdir simán
+#    létrehozná a mappát a belső lemezen: a mentés jónak látszana, valójában
+#    nem a külső HDD-re kerülne, ráadásul a lemez később nem tudna a saját
+#    nevén felcsatolódni.
+#
+#    A csatoltságot az eszközazonosítón keresztül nézzük (a csatolási pont más
+#    eszközön van, mint a szülő mappája), nem a `mount` kimenetének szövegén.
+#    Így a szóközös és ékezetes kötetnév (pl. "Geri háttér") sem tudja
+#    félrevinni: a macOS a fájlneveket NFD alakban tárolja, a szöveges
+#    összehasonlítás emiatt hamis nemleges választ adhatna.
+#    A `stat` kapcsolói platformonként mást jelentenek (a GNU `stat -f %d` nem
+#    eszközazonosítót ad, hanem szabad blokkszámot), ezért explicit a döntés.
+dev_id() {
+  if stat --version >/dev/null 2>&1; then
+    stat -c %d "$1" 2>/dev/null   # GNU coreutils
+  else
+    stat -f %d "$1" 2>/dev/null   # BSD / macOS
+  fi
+}
+
+volume_mounted() {
+  local dir="$1"
+  case "$dir" in
+    /Volumes/*)
+      local rest="${dir#/Volumes/}"
+      local vol="/Volumes/${rest%%/*}"
+      [[ -d "$vol" ]] || return 1
+      local vol_dev parent_dev
+      vol_dev="$(dev_id "$vol")"
+      parent_dev="$(dev_id /Volumes)"
+      [[ -n "$vol_dev" && -n "$parent_dev" && "$vol_dev" != "$parent_dev" ]] || return 1
+      ;;
+  esac
+  return 0
+}
+
+SECONDARY_STATUS="nincs beállítva"
+if [[ -n "$SECONDARY_DIR" ]]; then
+  if ! volume_mounted "$SECONDARY_DIR"; then
+    SECONDARY_STATUS="KIMARADT (a lemez nincs csatlakoztatva)"
+    log "FIGYELEM: a másodpéldány célja nincs csatolva, kimarad: $SECONDARY_DIR"
+    notify "A mentés kész, de a külső lemez nincs csatlakoztatva."
+  elif mkdir -p "$SECONDARY_DIR" 2>/dev/null && cp "$TARGET" "$SECONDARY_DIR/" 2>>"$LOG_FILE"; then
+    chmod 600 "$SECONDARY_DIR/$(basename "$TARGET")" 2>/dev/null || true
+    SECONDARY_STATUS="kész"
+    log "Másodpéldány: $SECONDARY_DIR/$(basename "$TARGET")"
+    # A másodpéldányt is forgatjuk, különben a külső lemez idővel megtelik.
+    sec_old="$(ls -1t "$SECONDARY_DIR"/pepper-*.dump 2>/dev/null | tail -n +$((KEEP_DAILY + 1)) || true)"
+    if [[ -n "$sec_old" ]]; then
+      echo "$sec_old" | while read -r f; do rm -f "$f"; log "Törölve (másodpéldány forgatás): $f"; done
+    fi
+  else
+    SECONDARY_STATUS="NEM KÉSZÜLT EL"
+    log "FIGYELEM: a másodpéldány nem készült el ide: $SECONDARY_DIR"
+    notify "A mentés kész, de a másodpéldány nem készült el."
+  fi
+fi
+
+# 5) Forgatás: a napi mentésekből az utolsó KEEP_DAILY, a haviakból KEEP_MONTHLY marad.
+prune() {
+  local dir="$1" keep="$2"
+  local files
+  files="$(ls -1t "$dir"/pepper-*.dump 2>/dev/null | tail -n +$((keep + 1)) || true)"
+  if [[ -n "$files" ]]; then
+    echo "$files" | while read -r f; do
+      rm -f "$f"
+      log "Törölve (forgatás): $f"
+    done
+  fi
+}
+prune "$DAILY_DIR" "$KEEP_DAILY"
+prune "$MONTHLY_DIR" "$KEEP_MONTHLY"
+
+DAILY_COUNT="$(ls -1 "$DAILY_DIR"/pepper-*.dump 2>/dev/null | wc -l | tr -d ' ')"
+log "=== Mentés kész. Napi mentések száma: $DAILY_COUNT ==="
+notify "Napi mentés kész ($((SIZE / 1024 / 1024)) MB)."
+
+# Sikeres futásról alapból csak hetente megy üzenet: egy naponta érkező „minden
+# rendben” pár hét után olvasatlan marad, és pont a fontosat nyomná el. A külső
+# másolat kimaradásáról viszont mindig szólunk.
+summary="✅ pepperSAP mentés kész ($(date '+%Y-%m-%d %H:%M'))
+
+Méret: $((SIZE / 1024 / 1024)) MB · Táblák: $TABLES
+Külső másolat: $SECONDARY_STATUS
+Megőrzött napi mentések: $DAILY_COUNT"
+
+case "$TELEGRAM_ON_SUCCESS" in
+  always) tg_send "$summary" ;;
+  weekly) [[ "$(date +%u)" == "1" ]] && tg_send "$summary" ;;
+  *) ;;
+esac
+# A kimaradt külső másolat akkor is szóljon, ha épp nem küldenénk összefoglalót.
+if [[ "$SECONDARY_STATUS" != "kész" && "$SECONDARY_STATUS" != "nincs beállítva" ]]; then
+  if [[ "$TELEGRAM_ON_SUCCESS" == "never" ]] || { [[ "$TELEGRAM_ON_SUCCESS" == "weekly" ]] && [[ "$(date +%u)" != "1" ]]; }; then
+    tg_send "⚠️ pepperSAP mentés kész, de a külső másolat: $SECONDARY_STATUS ($(date '+%Y-%m-%d %H:%M'))"
+  fi
+fi

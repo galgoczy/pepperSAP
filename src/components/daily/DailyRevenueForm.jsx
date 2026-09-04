@@ -1,15 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark, Banknote, Radio, PartyPopper, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Save, Palette, Calculator, AlertCircle, Star, Building, Landmark, Banknote, Radio, PartyPopper, AlertTriangle, CheckCircle, Plus, MessageCircle, Copy, ShieldAlert } from 'lucide-react';
 import { useDailyRevenue } from '../../hooks/useDailyRevenue';
-import { useActiveCashRegisters, useAllCashRegisterRevenue } from '../../hooks/useCashRegisterRevenue';
+import { useActiveCashRegisters, useAllCashRegisterRevenue, useRegisterClosureBaselines } from '../../hooks/useCashRegisterRevenue';
 import { useProtocolItems } from '../../hooks/useProtocolItems';
 import { useUnitRevenueSettings } from '../../hooks/useUnitRevenueSettings';
 import { useEventRevenueValidation } from '../../hooks/useEventRevenueValidation';
 import { Card, Button, Input, LoadingSpinner } from '../common';
 import CashRegisterSection from './CashRegisterSection';
-import EfoPayments from './EfoPayments';
 import ProtocolItemsSection from './ProtocolItemsSection';
-import { formatCurrency } from '../../lib/utils';
+import { formatCurrency, formatDateWithWeekday } from '../../lib/utils';
+import { buildWhatsappDailySummary, whatsappShareUrl, unitSendsCashLine } from '../../lib/whatsappSummary';
+import { validatePaymentBreakdown, hasDocumentedDiscrepancy, hufDiscrepancyOf, eurDiscrepancyOf, isBlankClosure } from '../../lib/validations';
+import { evaluateDayCandidate } from '../../lib/dayStatus';
 import toast from 'react-hot-toast';
 
 const VAT_RATES = [
@@ -28,11 +30,29 @@ const MARK_COLORS = [
   { value: 'purple', label: 'Lila', className: 'bg-purple-500 border-purple-600' },
 ];
 
-export default function DailyRevenueForm({ date, unitId, unitName }) {
+// Stable key identifying a single closure (one register can have several per day).
+const closureKeyOf = (registerId, closureNumber) => `${registerId}#${closureNumber}`;
+
+// A closure's turnover = sum of the VAT buckets (gross, tips excluded), i.e. the
+// "Forgalom" shown in the box. Used for the cumulative ("göngyölt") revenue check.
+const closureTurnover = (data) =>
+  (parseFloat(data?.vat_0_percent) || 0) +
+  (parseFloat(data?.vat_5_percent) || 0) +
+  (parseFloat(data?.vat_18_percent) || 0) +
+  (parseFloat(data?.vat_27_percent) || 0);
+
+const CUMULATIVE_TOLERANCE = 1; // Ft; rounding tolerance for the göngyölt check
+
+// strictDay: { greenOnly, rows } – szigorú elszámolás mód. Ha greenOnly, ez a nap
+// (amely után már van újabb rögzítés) csak rendezett állapotban menthető; rows
+// az egység előző napjai, hogy a göngyölt lánc ugyanúgy értékelődjön, mint a
+// jelentésekben.
+export default function DailyRevenueForm({ date, unitId, unitName, focusRegisterAp = null, blocked = false, strictDay = null }) {
   const { revenue, loading: revenueLoading, saveRevenue, ensureRevenueExists } = useDailyRevenue(unitId, date);
-  const { cashRegisters, loading: registersLoading } = useActiveCashRegisters(unitId);
-  const { revenues: cashRegisterRevenues, saveAllRevenues } = useAllCashRegisterRevenue(revenue?.id);
-  const { settings: revenueSettings, loading: settingsLoading } = useUnitRevenueSettings(unitId);
+  const { cashRegisters, loading: registersLoading } = useActiveCashRegisters(unitId, date);
+  const { revenues: cashRegisterRevenues, loading: closuresLoading, saveAllRevenues } = useAllCashRegisterRevenue(revenue?.id);
+  const { settings: revenueSettings, loading: settingsLoading, updateSettings: updateRevenueSettings } = useUnitRevenueSettings(unitId);
+  const multiClosuresEnabled = revenueSettings?.multiple_closures_enabled ?? false;
   const { items: protocolItems, totalAmount: protocolItemsTotal, createItem: createProtocolItem, updateItem: updateProtocolItem, deleteItem: deleteProtocolItem, setDailyRevenueId } = useProtocolItems(revenue?.id);
   const { validationResult: eventValidation, validateEventRevenue } = useEventRevenueValidation(unitId, date);
 
@@ -55,6 +75,8 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     mckinsey_vat_rate: 27,
     // Extra cash revenue
     extra_cash_revenue: '',
+    // Actual tips (recorded only, not used in any calculation)
+    actual_tips: '',
     // Ordit revenue (new)
     ordit_net: '',
     ordit_gross: '',
@@ -65,18 +87,138 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     event_revenue_vat_rate: 27,
   });
   const [expandedRegisters, setExpandedRegisters] = useState({});
+  // Deep link from the pénztárgép reports (?register=<AP szám>): open that
+  // register's box once and scroll to it. Purely a UI hint — it only toggles
+  // the expand state, nothing about the data or the save path.
+  const focusHandledRef = useRef(false);
   const cashRegisterDataRef = useRef({});
   const [perRegisterSoftwareSum, setPerRegisterSoftwareSum] = useState(0);
+  const [perRegisterGuestSum, setPerRegisterGuestSum] = useState(0);
+  const [perRegisterTipsSum, setPerRegisterTipsSum] = useState(0);
+
+  // Multiple closures per register: manually added closures and removed ones.
+  const [extraClosures, setExtraClosures] = useState([]); // [{ registerId, closureNumber }]
+  const [removedKeys, setRemovedKeys] = useState(() => new Set());
+  const [closureValidations, setClosureValidations] = useState({}); // key -> warnings
+  // Szigorú elszámolás: az utolsó, visszautasított mentés hibalistája (a nap
+  // csak zölden menthető). Nap/egység váltáskor törlődik.
+  const [strictRefusal, setStrictRefusal] = useState(null);
+  useEffect(() => {
+    setStrictRefusal(null);
+  }, [date, unitId]);
+
+  // "Ma nem volt zárás ezen a gépen": a bekapcsolt gépek zárását nem mentjük,
+  // így egy tétlen gép nem termel üres zárás-sorokat. Alapból minden olyan gép
+  // ilyen, aminek a napra nincs érdemi mentett adata; az első beírt karakterre
+  // magától kikapcsol. Naponként/egységenként egyszer inicializáljuk, hogy a
+  // felhasználó döntését egy újratöltés ne írja felül.
+  const [skippedRegisters, setSkippedRegisters] = useState(() => new Set());
+  // Amíg a felhasználó nem nyúlt a kapcsolókhoz/mezőkhöz ezen a napon, a
+  // kiindulóállapotot az aktuális adatból számoljuk újra (dátumváltás után a
+  // hook-ok egy pillanatig még a régi nap adatát mutathatják, ezért nem elég
+  // egyszer). Az első érintés után az állapot rögzül.
+  const skipTouchedRef = useRef(false);
+  const skipKeyRef = useRef(null);
+
+  // Chronologically-previous closure per register (for sequence / cumulative checks)
+  const registerIds = useMemo(() => cashRegisters.map((r) => r.id), [cashRegisters]);
+  const { baselines } = useRegisterClosureBaselines(registerIds, date);
+
+  // Existing saved closures indexed by closure key.
+  const existingByKey = useMemo(() => {
+    const map = {};
+    cashRegisterRevenues.forEach((r) => {
+      map[closureKeyOf(r.cash_register_id, r.closure_number ?? 1)] = r;
+    });
+    return map;
+  }, [cashRegisterRevenues]);
 
   useEffect(() => {
-    if (cashRegisters.length > 0) {
-      const expanded = {};
-      cashRegisters.forEach((r, index) => {
-        expanded[r.id] = index === 0 || cashRegisters.length <= 2;
-      });
-      setExpandedRegisters(expanded);
+    const key = `${unitId || ''}|${date || ''}`;
+    if (skipKeyRef.current !== key) {
+      skipKeyRef.current = key;
+      skipTouchedRef.current = false;
     }
+    if (revenueLoading || registersLoading || closuresLoading) return;
+    if (skipTouchedRef.current) return;
+    const initial = new Set();
+    cashRegisters.forEach((register) => {
+      const hasData = cashRegisterRevenues.some(
+        (r) => r.cash_register_id === register.id && !isBlankClosure(r)
+      );
+      if (!hasData) initial.add(register.id);
+    });
+    setSkippedRegisters(initial);
+  }, [unitId, date, revenueLoading, registersLoading, closuresLoading, cashRegisters, cashRegisterRevenues]);
+
+  const activateRegister = useCallback((registerId) => {
+    skipTouchedRef.current = true;
+    setSkippedRegisters((prev) => {
+      if (!prev.has(registerId)) return prev;
+      const next = new Set(prev);
+      next.delete(registerId);
+      return next;
+    });
+  }, []);
+
+  const setRegisterSkipped = (registerId, skipped) => {
+    skipTouchedRef.current = true;
+    setSkippedRegisters((prev) => {
+      const next = new Set(prev);
+      if (skipped) next.add(registerId);
+      else next.delete(registerId);
+      return next;
+    });
+  };
+
+  // The list of closures to render: every register has closure #1, plus any
+  // extra closures the user added, minus the ones they removed. Ordered by
+  // register (as in cashRegisters) then by closure number.
+  const closureList = useMemo(() => {
+    const result = [];
+    cashRegisters.forEach((register) => {
+      const existingNums = cashRegisterRevenues
+        .filter((r) => r.cash_register_id === register.id)
+        .map((r) => r.closure_number ?? 1);
+      const extraNums = extraClosures
+        .filter((c) => c.registerId === register.id)
+        .map((c) => c.closureNumber);
+      const nums = Array.from(new Set([1, ...existingNums, ...extraNums]))
+        .filter((n) => !removedKeys.has(closureKeyOf(register.id, n)))
+        .sort((a, b) => a - b);
+      nums.forEach((n) => {
+        result.push({ register, closureNumber: n, key: closureKeyOf(register.id, n) });
+      });
+    });
+    return result;
+  }, [cashRegisters, cashRegisterRevenues, extraClosures, removedKeys]);
+
+  useEffect(() => {
+    const expanded = {};
+    closureList.forEach((c, index) => {
+      expanded[c.key] = index === 0 || closureList.length <= 2 || c.closureNumber > 1;
+    });
+    setExpandedRegisters(expanded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cashRegisters]);
+
+  // Arriving from a cash register report row: open the linked register's
+  // closure(s) and scroll there. Runs once per mount, after the closures load.
+  useEffect(() => {
+    if (!focusRegisterAp || focusHandledRef.current || closureList.length === 0) return;
+    const matches = closureList.filter(
+      (c) => String(c.register.ap_number) === String(focusRegisterAp)
+    );
+    if (matches.length === 0) return;
+    focusHandledRef.current = true;
+    setExpandedRegisters((prev) => {
+      const next = { ...prev };
+      matches.forEach((c) => { next[c.key] = true; });
+      return next;
+    });
+    const el = document.getElementById(`register-${focusRegisterAp}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [focusRegisterAp, closureList]);
 
   useEffect(() => {
     if (revenue) {
@@ -94,6 +236,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         mckinsey_gross: revenue.mckinsey_gross || '',
         mckinsey_vat_rate: revenue.mckinsey_vat_rate ?? 27,
         extra_cash_revenue: revenue.extra_cash_revenue || '',
+        actual_tips: revenue.actual_tips || '',
         ordit_net: revenue.ordit_net || '',
         ordit_gross: revenue.ordit_gross || '',
         ordit_vat_rate: revenue.ordit_vat_rate ?? 27,
@@ -116,6 +259,7 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         mckinsey_gross: '',
         mckinsey_vat_rate: 27,
         extra_cash_revenue: '',
+        actual_tips: '',
         ordit_net: '',
         ordit_gross: '',
         ordit_vat_rate: 27,
@@ -126,21 +270,147 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     }
   }, [revenue, date]);
 
-  const existingDataByRegister = useCallback(() => {
-    const map = {};
-    cashRegisterRevenues.forEach((r) => {
-      map[r.cash_register_id] = r;
+  const mergedForKey = useCallback(
+    (key) => cashRegisterDataRef.current[key] || existingByKey[key] || {},
+    [existingByKey]
+  );
+
+  // Closures where the payment methods (KP + kártya + SZÉP) do not add up to the
+  // turnover. This is flagged loudly wherever it can be seen, but it NEVER
+  // affects saving — recording the day always has to succeed, and a missing
+  // jegyzőkönyv can be caught up afterwards from the report.
+  const paymentGapClosures = closureList
+    .map((c) => {
+      const d = mergedForKey(c.key);
+      const check = validatePaymentBreakdown({
+        vatTotal: closureTurnover(d),
+        cash: parseFloat(d.cash_payment) || 0,
+        card: parseFloat(d.card_payment) || 0,
+        szep: parseFloat(d.szep_card_payment) || 0,
+        hufDiscrepancy: hufDiscrepancyOf(d),
+        eurDiscrepancy: eurDiscrepancyOf(d),
+      });
+      if (!check.applicable || check.isValid) return null;
+      return {
+        closure: c,
+        difference: check.difference,
+        documented: hasDocumentedDiscrepancy(d),
+      };
+    })
+    .filter(Boolean);
+  const undocumentedGaps = paymentGapClosures.filter((g) => !g.documented);
+
+  // Szigorú elszámolás: a visszautasított mentés hibalistája. Kétszer jelenik
+  // meg (a pénztárgép boxok után és a mentés gomb fölött), hogy ne kelljen
+  // keresni. A mentés újrapróbálásakor frissül.
+  const strictRefusalBox = strictRefusal && strictRefusal.length > 0 && (
+    <div className="rounded-lg border-2 border-red-500 bg-red-50 p-4">
+      <div className="flex items-start gap-3">
+        <ShieldAlert className="h-6 w-6 text-red-600 mt-0.5 shrink-0" />
+        <div className="text-sm text-red-800 flex-1 min-w-0">
+          <p className="font-bold text-base">Nem mentve – ez a nap csak rendezett állapotban menthető</p>
+          <ul className="mt-2 list-disc pl-5 space-y-0.5">
+            {strictRefusal.map((issue, i) => (
+              <li key={i}>
+                <span className="font-mono font-medium">{issue.ap}</span>
+                {issue.name && <span className="text-red-600"> ({issue.name})</span>}: {issue.reasons.join('; ')}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs">
+            Ez a nap után már van újabb rögzítés. Javítsd a fentieket (elütés a megfelelő fajtával,
+            zárás sorszáma, göngyölt forgalom), majd mentsd újra.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Recompute the cross-closure sums and the per-closure validations (closure
+  // sequence number and cumulative "göngyölt" revenue). Returns the software
+  // revenue sum so callers can mirror it into total_revenue.
+  const recomputeDerived = useCallback(() => {
+    let software = 0;
+    let guests = 0;
+    let tips = 0;
+    const validations = {};
+
+    const byRegister = {};
+    closureList.forEach((c) => {
+      (byRegister[c.register.id] = byRegister[c.register.id] || []).push(c);
     });
-    return map;
-  }, [cashRegisterRevenues]);
+
+    Object.entries(byRegister).forEach(([registerId, closures]) => {
+      const base = baselines[registerId];
+      let predecessor = base ? { sequence: base.sequence, cumulative: base.cumulative } : null;
+
+      closures.forEach((c, idx) => {
+        const data = mergedForKey(c.key);
+        software += parseFloat(data.software_revenue) || 0;
+        guests += parseInt(data.guest_count, 10) || 0;
+        tips += parseFloat(data.tips) || 0;
+
+        const turnover = closureTurnover(data);
+        const seq =
+          data.closure_sequence === '' || data.closure_sequence == null
+            ? null
+            : parseFloat(data.closure_sequence);
+        const cum =
+          data.cumulative_revenue === '' || data.cumulative_revenue == null
+            ? null
+            : parseFloat(data.cumulative_revenue);
+
+        // The first closure of the day is checked against the previous day's
+        // baseline (crossDay). Across a day boundary the strict "+1" / "previous
+        // cumulative + this turnover" assumptions break whenever a day has no
+        // recorded closure (the physical Z-counter still advanced), which caused
+        // false warnings. So across days we only flag a number that did NOT
+        // increase (a repeat or a step backwards = a likely typo); within the
+        // same day's chain we keep the strict checks (we have every closure).
+        const crossDay = idx === 0;
+
+        // Closure sequence: always warn when it isn't the previous + 1 (this is
+        // an important check, also across day boundaries). A 0.1 tolerance absorbs
+        // any fractional artifact, since the Z-report counter is otherwise whole.
+        let sequenceWarning = null;
+        let expectedSequence = null;
+        if (predecessor && predecessor.sequence != null && seq != null) {
+          expectedSequence = predecessor.sequence + 1;
+          if (Math.abs(seq - expectedSequence) > 0.1) sequenceWarning = expectedSequence;
+        }
+
+        let cumulativeWarning = null;
+        let expectedCumulative = null;
+        if (predecessor && predecessor.cumulative != null && cum != null) {
+          expectedCumulative = predecessor.cumulative + turnover;
+          const bad = crossDay
+            ? cum < predecessor.cumulative - CUMULATIVE_TOLERANCE
+            : Math.abs(Math.round(cum) - Math.round(expectedCumulative)) > CUMULATIVE_TOLERANCE;
+          if (bad) cumulativeWarning = expectedCumulative;
+        }
+
+        validations[c.key] = {
+          sequenceWarning,
+          expectedSequence,
+          cumulativeWarning,
+          expectedCumulative,
+        };
+
+        // Chain: the next closure of this register is checked against this one.
+        predecessor = { sequence: seq, cumulative: cum };
+      });
+    });
+
+    setPerRegisterSoftwareSum(software);
+    setPerRegisterGuestSum(guests);
+    setPerRegisterTipsSum(tips);
+    setClosureValidations(validations);
+    return software;
+  }, [closureList, baselines, mergedForKey]);
 
   useEffect(() => {
-    const sum = cashRegisterRevenues.reduce(
-      (total, r) => total + (parseFloat(r.software_revenue) || 0),
-      0
-    );
-    setPerRegisterSoftwareSum(sum);
-  }, [cashRegisterRevenues]);
+    recomputeDerived();
+  }, [recomputeDerived]);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -214,28 +484,134 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     }
   }, [formData.event_revenue_gross, validateEventRevenue, revenueSettings?.show_event_revenue]);
 
-  const handleCashRegisterChange = (registerId, data) => {
-    cashRegisterDataRef.current[registerId] = data;
-    const sum = Object.values(cashRegisterDataRef.current).reduce(
-      (total, regData) => total + (parseFloat(regData?.software_revenue) || 0),
-      0
-    );
-    setPerRegisterSoftwareSum(sum);
-    if (!formData.software_revenue_manual_override && sum > 0) {
-      setFormData(prev => ({ ...prev, total_revenue: sum.toString() }));
+  const handleCashRegisterChange = (key, data) => {
+    cashRegisterDataRef.current[key] = data;
+    const software = recomputeDerived();
+    if (!formData.software_revenue_manual_override && software > 0) {
+      setFormData((prev) => ({ ...prev, total_revenue: software.toString() }));
     }
   };
 
-  const toggleExpand = (registerId) => {
+  const toggleExpand = (key) => {
     setExpandedRegisters((prev) => ({
       ...prev,
-      [registerId]: !prev[registerId],
+      [key]: !prev[key],
     }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  // Add another closure for a register on this day.
+  const addClosure = (registerId) => {
+    const nums = closureList
+      .filter((c) => c.register.id === registerId)
+      .map((c) => c.closureNumber);
+    const next = (nums.length ? Math.max(...nums) : 0) + 1;
+    setExtraClosures((prev) => [...prev, { registerId, closureNumber: next }]);
+    setExpandedRegisters((prev) => ({ ...prev, [closureKeyOf(registerId, next)]: true }));
+  };
+
+  // Remove a closure (only additional ones, i.e. closure number > 1).
+  const removeClosure = (registerId, closureNumber) => {
+    if (closureNumber <= 1) return;
+    const key = closureKeyOf(registerId, closureNumber);
+    setRemovedKeys((prev) => new Set(prev).add(key));
+    setExtraClosures((prev) =>
+      prev.filter((c) => !(c.registerId === registerId && c.closureNumber === closureNumber))
+    );
+    delete cashRegisterDataRef.current[key];
+  };
+
+  // Fields that belong to a cash_register_revenue row (everything else on an
+  // existing row — id, joins, timestamps — must not be sent back).
+  const CLOSURE_FIELDS = [
+    'software_revenue', 'guest_count',
+    'vat_0_percent', 'vat_5_percent', 'vat_18_percent', 'vat_27_percent',
+    'tips', 'discrepancies',
+    'cash_payment', 'card_payment', 'szep_card_payment',
+    'terminal_card', 'terminal_card_total', 'terminal_card_tip', 'terminal_tip_withdrawn',
+    'terminal_szep', 'terminal_discrepancy_note',
+    'closure_sequence', 'cumulative_revenue',
+  ];
+
+  const buildClosuresToSave = () =>
+    closureList
+      // Tétlen gép ("ma nem volt zárás") kimarad – de CSAK ha tényleg üres. Ha
+      // bármi adat van rajta, mentjük, bármit is mond a kapcsoló: adat soha nem
+      // veszhet el egy kapcsoló-állapot miatt.
+      .filter((c) => !(skippedRegisters.has(c.register.id) && isBlankClosure(mergedForKey(c.key))))
+      .map((c) => {
+      const src = mergedForKey(c.key);
+      const fields = {};
+      CLOSURE_FIELDS.forEach((f) => {
+        if (src[f] !== undefined) fields[f] = src[f];
+      });
+      return {
+        cash_register_id: c.register.id,
+        closure_number: c.closureNumber,
+        ...fields,
+      };
+    });
+
+  // A nap zárásai úgy, ahogy a mentés után az adatbázisban állnának: a
+  // form aktuális állapota, plusz azok a már mentett zárások, amelyekhez a form
+  // nem nyúl (a mentés sem törli őket). Csak kiértékeléshez – nem ez megy az
+  // adatbázisba.
+  const buildCandidateClosures = () => {
+    const seen = new Set();
+    const candidates = closureList
+      .filter((c) => !(skippedRegisters.has(c.register.id) && isBlankClosure(mergedForKey(c.key))))
+      .map((c) => {
+        seen.add(c.key);
+        const src = mergedForKey(c.key);
+        const fields = {};
+        CLOSURE_FIELDS.forEach((f) => {
+          if (src[f] !== undefined) fields[f] = src[f];
+        });
+        return {
+          ...(existingByKey[c.key] || {}),
+          ...fields,
+          cash_register_id: c.register.id,
+          closure_number: c.closureNumber,
+          cash_registers: { id: c.register.id, ap_number: c.register.ap_number, name: c.register.name },
+        };
+      });
+    cashRegisterRevenues.forEach((r) => {
+      const key = closureKeyOf(r.cash_register_id, r.closure_number ?? 1);
+      if (seen.has(key) || removedKeys.has(key)) return;
+      candidates.push(r);
+    });
+    return candidates;
+  };
+
+  // Save everything (daily revenue + closures). Callable both from the form's
+  // submit buttons and from inside a cash register box (so the user doesn't have
+  // to scroll down to save).
+  const saveAll = async () => {
     if (!unitId) return;
+    // Szigorú elszámolás: amíg az előző nap rendezetlen, új nap nem menthető.
+    // Ez a mentés ELŐTT dől el, semmi nem íródik.
+    if (blocked) {
+      toast.error('Előbb az előző napot kell rendezni – addig ezt a napot nem lehet menteni.');
+      return;
+    }
+    // Szigorú elszámolás: ha ez a nap után már van újabb rögzítés, ez a nap csak
+    // rendezett állapotban menthető. Szintén a mentés ELŐTT dől el. Ha a
+    // kiértékelés maga hibázna, NEM tiltunk – a rögzítés fontosabb.
+    if (strictDay?.greenOnly) {
+      let status = null;
+      try {
+        status = evaluateDayCandidate(strictDay.rows, date, buildCandidateClosures());
+      } catch (error) {
+        console.error('Error evaluating day before save:', error);
+      }
+      if (status?.unresolved) {
+        setStrictRefusal(status.issues);
+        toast.error('Nem mentve: ez a nap csak rendezett állapotban menthető. Lásd a hibalistát.', {
+          duration: 7000,
+        });
+        return;
+      }
+    }
+    setStrictRefusal(null);
 
     setSaving(true);
     try {
@@ -247,13 +623,37 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
       const savedRevenue = await saveRevenue({
         ...formData,
         protocol_gross: protocolGrossToSave,
+        // Actual tips: sum of the per-closure tip amounts (recorded only, not
+        // part of any turnover calculation).
+        actual_tips: perRegisterTipsSum,
+        // Guest count: sum of the per-closure values when present, otherwise the
+        // manually entered value.
+        guest_count: perRegisterGuestSum > 0 ? perRegisterGuestSum : formData.guest_count,
       });
 
-      if (cashRegisters.length > 0 && savedRevenue?.id) {
-        await saveAllRevenues(cashRegisterDataRef.current, savedRevenue.id);
+      if (closureList.length > 0 && savedRevenue?.id) {
+        // Pass the explicitly-removed closure keys so only those are deleted —
+        // never inferred from the (possibly partial) submitted list.
+        await saveAllRevenues(buildClosuresToSave(), savedRevenue.id, removedKeys);
+        // Added / removed closures are now reflected in the refetched data.
+        setExtraClosures([]);
+        setRemovedKeys(new Set());
       }
 
-      toast.success('Napi adatok sikeresen mentve!');
+      // Name the saved day in the confirmation, so a wrong-day entry surfaces
+      // immediately instead of days later.
+      toast.success(`Mentve: ${formatDateWithWeekday(date)}`);
+
+      // Payment breakdown gaps are flagged loudly but NEVER block the save —
+      // the data is already stored at this point, this is only a reminder.
+      if (undocumentedGaps.length > 0) {
+        const names = undocumentedGaps.map((g) => g.closure.register.ap_number).join(', ');
+        toast(
+          `Figyelem – ${names}: a fizetési módok nem adják ki a forgalmat. ` +
+            'Rögzíts róla elütést indoklással.',
+          { icon: '⚠️', duration: 9000 }
+        );
+      }
     } catch (error) {
       console.error('Error saving daily revenue:', error);
     } finally {
@@ -261,17 +661,72 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
     }
   };
 
-  const totalCashRegisterRevenue = cashRegisters.reduce((sum, register) => {
-    const data = cashRegisterDataRef.current[register.id] || existingDataByRegister()[register.id] || {};
-    return (
-      sum +
-      (parseFloat(data.vat_0_percent) || 0) +
-      (parseFloat(data.vat_5_percent) || 0) +
-      (parseFloat(data.vat_18_percent) || 0) +
-      (parseFloat(data.vat_27_percent) || 0)
-      // tips not included in revenue total
-    );
-  }, 0);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await saveAll();
+  };
+
+  const totalCashRegisterRevenue = closureList.reduce(
+    (sum, c) => sum + closureTurnover(mergedForKey(c.key)),
+    0
+  );
+
+  // Day's bankkártya total for the WhatsApp summary's "Bk" line, taken from the
+  // TERMINAL (borravaló nélkül) rather than the register's own card field — the
+  // terminal is what the bank actually settles. Read-only: nothing here feeds
+  // back into what gets saved.
+  const totalTerminalCard = closureList.reduce(
+    (sum, c) => sum + (parseFloat(mergedForKey(c.key).terminal_card) || 0),
+    0
+  );
+
+  const softwareRevenueValue = parseFloat(formData.total_revenue) || 0;
+
+  // Protokoll is split in the message: bekészítés ("Protokol") and éttermi
+  // fogyasztás ("Éttermi"). When the day was recorded with protocol items they
+  // carry the split; the simple single-field mode only knows bekészítés.
+  const protocolByType = (type) =>
+    protocolItems
+      .filter((i) => i.item_type === type)
+      .reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+  const protocolBekeszites = protocolItems.length > 0
+    ? protocolByType('bekeszites')
+    : (parseFloat(formData.protocol_gross) || 0);
+  const protocolEttermi = protocolItems.length > 0 ? protocolByType('ettermi') : 0;
+
+  const whatsappText = buildWhatsappDailySummary({
+    date,
+    softwareRevenue: softwareRevenueValue,
+    cardRevenue: totalTerminalCard,
+    showCash: unitSendsCashLine(unitName),
+    mckinsey: parseFloat(formData.mckinsey_gross) || 0,
+    protocol: protocolBekeszites,
+    restaurant: protocolEttermi,
+    vipRevenue: parseFloat(formData.vip_revenue) || 0,
+    vipLoading: parseFloat(formData.vip_loading) || 0,
+    // Same rule the save uses: the per-closure sum wins when the registers
+    // carry it, otherwise the manually entered value.
+    guestCount: perRegisterGuestSum > 0 ? perRegisterGuestSum : (parseFloat(formData.guest_count) || 0),
+  });
+
+  const sendToWhatsapp = () => {
+    window.open(whatsappShareUrl(whatsappText), '_blank', 'noopener,noreferrer');
+  };
+
+  const copyWhatsappText = async () => {
+    try {
+      await navigator.clipboard.writeText(whatsappText);
+      toast.success('Vágólapra másolva');
+    } catch {
+      toast.error('Nem sikerült a másolás');
+    }
+  };
+
+  // Non-critical check: the per-register software revenue sum should match the
+  // Teljes forgalom. Flagged (not blocked) — a mismatch may be intentional.
+  const softwareSumMismatch =
+    perRegisterSoftwareSum > 0 &&
+    Math.abs(perRegisterSoftwareSum - (parseFloat(formData.total_revenue) || 0)) > 1;
 
   const loading = revenueLoading || registersLoading || settingsLoading;
 
@@ -340,7 +795,6 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
                 }
               }}
               suffix="Ft"
-              required
             />
             {perRegisterSoftwareSum > 0 && !formData.software_revenue_manual_override && (
               <p className="text-xs text-green-600 mt-1">
@@ -352,18 +806,184 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
                 Pénztárgépek összege: {formatCurrency(perRegisterSoftwareSum)}
               </p>
             )}
+            {softwareSumMismatch && (
+              <p className="text-xs text-amber-700 mt-1 flex items-start gap-1">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                <span>
+                  A pénztárgépek szoftver-forgalmának összege ({formatCurrency(perRegisterSoftwareSum)})
+                  eltér a Teljes forgalomtól. Ha szándékos, hagyd; egyébként ellenőrizd (pl. „Kézi
+                  megadás" ki-be a újraszámoláshoz).
+                </span>
+              </p>
+            )}
           </div>
-          <Input
-            label="Napi fogyasztói létszám"
-            type="number"
-            step="1"
-            min="0"
-            value={formData.guest_count}
-            onChange={(e) => handleChange('guest_count', e.target.value)}
-            suffix="fő"
-          />
+          {perRegisterGuestSum > 0 ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Napi fogyasztói létszám (összesen)
+              </label>
+              <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-gray-900">
+                {perRegisterGuestSum} fő
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                A pénztárgépeknél megadott létszámok összege
+              </p>
+            </div>
+          ) : (
+            <Input
+              label="Napi fogyasztói létszám"
+              type="number"
+              step="1"
+              min="0"
+              value={formData.guest_count}
+              onChange={(e) => handleChange('guest_count', e.target.value)}
+              suffix="fő"
+              helper="Add meg kézzel, vagy töltsd ki a pénztárgépeknél (akkor automatikusan összegződik)"
+            />
+          )}
         </div>
       </Card>
+
+      {/* Cash registers section (entry) */}
+      {cashRegisters.length === 0 ? (
+        <Card className="border-2 border-dashed border-gray-300">
+          <div className="text-center py-6">
+            <AlertCircle className="h-12 w-12 mx-auto text-gray-300 mb-3" />
+            <h3 className="text-lg font-medium text-gray-600">
+              Nincsenek aktív pénztárgépek
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Először vegyél fel pénztárgépeket az Egységek menüben
+            </p>
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-4">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Calculator className="h-5 w-5 text-pepper-red" />
+                Pénztárgépek ({cashRegisters.length})
+              </h2>
+              {/* Unit-level toggle: multiple closures per register per day */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={multiClosuresEnabled}
+                onClick={() => updateRevenueSettings({ multiple_closures_enabled: !multiClosuresEnabled })}
+                className="flex items-center gap-2 text-sm text-gray-600"
+                title="Egység-szintű beállítás"
+              >
+                <span
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    multiClosuresEnabled ? 'bg-pepper-red' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      multiClosuresEnabled ? 'translate-x-4' : 'translate-x-1'
+                    }`}
+                  />
+                </span>
+                Több zárás / nap
+              </button>
+            </div>
+            <div className="text-right">
+              <div className="text-sm text-gray-500">Összes forgalom</div>
+              <div className="text-lg font-bold text-gray-900">
+                {formatCurrency(totalCashRegisterRevenue)}
+              </div>
+            </div>
+          </div>
+
+          {/* Warn when the day has extra closures but the toggle is off, so they
+              would otherwise be hidden (e.g. viewing an older recorded day). */}
+          {!multiClosuresEnabled && closureList.some((c) => c.closureNumber > 1) && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-amber-800 flex-1">
+                <span className="font-medium">Ezen a napon több zárás van rögzítve</span> egy vagy több
+                pénztárgéphez, de a „Több zárás / nap" kapcsoló ki van kapcsolva, ezért csak az első
+                zárás látszik.
+                <button
+                  type="button"
+                  onClick={() => updateRevenueSettings({ multiple_closures_enabled: true })}
+                  className="ml-1 underline font-medium hover:text-amber-900"
+                >
+                  Több zárás megjelenítése
+                </button>
+              </div>
+            </div>
+          )}
+
+          {cashRegisters.map((register) => {
+            const registerClosures = closureList.filter((c) => c.register.id === register.id);
+            // When the toggle is off, only the first closure is shown; any extra
+            // closures stay in the data (totals/save) but are hidden from entry.
+            const visibleClosures = multiClosuresEnabled
+              ? registerClosures
+              : registerClosures.filter((c) => c.closureNumber === 1);
+            const multiple = visibleClosures.length > 1;
+            return (
+              <div
+                key={register.id}
+                id={`register-${register.ap_number}`}
+                className={`space-y-3 ${
+                  focusRegisterAp && String(register.ap_number) === String(focusRegisterAp)
+                    ? 'rounded-lg ring-2 ring-pepper-red ring-offset-2'
+                    : ''
+                }`}
+              >
+                {visibleClosures.map((c) => (
+                  <CashRegisterSection
+                    key={c.key}
+                    register={register}
+                    existingData={existingByKey[c.key]}
+                    onChange={(data) => {
+                      activateRegister(register.id);
+                      handleCashRegisterChange(c.key, data);
+                    }}
+                    skipped={skippedRegisters.has(register.id)}
+                    onToggleSkip={
+                      c.closureNumber === 1 ? (skip) => setRegisterSkipped(register.id, skip) : null
+                    }
+                    expanded={expandedRegisters[c.key]}
+                    onToggleExpand={() => toggleExpand(c.key)}
+                    unitName={unitName}
+                    date={date}
+                    closureLabel={multiple ? `${c.closureNumber}. zárás` : null}
+                    onRemove={c.closureNumber > 1 ? () => removeClosure(register.id, c.closureNumber) : null}
+                    validation={closureValidations[c.key]}
+                    onSave={saveAll}
+                    saving={saving}
+                  />
+                ))}
+                {multiClosuresEnabled && !skippedRegisters.has(register.id) && (
+                  <button
+                    type="button"
+                    onClick={() => addClosure(register.id)}
+                    className="w-full flex items-center justify-center gap-2 py-2 text-sm text-pepper-red border-2 border-dashed border-pepper-red border-opacity-40 rounded-lg hover:bg-pepper-red hover:bg-opacity-5 transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                    További zárás a mai napra ({register.ap_number})
+                  </button>
+                )}
+              </div>
+            );
+          })}
+
+          {strictRefusalBox}
+
+          {/* Save/refresh right after the register boxes, so there's no need to
+              scroll to the bottom of the form. */}
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" onClick={saveAll} loading={saving} disabled={blocked}>
+              <Save className="h-4 w-4" />
+              {revenue ? 'Frissítés' : 'Mentés'}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* VIP Section */}
       {showVip && (
@@ -614,53 +1234,17 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
           suffix="Ft"
           helper="Egyéb, pénztárgépen kívüli hivatalos készpénz bevétel"
         />
-      </Card>
-
-      {/* Cash registers section */}
-      {cashRegisters.length === 0 ? (
-        <Card className="border-2 border-dashed border-gray-300">
-          <div className="text-center py-6">
-            <AlertCircle className="h-12 w-12 mx-auto text-gray-300 mb-3" />
-            <h3 className="text-lg font-medium text-gray-600">
-              Nincsenek aktív pénztárgépek
-            </h3>
-            <p className="text-sm text-gray-500 mt-1">
-              Először vegyél fel pénztárgépeket az Egységek menüben
-            </p>
-          </div>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <Calculator className="h-5 w-5 text-pepper-red" />
-              Pénztárgépek ({cashRegisters.length})
-            </h2>
-            <div className="text-right">
-              <div className="text-sm text-gray-500">Összes forgalom</div>
-              <div className="text-lg font-bold text-gray-900">
-                {formatCurrency(totalCashRegisterRevenue)}
-              </div>
-            </div>
-          </div>
-
-          {cashRegisters.map((register) => (
-            <CashRegisterSection
-              key={register.id}
-              register={register}
-              existingData={existingDataByRegister()[register.id]}
-              onChange={handleCashRegisterChange}
-              expanded={expandedRegisters[register.id]}
-              onToggleExpand={() => toggleExpand(register.id)}
-              unitName={unitName}
-              date={date}
-            />
-          ))}
+        <div className="mt-4">
+          <Input
+            label="Borravaló (pénztárgépenként összesítve)"
+            type="text"
+            value={formatCurrency(perRegisterTipsSum)}
+            readOnly
+            disabled
+            helper="A pénztárgépeknél rögzített borravalók összege (a forgalomba nem számít bele)"
+          />
         </div>
-      )}
-
-      {/* EFO Payments */}
-      <EfoPayments unitId={unitId} date={date} />
+      </Card>
 
       {/* Color marking */}
       <Card
@@ -705,9 +1289,70 @@ export default function DailyRevenueForm({ date, unitId, unitName }) {
         )}
       </Card>
 
+      {/* Daily summary for the unit's own WhatsApp group. Appears once the day
+          is saved. The send is manual on purpose: WhatsApp offers no official
+          way to post into a group, so the message is prefilled and the user
+          picks the group. Purely additive — it reads the form, never writes. */}
+      {revenue && softwareRevenueValue > 0 && (
+        <Card>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <MessageCircle className="h-4 w-4 text-green-600" />
+                Napi összesítő a WhatsApp csoportba
+              </h3>
+              <pre className="mt-2 font-mono text-xs leading-5 text-gray-700 whitespace-pre-wrap">
+                {whatsappText}
+              </pre>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button type="button" variant="secondary" size="sm" onClick={copyWhatsappText}>
+                <Copy className="h-4 w-4" />
+                Másolás
+              </Button>
+              <Button type="button" variant="success" size="sm" onClick={sendToWhatsapp}>
+                <MessageCircle className="h-4 w-4" />
+                Küldés WhatsApp-ra
+              </Button>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-gray-500">
+            A gomb megnyitja a WhatsAppot a kész üzenettel — csak ki kell választani az egység csoportját.
+          </p>
+        </Card>
+      )}
+
+      {/* Payment breakdown gaps — flagged prominently, never blocking the save */}
+      {undocumentedGaps.length > 0 && (
+        <div className="rounded-lg border-2 border-red-400 bg-red-50 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-6 w-6 text-red-600 mt-0.5 shrink-0" />
+            <div className="text-sm text-red-800">
+              <p className="font-bold text-base">Hiányzó jegyzőkönyv – fizetési mód eltérés</p>
+              <ul className="mt-2 space-y-1">
+                {undocumentedGaps.map((g) => (
+                  <li key={g.closure.key}>
+                    <span className="font-mono font-medium">{g.closure.register.ap_number}</span>
+                    {g.closure.closureNumber > 1 && ` (${g.closure.closureNumber}. zárás)`}
+                    {' — a fizetési módok nem adják ki a forgalmat: '}
+                    <span className="font-bold">{formatCurrency(g.difference)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs">
+                Nyisd ki az érintett pénztárgép boxát, és az Elütések résznél rögzítsd az eltérést
+                indoklással. <span className="font-medium">A nap ettől függetlenül menthető.</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {strictRefusalBox}
+
       {/* Submit button */}
       <div className="flex justify-end">
-        <Button type="submit" loading={saving} size="lg">
+        <Button type="submit" loading={saving} size="lg" disabled={blocked}>
           <Save className="h-4 w-4" />
           {revenue ? 'Frissítés' : 'Mentés'}
         </Button>

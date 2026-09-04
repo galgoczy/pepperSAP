@@ -1,9 +1,13 @@
 import { useState } from 'react';
-import { User, Lock, Bell, Shield, Eye, Settings2, Star, Building, Landmark, Radio, PartyPopper } from 'lucide-react';
+import { User, Lock, Bell, Shield, Eye, Settings2, Star, Building, Landmark, Radio, PartyPopper, Calculator, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { useAllUnitRevenueSettings } from '../hooks/useUnitRevenueSettings';
-import { Card, Button, Input, LoadingSpinner } from '../components/common';
+import { useStrictAccounting } from '../hooks/useStrictAccounting';
+import { getToday } from '../lib/utils';
+import { useUnits } from '../hooks/useSupabase';
+import { Card, Button, Input, Select, LoadingSpinner, DateInput } from '../components/common';
+import CashRegisterOrderCard from '../components/units/CashRegisterOrderCard';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 
@@ -16,13 +20,28 @@ const REVENUE_TYPES = [
 ];
 
 export default function SettingsPage() {
-  const { user, profile, isAdmin, refetchProfile } = useAuth();
+  const { user, profile, isAdmin, unitId, refetchProfile } = useAuth();
   const { settings, updateSetting } = useAppSettings();
   const { allSettings, loading: settingsLoading, updateSettings } = useAllUnitRevenueSettings();
+  const { units } = useUnits();
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || '');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [orderUnitId, setOrderUnitId] = useState('');
+  const strict = useStrictAccounting();
+  const [strictSaving, setStrictSaving] = useState(false);
+
+  const saveStrict = async (next) => {
+    setStrictSaving(true);
+    try {
+      await strict.update(next);
+      toast.success('Szigorú elszámolás mód mentve');
+    } catch (error) {
+      console.error(error);
+      toast.error('Nem sikerült menteni a beállítást');
+    } finally {
+      setStrictSaving(false);
+    }
+  };
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
@@ -46,38 +65,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handleChangePassword = async (e) => {
-    e.preventDefault();
-
-    if (newPassword !== confirmPassword) {
-      toast.error('Az új jelszavak nem egyeznek!');
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      toast.error('Az új jelszó legalább 6 karakter kell legyen!');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (error) throw error;
-
-      setNewPassword('');
-      setConfirmPassword('');
-      toast.success('Jelszó sikeresen megváltoztatva!');
-    } catch (error) {
-      console.error(error);
-      toast.error('Hiba történt a jelszó megváltoztatásakor');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -133,7 +120,43 @@ export default function SettingsPage() {
         </form>
       </Card>
 
-      {/* Password Section */}
+      {/* Cash register display order (unit users for their own unit; admin per unit) */}
+      {(isAdmin || profile?.role === 'unit') && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-gray-400" />
+              Pénztárgépek sorrendje
+            </div>
+          }
+        >
+          {isAdmin ? (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500">
+                Válaszd ki az egységet, majd állítsd be a pénztárgépek sorrendjét a
+                napi jelentéshez.
+              </p>
+              <Select
+                label="Egység"
+                value={orderUnitId}
+                onChange={(e) => setOrderUnitId(e.target.value)}
+                options={[
+                  { value: '', label: 'Válassz egységet...' },
+                  ...units
+                    .filter((u) => u.type === 'restaurant')
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((u) => ({ value: u.id, label: u.name })),
+                ]}
+              />
+              {orderUnitId && <CashRegisterOrderCard unitId={orderUnitId} />}
+            </div>
+          ) : (
+            <CashRegisterOrderCard unitId={unitId} />
+          )}
+        </Card>
+      )}
+
+      {/* Password Section - disabled: accounts use Microsoft 365 sign-in */}
       <Card
         title={
           <div className="flex items-center gap-2">
@@ -142,29 +165,33 @@ export default function SettingsPage() {
           </div>
         }
       >
-        <form onSubmit={handleChangePassword} className="space-y-4">
+        <p className="text-sm text-gray-500 mb-4">
+          A bejelentkezés Microsoft 365 fiókkal történik, ezért a jelszó itt nem módosítható.
+          A jelszavadat a Microsoft fiókod beállításaiban tudod megváltoztatni.
+        </p>
+        <div className="space-y-4 opacity-50 pointer-events-none select-none" aria-disabled="true">
           <Input
             label="Új jelszó"
             type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            required
+            value=""
+            disabled
+            onChange={() => {}}
           />
 
           <Input
             label="Új jelszó megerősítése"
             type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
+            value=""
+            disabled
+            onChange={() => {}}
           />
 
           <div className="pt-4">
-            <Button type="submit" loading={loading}>
+            <Button type="button" disabled>
               Jelszó megváltoztatása
             </Button>
           </div>
-        </form>
+        </div>
       </Card>
 
       {/* Unit Revenue Settings - Admin only */}
@@ -256,6 +283,115 @@ export default function SettingsPage() {
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-pepper-red/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pepper-red"></div>
               </div>
             </label>
+          </div>
+        </Card>
+      )}
+
+      {/* Strict accounting mode (Admin only, system-wide) */}
+      {isAdmin && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-gray-400" />
+              Szigorú elszámolás mód
+            </div>
+          }
+        >
+          <p className="text-sm text-gray-500 mb-4">
+            Bekapcsolva egy egység addig nem tud új napot rögzíteni, amíg az előző, adatot
+            tartalmazó napja nincs rendben: minden eltérést fed a megfelelő elütés, és a zárás
+            sorszáma meg a göngyölt forgalom ki van töltve. Az aznapi mentést nem tiltja, csak a
+            továbblépést. Üres nap nem akadály. Adminnak van felülbírálás a rögzítő oldalon.
+          </p>
+          {!strict.available ? (
+            <p className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded-lg p-3">
+              Ehhez előbb futtasd le a <code>20260903_system_settings.sql</code> migrációt a
+              Supabase-ben. Addig a mód kikapcsoltnak számít.
+            </p>
+          ) : (
+            <div className="space-y-4 max-w-md">
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <p className="font-medium text-gray-900">Szigorú elszámolás</p>
+                  <p className="text-sm text-gray-500">
+                    {strict.enabled ? 'Bekapcsolva – minden egységre érvényes' : 'Kikapcsolva'}
+                  </p>
+                </div>
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={strict.enabled}
+                    disabled={strictSaving || strict.loading}
+                    onChange={(e) =>
+                      saveStrict({
+                        enabled: e.target.checked,
+                        // Bekapcsoláskor a mai nap a kezdet, ha még nincs dátum.
+                        since: e.target.checked ? strict.since || getToday() : strict.since,
+                      })
+                    }
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-pepper-red/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pepper-red"></div>
+                </div>
+              </label>
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-gray-700">Ettől a naptól számít</label>
+                <DateInput
+                  value={strict.since || ''}
+                  onChange={(e) => saveStrict({ since: e.target.value || null })}
+                  disabled={strictSaving || strict.loading}
+                />
+                <p className="text-xs text-gray-500">
+                  A korábbi napok rendezetlensége nem zár le semmit – a bevezetés napjától indul a
+                  szabály. Ez a beállítás az adatbázisban él, minden admin ugyanazt látja.
+                </p>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Default unit on open (Admin only) */}
+      {isAdmin && (
+        <Card
+          title={
+            <div className="flex items-center gap-2">
+              <Building className="h-5 w-5 text-gray-400" />
+              Alapértelmezett egység
+            </div>
+          }
+        >
+          <p className="text-sm text-gray-500 mb-4">
+            Mely egység legyen kiválasztva, amikor megnyitod a napi jelentést vagy a riportokat.
+          </p>
+          <div className="space-y-4 max-w-md">
+            <Select
+              label="Mód"
+              value={settings.defaultUnitMode}
+              onChange={(e) => updateSetting('defaultUnitMode', e.target.value)}
+              options={[
+                { value: 'default', label: 'Alapértelmezett (első egység)' },
+                { value: 'remember', label: 'Legutóbb megnyitott egység' },
+                { value: 'specific', label: 'Megadott egység' },
+              ]}
+            />
+            {settings.defaultUnitMode === 'specific' && (
+              <Select
+                label="Egység"
+                value={settings.defaultUnitId}
+                onChange={(e) => updateSetting('defaultUnitId', e.target.value)}
+                options={[
+                  { value: '', label: 'Válassz egységet...' },
+                  ...units
+                    .filter((u) => u.type === 'restaurant')
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((u) => ({ value: u.id, label: u.name })),
+                ]}
+              />
+            )}
+            <p className="text-xs text-gray-400">
+              Ez a beállítás ehhez a böngészőhöz tartozik (helyileg tárolva).
+            </p>
           </div>
         </Card>
       )}

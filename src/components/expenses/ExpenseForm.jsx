@@ -84,7 +84,13 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
     }
   };
 
-  const restaurantUnits = units.filter((u) => u.type === 'restaurant');
+  // Admins can book a cost on ANY unit — the restaurants, the events unit
+  // (Rendezvény) and the central one (Központ) too — so the selector is not
+  // limited to type === 'restaurant'. Restaurants are listed first.
+  const selectableUnits = [...units].sort((a, b) => {
+    const rank = (u) => (u.type === 'restaurant' ? 0 : 1);
+    return rank(a) - rank(b) || (a.name || '').localeCompare(b.name || '', 'hu');
+  });
 
   const paymentMethodOptions = [
     { value: 'cash', label: 'Készpénz' },
@@ -102,7 +108,7 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
           label="Egység"
           value={formData.unit_id}
           onChange={(e) => handleChange('unit_id', e.target.value)}
-          options={restaurantUnits.map((u) => ({ value: u.id, label: u.name }))}
+          options={selectableUnits.map((u) => ({ value: u.id, label: u.name }))}
           required
         />
       )}

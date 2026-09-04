@@ -1,13 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Download, ChevronLeft, ChevronRight, FileSpreadsheet, Calendar } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
-import { Card, Button, Select } from '../components/common';
+import { useAppSettings } from '../hooks/useAppSettings';
+import { Card, Button, Select, DateInput, ErrorBoundary } from '../components/common';
 import MonthlyReport from '../components/reports/MonthlyReport';
 import MonthlyTableReport from '../components/reports/MonthlyTableReport';
+import HouseCashReport from '../components/reports/HouseCashReport';
+import TrafficReport from '../components/reports/TrafficReport';
 import ExportModal from '../components/reports/ExportModal';
-import { getFirstDayOfMonth, getLastDayOfMonth } from '../lib/utils';
+import { getFirstDayOfMonth, getToday } from '../lib/utils';
 
 // Hungarian month names
 const MONTH_NAMES = [
@@ -17,9 +20,12 @@ const MONTH_NAMES = [
 
 // Base report types for all users
 const baseReportTypes = [
+  { value: 'traffic', label: 'Forgalmi jelentés' },
   { value: 'full_monthly', label: 'Teljes havi forgalom' },
+  { value: 'full_traffic', label: 'Teljes forgalmi jelentés (forgalom + házipénztár)' },
   { value: 'cash_revenue', label: 'Készpénz bevételek' },
   { value: 'cash_register', label: 'Pénztárgép jelentés' },
+  { value: 'house_cash', label: 'Házipénztár' },
   { value: 'events', label: 'Rendezvény összesítő' },
 ];
 
@@ -27,20 +33,27 @@ const baseReportTypes = [
 const adminAggregateReportTypes = [
   { value: 'monthly_table', label: '📊 Havi tábla (költség-bevétel)' },
   { value: 'full_monthly_all', label: 'Teljes havi forgalom - összes egység' },
+  { value: 'full_traffic', label: 'Teljes forgalmi jelentés - összes egység' },
   { value: 'cash_revenue_all', label: 'Készpénz bevételek - összes egység' },
   { value: 'cash_register_all_simple', label: 'Pénztárgép forgalom - összes egység (egyszerű)' },
   { value: 'cash_register_all_detailed', label: 'Pénztárgép forgalom - összes egység (részletes)' },
+  { value: 'cash_register_all_accounting', label: 'Pénztárgép forgalom - könyvelés' },
+  { value: 'house_cash', label: 'Házipénztár - összes egység' },
   { value: 'events_all', label: 'Rendezvény összesítő - összes egység' },
 ];
 
-// Get previous month's first and last day
+// Get previous month's first and last day (using LOCAL date components, not
+// UTC — toISOString() shifts back a day in timezones ahead of UTC like Hungary,
+// which made the range start on the last day of the month before).
 function getPreviousMonthDates() {
   const now = new Date();
   const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+  const ymd = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   return {
-    start: firstDay.toISOString().split('T')[0],
-    end: lastDay.toISOString().split('T')[0],
+    start: ymd(firstDay),
+    end: ymd(lastDay),
   };
 }
 
@@ -69,18 +82,19 @@ function getMonthlyTableMonthOptions() {
   return options;
 }
 
-// Parse yearMonth to get display text
-function formatYearMonth(yearMonth) {
-  const [year, month] = yearMonth.split('-').map(Number);
-  return `${year}. ${MONTH_NAMES[month - 1]}`;
-}
-
 export default function ReportsPage() {
   const { isAdmin, isEvents, isAccountant, canViewAllUnits, unitId } = useAuth();
   const { units } = useUnits();
-  const [startDate, setStartDate] = useState(getFirstDayOfMonth());
-  const [endDate, setEndDate] = useState(getLastDayOfMonth());
-  const [selectedYearMonth, setSelectedYearMonth] = useState(getPreviousMonthYearMonth());
+  const { settings, updateSetting } = useAppSettings();
+  // The report's selection lives in the URL, so leaving the page and coming back
+  // (e.g. from a day opened out of the register report) restores what was on
+  // screen instead of resetting to the defaults.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [startDate, setStartDate] = useState(() => searchParams.get('start') || getFirstDayOfMonth());
+  const [endDate, setEndDate] = useState(() => searchParams.get('end') || getToday());
+  const [selectedYearMonth, setSelectedYearMonth] = useState(
+    () => searchParams.get('ym') || getPreviousMonthYearMonth()
+  );
 
   // Month options for monthly table dropdown
   const monthlyTableOptions = getMonthlyTableMonthOptions();
@@ -91,11 +105,35 @@ export default function ReportsPage() {
     if (isAccountant && !unitId) return 'cash_register_all_simple';
     if (isAccountant) return 'cash_register';
     if (isAdmin && !unitId) return 'full_monthly_all';
+    // A unit's own default is the traffic report.
+    if (!isAdmin) return 'traffic';
     return 'full_monthly';
   };
-  const [reportType, setReportType] = useState(getDefaultReportType());
+  const [reportType, setReportType] = useState(() => searchParams.get('type') || getDefaultReportType());
   const [isExportOpen, setIsExportOpen] = useState(false);
-  const [selectedUnit, setSelectedUnit] = useState(unitId || '');
+  const [selectedUnit, setSelectedUnit] = useState(() => {
+    // '' is a real value here ("all units"), so presence decides, not truthiness.
+    if (searchParams.has('unit')) return searchParams.get('unit');
+    if (!canViewAllUnits) return unitId || '';
+    // Admin/accountant: apply the "default unit" preference ('' = all units).
+    if (settings.defaultUnitMode === 'specific' && settings.defaultUnitId) return settings.defaultUnitId;
+    if (settings.defaultUnitMode === 'remember' && settings.lastUnitId) return settings.lastUnitId;
+    return unitId || '';
+  });
+
+  // Mirror the selection into the URL. The functional form keeps anything else
+  // that is there (e.g. `focus`, which scrolls the report back to a register).
+  useEffect(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('type', reportType);
+      next.set('unit', selectedUnit);
+      next.set('start', startDate);
+      next.set('end', endDate);
+      next.set('ym', selectedYearMonth);
+      return next;
+    }, { replace: true });
+  }, [reportType, selectedUnit, startDate, endDate, selectedYearMonth, setSearchParams]);
 
   // Get restaurant units only (exclude events unit)
   const restaurantUnits = units.filter((u) => u.type === 'restaurant');
@@ -107,16 +145,22 @@ export default function ReportsPage() {
     }
 
     if (isAccountant && !selectedUnit) {
-      // Accountant with "all units" selected - show only cash register reports
+      // Accountant with "all units" selected - cash register reports + house cash
+      // (reserve-less; the reserve is hidden for accountants in the report).
       return [
         { value: 'cash_register_all_simple', label: 'Pénztárgép forgalom - összes egység (egyszerű)' },
         { value: 'cash_register_all_detailed', label: 'Pénztárgép forgalom - összes egység (részletes)' },
+        { value: 'cash_register_all_accounting', label: 'Pénztárgép forgalom - könyvelés' },
+        { value: 'house_cash', label: 'Házipénztár - összes egység (tartalék nélkül)' },
       ];
     }
 
     if (isAccountant && selectedUnit) {
-      // Accountant with specific unit - show only cash register report
-      return [{ value: 'cash_register', label: 'Pénztárgép jelentés' }];
+      // Accountant with specific unit - cash register report + house cash
+      return [
+        { value: 'cash_register', label: 'Pénztárgép jelentés' },
+        { value: 'house_cash', label: 'Házipénztár (tartalék nélkül)' },
+      ];
     }
 
     if (isAdmin && !selectedUnit) {
@@ -133,6 +177,7 @@ export default function ReportsPage() {
   // Reset report type if current selection is not available
   const handleUnitChange = (newUnit) => {
     setSelectedUnit(newUnit);
+    if (canViewAllUnits) updateSetting('lastUnitId', newUnit);
     // If switching to/from "all units", reset report type based on role
     if ((newUnit === '' && selectedUnit !== '') || (newUnit !== '' && selectedUnit === '')) {
       if (isAccountant) {
@@ -232,36 +277,38 @@ export default function ReportsPage() {
                 <label className="block text-sm font-medium text-gray-700">
                   Kezdő dátum
                 </label>
-                <div className="relative">
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
-                  />
-                </div>
+                <DateInput
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
               </div>
 
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-gray-700">
                   Záró dátum
                 </label>
-                <div className="relative">
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    min={startDate}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
-                  />
-                </div>
+                <DateInput
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  min={startDate}
+                />
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1 lg:col-span-3">
                 <label className="block text-sm font-medium text-gray-700">
                   Gyors választás
                 </label>
-                {startDate === getFirstDayOfMonth() && endDate === getLastDayOfMonth() ? (
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setStartDate(getFirstDayOfMonth());
+                      setEndDate(getToday());
+                    }}
+                    className="flex-1"
+                  >
+                    Aktuális hónap
+                  </Button>
                   <Button
                     variant="secondary"
                     onClick={() => {
@@ -269,24 +316,12 @@ export default function ReportsPage() {
                       setStartDate(prev.start);
                       setEndDate(prev.end);
                     }}
-                    className="w-full"
+                    className="flex-1"
                   >
                     <ChevronLeft className="h-4 w-4" />
                     Előző hónap
                   </Button>
-                ) : (
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setStartDate(getFirstDayOfMonth());
-                      setEndDate(getLastDayOfMonth());
-                    }}
-                    className="w-full"
-                  >
-                    Aktuális hónap
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                )}
+                </div>
               </div>
             </>
           )}
@@ -334,13 +369,50 @@ export default function ReportsPage() {
         <MonthlyTableReport
           yearMonth={selectedYearMonth}
         />
-      ) : (
-        <MonthlyReport
+      ) : reportType === 'traffic' ? (
+        effectiveUnitId ? (
+          <TrafficReport
+            unitId={effectiveUnitId}
+            unitName={units.find((u) => u.id === effectiveUnitId)?.name || ''}
+          />
+        ) : (
+          <Card>
+            <p className="text-center text-gray-500 py-8">
+              Válassz ki egy egységet a forgalmi jelentéshez
+            </p>
+          </Card>
+        )
+      ) : reportType === 'house_cash' ? (
+        <HouseCashReport
+          unitId={effectiveUnitId}
+          units={units}
           startDate={startDate}
           endDate={endDate}
-          reportType={reportType}
-          unitId={effectiveUnitId}
         />
+      ) : reportType === 'full_traffic' ? (
+        <div className="space-y-8">
+          <MonthlyReport
+            startDate={startDate}
+            endDate={endDate}
+            reportType={effectiveUnitId ? 'full_monthly' : 'full_monthly_all'}
+            unitId={effectiveUnitId}
+          />
+          <HouseCashReport
+            unitId={effectiveUnitId}
+            units={units}
+            startDate={startDate}
+            endDate={endDate}
+          />
+        </div>
+      ) : (
+        <ErrorBoundary resetKey={reportType} title="Hiba a jelentés megjelenítésekor">
+          <MonthlyReport
+            startDate={startDate}
+            endDate={endDate}
+            reportType={reportType}
+            unitId={effectiveUnitId}
+          />
+        </ErrorBoundary>
       )}
 
       {/* Export modal */}

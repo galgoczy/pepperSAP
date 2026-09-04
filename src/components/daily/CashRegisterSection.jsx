@@ -1,28 +1,63 @@
 import { useState, useEffect, useRef } from 'react';
-import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp, Printer, Plus, Trash2 } from 'lucide-react';
+import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp, Printer, Plus, Trash2, Save } from 'lucide-react';
 import { Card, Input, Select, Button } from '../common';
 import { Textarea } from '../common/Input';
-import { formatCurrency, formatDate } from '../../lib/utils';
-import { validateCardPayments } from '../../lib/validations';
+import { formatCurrency, formatDate, TERMINAL_TIP_WITHDRAW_RATE } from '../../lib/utils';
+import { validateCardPayments, validatePaymentBreakdown, hasDocumentedDiscrepancy } from '../../lib/validations';
+import {
+  DISCREPANCY_KINDS,
+  PAYMENT_METHOD_LABELS,
+  discrepancyKind,
+  isMethodDiscrepancy,
+  amountDiscrepancyHuf,
+  eurDiscrepancyAmount,
+  methodAdjustments,
+  describeDiscrepancy,
+} from '../../lib/discrepancies';
 import { jsPDF } from 'jspdf';
 
 // Feature flag: set to true to show SZÉP card fields
 const SHOW_SZEP_FIELDS = false;
 
-const DEFAULT_DISCREPANCY = { amount: '', currency: 'HUF', note: '' };
+// kind: 'amount' (téves összeg / homály – a forgalom változik) or 'method'
+// (rossz fizetési mód – a forgalom nem változik, csak a jogcím). For 'method',
+// `keyed` is what it was wrongly keyed as and `actual` what really happened.
+const DEFAULT_DISCREPANCY = {
+  amount: '',
+  currency: 'HUF',
+  note: '',
+  // New entries default to "rossz fizetési mód" (the more common case).
+  // Entries saved without a kind stay "téves összeg" (see discrepancies.js).
+  kind: DISCREPANCY_KINDS.METHOD,
+  keyed: 'card',
+  actual: 'cash',
+};
+
+// Payment methods offered in the "rossz fizetési mód" selector.
+const METHOD_OPTIONS = [
+  { value: 'cash', label: PAYMENT_METHOD_LABELS.cash },
+  { value: 'card', label: PAYMENT_METHOD_LABELS.card },
+  { value: 'szep', label: PAYMENT_METHOD_LABELS.szep },
+];
 
 const DEFAULT_FORM_DATA = {
   software_revenue: '',
+  guest_count: '',
+  closure_sequence: '',
   vat_0_percent: '',
   vat_5_percent: '',
   vat_18_percent: '',
   vat_27_percent: '',
   tips: '',
+  cumulative_revenue: '',
   discrepancies: [], // Array of {amount, currency, note}
   cash_payment: '',
   card_payment: '',
   szep_card_payment: '',
   terminal_card: '',
+  terminal_card_total: '',
+  terminal_card_tip: '',
+  terminal_tip_withdrawn: false,
   terminal_szep: '',
   terminal_discrepancy_note: '',
 };
@@ -42,6 +77,9 @@ function computeFormData(existingData) {
 
   return {
     software_revenue: existingData.software_revenue || '',
+    guest_count: existingData.guest_count ?? '',
+    closure_sequence: existingData.closure_sequence ?? '',
+    cumulative_revenue: existingData.cumulative_revenue ?? '',
     vat_0_percent: existingData.vat_0_percent || '',
     vat_5_percent: existingData.vat_5_percent || '',
     vat_18_percent: existingData.vat_18_percent || '',
@@ -52,6 +90,12 @@ function computeFormData(existingData) {
     card_payment: existingData.card_payment || '',
     szep_card_payment: existingData.szep_card_payment || '',
     terminal_card: existingData.terminal_card || '',
+    // Backward compatible: older rows only have terminal_card (already the
+    // "borravaló nélkül" value) — treat it as the total with no tip.
+    terminal_card_total:
+      existingData.terminal_card_total ?? existingData.terminal_card ?? '',
+    terminal_card_tip: existingData.terminal_card_tip ?? '',
+    terminal_tip_withdrawn: existingData.terminal_tip_withdrawn ?? false,
     terminal_szep: existingData.terminal_szep || '',
     terminal_discrepancy_note: existingData.terminal_discrepancy_note || '',
   };
@@ -75,6 +119,14 @@ export default function CashRegisterSection({
   onToggleExpand,
   unitName,
   date,
+  closureLabel = null,
+  onRemove = null,
+  validation = null,
+  onSave = null,
+  saving = false,
+  // "Ma nem volt zárás ezen a gépen" – a doboz összecsukva, a zárás nem mentődik.
+  skipped = false,
+  onToggleSkip = null,
 }) {
   const [formData, setFormData] = useState(() => computeFormData(existingData));
   const prevExistingDataRef = useRef(existingData);
@@ -89,10 +141,12 @@ export default function CashRegisterSection({
     }
   }, [existingData]);
 
-  // Calculate total HUF discrepancy amount (only HUF entries)
-  const totalHufDiscrepancy = (formData.discrepancies || [])
-    .filter(d => d.currency === 'HUF')
-    .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+  // "Téves összeg" elütés total (HUF only) — what inflates the turnover. The
+  // "rossz fizetési mód" entries are summarised separately as per-method
+  // corrections (real = register + adjustment).
+  const totalHufDiscrepancy = amountDiscrepancyHuf(formData.discrepancies || []);
+  const totalEurDiscrepancy = eurDiscrepancyAmount(formData.discrepancies || []);
+  const methodAdj = methodAdjustments(formData.discrepancies || []);
 
   // Generate discrepancy protocol PDF
   const generateDiscrepancyProtocol = () => {
@@ -137,6 +191,8 @@ export default function CashRegisterSection({
       yPos += 7;
       doc.setFont('helvetica', 'normal');
       const amount = parseFloat(disc.amount) || 0;
+      doc.text(sanitizeForPdf(`Típus: ${describeDiscrepancy(disc)}`), 25, yPos);
+      yPos += 6;
       doc.text(sanitizeForPdf(`Összeg: ${formatCurrency(amount)} ${disc.currency}`), 25, yPos);
       yPos += 6;
       if (disc.note) {
@@ -151,7 +207,7 @@ export default function CashRegisterSection({
     if (formData.discrepancies?.length > 1) {
       yPos += 5;
       doc.setFont('helvetica', 'bold');
-      doc.text(sanitizeForPdf(`Összesen (HUF): ${formatCurrency(totalHufDiscrepancy)}`), 20, yPos);
+      doc.text(sanitizeForPdf(`Téves összeg összesen (HUF): ${formatCurrency(totalHufDiscrepancy)}`), 20, yPos);
     }
 
     // Signature section at bottom
@@ -184,15 +240,36 @@ export default function CashRegisterSection({
     doc.save(filename);
   };
 
+  // Save the daily data AND download the discrepancy protocol PDF. Both the
+  // "Mentés" button and the printer button do the same thing (intentionally
+  // duplicated — different people reach for different buttons).
+  const saveWithProtocol = async () => {
+    generateDiscrepancyProtocol();
+    if (onSave) await onSave();
+  };
+
   const handleChange = (field, value) => {
     const newData = { ...formData, [field]: value };
     setFormData(newData);
-    onChange(register.id, newData);
+    onChange(newData);
+  };
+
+  // Terminal card: the user enters the full terminal amount and the card tip; we
+  // store the "borravaló nélkül" value (total - tip) in terminal_card, which
+  // every existing calculation and report keeps using unchanged.
+  const handleTerminalChange = (field, value) => {
+    const newData = { ...formData, [field]: value };
+    const totalStr = field === 'terminal_card_total' ? value : newData.terminal_card_total;
+    const tipStr = field === 'terminal_card_tip' ? value : newData.terminal_card_tip;
+    const bothEmpty = (totalStr === '' || totalStr == null) && (tipStr === '' || tipStr == null);
+    newData.terminal_card = bothEmpty ? '' : (parseFloat(totalStr) || 0) - (parseFloat(tipStr) || 0);
+    setFormData(newData);
+    onChange(newData);
   };
 
   // Discrepancy management functions
-  const addDiscrepancy = () => {
-    const newDiscrepancies = [...(formData.discrepancies || []), { ...DEFAULT_DISCREPANCY }];
+  const addDiscrepancy = (preset = {}) => {
+    const newDiscrepancies = [...(formData.discrepancies || []), { ...DEFAULT_DISCREPANCY, ...preset }];
     handleChange('discrepancies', newDiscrepancies);
   };
 
@@ -208,21 +285,107 @@ export default function CashRegisterSection({
     handleChange('discrepancies', newDiscrepancies);
   };
 
-  // Calculate totals
+  // Calculate totals. NOTE: tips (borravaló) are intentionally NOT part of the
+  // register turnover — they are recorded separately and summed into the
+  // "Egyéb készpénz bevétel" tip field on the revenue form.
   const cashRegisterTotal =
     (parseFloat(formData.vat_0_percent) || 0) +
     (parseFloat(formData.vat_5_percent) || 0) +
     (parseFloat(formData.vat_18_percent) || 0) +
-    (parseFloat(formData.vat_27_percent) || 0) +
-    (parseFloat(formData.tips) || 0);
+    (parseFloat(formData.vat_27_percent) || 0);
 
   // Validate card payments
+  // The terminal is the true card figure. A recorded "rossz fizetési mód"
+  // elütés that moves exactly the difference on/off the card explains it.
   const cardValidation = validateCardPayments(
     parseFloat(formData.card_payment) || 0,
-    parseFloat(formData.terminal_card) || 0
+    parseFloat(formData.terminal_card) || 0,
+    methodAdj.card
   );
 
   const hasDiscrepancy = !cardValidation.isValid;
+
+  // Prefill for the one-click "rossz fizetési mód" elütés from the terminal
+  // difference: register card above the terminal means card was keyed instead
+  // of cash, below means the other way round.
+  const terminalDiffPreset = () => ({
+    kind: DISCREPANCY_KINDS.METHOD,
+    currency: 'HUF',
+    amount: String(Math.round(cardValidation.difference)),
+    keyed: cardValidation.signedDifference > 0 ? 'card' : 'cash',
+    actual: cardValidation.signedDifference > 0 ? 'cash' : 'card',
+  });
+
+  // Turnover vs payment methods: the VAT buckets have to add up to
+  // készpénz + bankkártya + SZÉP. A gap should be explained with an elütés, but
+  // it never stands in the way of saving the day.
+  const paymentBreakdown = validatePaymentBreakdown({
+    vatTotal: cashRegisterTotal,
+    cash: parseFloat(formData.cash_payment) || 0,
+    card: parseFloat(formData.card_payment) || 0,
+    szep: parseFloat(formData.szep_card_payment) || 0,
+    // A recorded forint elütés explains a gap of the same size; an EUR elütés
+    // explains a gap of exactly that many forints.
+    hufDiscrepancy: totalHufDiscrepancy,
+    eurDiscrepancy: totalEurDiscrepancy,
+  });
+  const paymentGap = paymentBreakdown.applicable && !paymentBreakdown.isValid;
+  const paymentGapDocumented = hasDocumentedDiscrepancy(formData.discrepancies);
+  const paymentGapUndocumented = paymentGap && !paymentGapDocumented;
+
+  // Whether this closure has any kind of discrepancy (terminal/card mismatch, a
+  // payment breakdown gap or a recorded elütés) — used to flag a collapsed
+  // register box in the background.
+  const hasAnyDiscrepancy = hasDiscrepancy || paymentGap || (formData.discrepancies || []).length > 0;
+
+  // Terminal card breakdown (display + reserve tip cost)
+  const terminalCardTip = parseFloat(formData.terminal_card_tip) || 0;
+  const terminalCardNet = parseFloat(formData.terminal_card) || 0;
+  const tipWithdrawnAmount = formData.terminal_tip_withdrawn
+    ? terminalCardTip * TERMINAL_TIP_WITHDRAW_RATE
+    : 0;
+
+  if (skipped) {
+    return (
+      <Card className="border border-dashed border-gray-300 bg-gray-50">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 bg-gray-200 rounded-lg">
+              <Calculator className="h-5 w-5 text-gray-500" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-mono font-bold text-gray-700">{register.ap_number}</span>
+                {register.name && <span className="text-gray-500">({register.name})</span>}
+                <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 rounded-full">
+                  Ma nem volt zárás
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Ezen a gépen ma nem rögzítünk zárást. Ha mégis volt, kapcsold ki, vagy kezdj el
+                írni a mezőibe.
+              </p>
+            </div>
+          </div>
+          {onToggleSkip && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={true}
+              onClick={() => onToggleSkip(false)}
+              className="flex items-center gap-2 text-sm text-gray-700 shrink-0"
+              title="Volt zárás – megnyitom a gépet"
+            >
+              <span className="relative inline-flex h-5 w-9 items-center rounded-full bg-gray-400">
+                <span className="inline-block h-4 w-4 transform translate-x-4 rounded-full bg-white" />
+              </span>
+              <span className="hidden sm:inline">nem volt zárás</span>
+            </button>
+          )}
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-2 border-pepper-red border-opacity-30">
@@ -230,7 +393,9 @@ export default function CashRegisterSection({
       <button
         type="button"
         onClick={onToggleExpand}
-        className="w-full flex items-center justify-between p-4 -m-4 hover:bg-gray-50 rounded-lg transition-colors"
+        className={`w-full flex items-center justify-between p-4 -m-4 rounded-lg transition-colors ${
+          !expanded && hasAnyDiscrepancy ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'
+        }`}
       >
         <div className="flex items-center gap-3">
           <div className="p-2 bg-pepper-red bg-opacity-10 rounded-lg">
@@ -241,6 +406,11 @@ export default function CashRegisterSection({
               <span className="font-mono font-bold text-gray-900">{register.ap_number}</span>
               {register.name && (
                 <span className="text-gray-500">({register.name})</span>
+              )}
+              {closureLabel && (
+                <span className="px-2 py-0.5 text-xs font-medium bg-pepper-red bg-opacity-10 text-pepper-red rounded-full">
+                  {closureLabel}
+                </span>
               )}
             </div>
             {register.terminal_number && (
@@ -287,6 +457,32 @@ export default function CashRegisterSection({
               suffix="Ft"
               placeholder="Ha kitöltöd, a teljes forgalom automatikusan összegződik"
             />
+            <div className="mt-3">
+              <Input
+                label="Napi fogyasztói létszám"
+                type="number"
+                step="1"
+                min="0"
+                value={formData.guest_count}
+                onChange={(e) => handleChange('guest_count', e.target.value)}
+                suffix="fő"
+              />
+            </div>
+            <div className="mt-3">
+              <Input
+                label="Zárás sorszáma"
+                type="number"
+                step="1"
+                min="0"
+                value={formData.closure_sequence}
+                onChange={(e) => handleChange('closure_sequence', e.target.value)}
+                error={
+                  validation?.sequenceWarning != null
+                    ? `Az előző záráshoz képest ${validation.expectedSequence} lenne a sorszám (n+1). Ellenőrizd!`
+                    : null
+                }
+              />
+            </div>
           </div>
 
           {/* VAT breakdown */}
@@ -345,6 +541,22 @@ export default function CashRegisterSection({
               <span className="text-gray-600">Összesen:</span>
               <span className="font-bold">{formatCurrency(cashRegisterTotal)}</span>
             </div>
+            <div className="mt-3">
+              <Input
+                label="Göngyölt forgalom (pénztárgép zárás alján)"
+                type="number"
+                step="0.01"
+                value={formData.cumulative_revenue}
+                onChange={(e) => handleChange('cumulative_revenue', e.target.value)}
+                suffix="Ft"
+                helper="A Z-jelentés göngyölt forgalma (előző göngyölt + ezen zárás forgalma)"
+                error={
+                  validation?.cumulativeWarning != null
+                    ? `Az előző göngyölt + forgalom alapján ${formatCurrency(validation.expectedCumulative)} lenne. Valószínűleg elütés!`
+                    : null
+                }
+              />
+            </div>
           </div>
 
           {/* Discrepancies - Multiple entries */}
@@ -354,18 +566,30 @@ export default function CashRegisterSection({
                 Elütések
                 {totalHufDiscrepancy > 0 && (
                   <span className="ml-2 text-red-600 font-normal">
-                    (Össz: {formatCurrency(totalHufDiscrepancy)})
+                    (Téves összeg össz.: {formatCurrency(totalHufDiscrepancy)})
                   </span>
                 )}
               </h4>
               <div className="flex gap-2">
+                {(formData.discrepancies || []).length > 0 && onSave && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={saveWithProtocol}
+                    loading={saving}
+                    title="Mentés és jegyzőkönyv letöltése"
+                  >
+                    <Save className="h-4 w-4" />
+                    Mentés + jegyzőkönyv
+                  </Button>
+                )}
                 {(formData.discrepancies || []).length > 0 && (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={generateDiscrepancyProtocol}
-                    title="Jegyzőkönyv nyomtatása"
+                    onClick={saveWithProtocol}
+                    title="Mentés és jegyzőkönyv nyomtatása"
                   >
                     <Printer className="h-4 w-4" />
                   </Button>
@@ -374,7 +598,7 @@ export default function CashRegisterSection({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={addDiscrepancy}
+                  onClick={() => addDiscrepancy()}
                 >
                   <Plus className="h-4 w-4" />
                   Új elütés
@@ -399,6 +623,55 @@ export default function CashRegisterSection({
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
+                    {/* Kind: the two cases are handled differently downstream,
+                        so the choice is spelled out, not hidden in a dropdown. */}
+                    {disc.currency === 'EUR' ? (
+                      <p className="mb-3 text-xs text-red-700">
+                        EUR elütés mindig <span className="font-semibold">téves összeg</span> (a forgalom változik).
+                      </p>
+                    ) : (
+                      <div className="mb-3">
+                        <div className="text-xs font-medium text-red-700 mb-1">Az elütés fajtája</div>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          {[
+                            {
+                              value: DISCREPANCY_KINDS.AMOUNT,
+                              title: 'Téves összeg (túlütés)',
+                              text: 'Rossz összeg került a gépbe. A forgalom változik, a kasszából ennyi hiányzik.',
+                            },
+                            {
+                              value: DISCREPANCY_KINDS.METHOD,
+                              title: 'Rossz fizetési mód',
+                              text: 'Jó összeg, rossz gombbal ütve (pl. kártya KP helyett). A forgalom nem változik, a terminál a mérvadó.',
+                            },
+                          ].map((opt) => {
+                            const active = discrepancyKind(disc) === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => updateDiscrepancy(index, 'kind', opt.value)}
+                                className={`text-left rounded-lg border p-2 transition-colors ${
+                                  active
+                                    ? 'border-pepper-red bg-white ring-2 ring-pepper-red ring-opacity-40'
+                                    : 'border-red-200 bg-red-50 hover:bg-white'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                                  <span
+                                    className={`inline-block h-3.5 w-3.5 rounded-full border-2 ${
+                                      active ? 'border-pepper-red bg-pepper-red' : 'border-gray-400 bg-white'
+                                    }`}
+                                  />
+                                  {opt.title}
+                                </div>
+                                <p className="mt-1 text-xs text-gray-600">{opt.text}</p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <div className="grid gap-3 md:grid-cols-3">
                       <Input
                         label="Összeg"
@@ -418,6 +691,36 @@ export default function CashRegisterSection({
                         ]}
                         size="sm"
                       />
+                      {isMethodDiscrepancy(disc) && (
+                        <>
+                          <Select
+                            label="Tévesen erre ütve"
+                            value={disc.keyed || 'card'}
+                            onChange={(e) => updateDiscrepancy(index, 'keyed', e.target.value)}
+                            options={METHOD_OPTIONS.filter((o) => SHOW_SZEP_FIELDS || o.value !== 'szep')}
+                            size="sm"
+                          />
+                          <Select
+                            label="Valójában erre kellett volna"
+                            value={disc.actual || 'cash'}
+                            onChange={(e) => updateDiscrepancy(index, 'actual', e.target.value)}
+                            options={METHOD_OPTIONS.filter((o) => SHOW_SZEP_FIELDS || o.value !== 'szep')}
+                            size="sm"
+                          />
+                          <p className="md:col-span-3 text-xs text-red-700">
+                            {(disc.keyed || 'card') === (disc.actual || 'cash')
+                              ? 'A két fizetési mód nem lehet ugyanaz.'
+                              : `${PAYMENT_METHOD_LABELS[disc.keyed || 'card']} helyett ${PAYMENT_METHOD_LABELS[disc.actual || 'cash']} – ` +
+                                'a forgalom marad, a kassza ' +
+                                ((disc.actual || 'cash') === 'cash'
+                                  ? `+${formatCurrency(Math.abs(parseFloat(disc.amount) || 0))}`
+                                  : (disc.keyed || 'card') === 'cash'
+                                    ? `−${formatCurrency(Math.abs(parseFloat(disc.amount) || 0))}`
+                                    : 'nem változik') +
+                                '.'}
+                          </p>
+                        </>
+                      )}
                       <div className="md:col-span-3">
                         <Textarea
                           label="Indoklás"
@@ -459,7 +762,7 @@ export default function CashRegisterSection({
                 size="sm"
                 error={
                   !cardValidation.isValid
-                    ? `Eltérés: ${formatCurrency(cardValidation.difference)}`
+                    ? `Eltérés a terminálhoz képest: ${formatCurrency(cardValidation.difference)}`
                     : null
                 }
               />
@@ -476,6 +779,43 @@ export default function CashRegisterSection({
                 />
               )}
             </div>
+
+            {/* Turnover vs payment methods */}
+            {paymentGap && (
+              <div
+                className={`mt-3 rounded-lg border p-3 text-sm ${
+                  paymentGapUndocumented
+                    ? 'border-red-300 bg-red-50 text-red-800'
+                    : 'border-green-300 bg-green-50 text-green-800'
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium">
+                      A fizetési módok nem adják ki a forgalmat: eltérés{' '}
+                      {formatCurrency(paymentBreakdown.difference)}
+                    </p>
+                    <p className="mt-1 text-xs">
+                      Forgalom (ÁFA-kulcsok, borravaló nélkül){' '}
+                      {formatCurrency(cashRegisterTotal)} · Fizetve (KP + kártya
+                      {SHOW_SZEP_FIELDS ? ' + SZÉP' : ''}) {formatCurrency(paymentBreakdown.paid)}
+                    </p>
+                    <p className="mt-1 text-xs font-medium">
+                      {paymentGapUndocumented
+                        ? 'Rögzíts róla egy elütést indoklással. (A mentést ez nem akadályozza.)'
+                        : 'Elütés rögzítve.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {paymentBreakdown.applicable && paymentBreakdown.explainedByEur && (
+              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                A fizetési módok és a forgalom eltérése {formatCurrency(Math.abs(paymentBreakdown.difference))} –
+                pontosan a rögzített EUR elütés számértéke ({formatCurrency(totalEurDiscrepancy, 'EUR')}), rendben.
+              </div>
+            )}
           </div>
 
           {/* Terminal data */}
@@ -488,16 +828,25 @@ export default function CashRegisterSection({
                 </span>
               )}
             </h4>
-            <div className={`grid gap-3 ${SHOW_SZEP_FIELDS ? 'md:grid-cols-2' : ''}`}>
+            <div className="grid gap-3 md:grid-cols-2">
               <Input
-                label="Bankkártya (terminál)"
+                label="Bankkártya terminál (teljes összeg)"
                 type="number"
                 step="0.01"
-                value={formData.terminal_card}
-                onChange={(e) => handleChange('terminal_card', e.target.value)}
+                value={formData.terminal_card_total}
+                onChange={(e) => handleTerminalChange('terminal_card_total', e.target.value)}
                 suffix="Ft"
                 size="sm"
                 className={!cardValidation.isValid ? 'ring-2 ring-red-300' : ''}
+              />
+              <Input
+                label="Borravaló (bankkártya)"
+                type="number"
+                step="0.01"
+                value={formData.terminal_card_tip}
+                onChange={(e) => handleTerminalChange('terminal_card_tip', e.target.value)}
+                suffix="Ft"
+                size="sm"
               />
               {/* SZÉP terminal - hidden for now */}
               {SHOW_SZEP_FIELDS && (
@@ -513,31 +862,120 @@ export default function CashRegisterSection({
               )}
             </div>
 
-            {/* Discrepancy warning */}
+            {/* Card tip: optionally taken out of the register (60% booked as a
+                reserve cost at day end). */}
+            <label className="mt-3 flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!formData.terminal_tip_withdrawn}
+                onChange={(e) => handleChange('terminal_tip_withdrawn', e.target.checked)}
+                className="h-4 w-4 mt-0.5 text-pepper-red rounded border-gray-300 focus:ring-pepper-red"
+              />
+              <span className="text-sm text-gray-700">
+                Kivettük a kasszából
+                <span className="text-gray-500"> (a bankkártyás borravaló 60%-a tartalék költség)</span>
+              </span>
+            </label>
+            {formData.terminal_tip_withdrawn && terminalCardTip > 0 && (
+              <p className="mt-1 text-xs text-amber-700">
+                Kivett összeg (60%): <span className="font-medium">{formatCurrency(tipWithdrawnAmount)}</span> — a nap
+                végén tartalék költségként számoljuk.
+              </p>
+            )}
+
+            {/* Computed: terminal amount without the tip — used in every
+                calculation, exactly as the single field was before. */}
+            <div className="mt-3 p-2 bg-gray-50 rounded-lg flex justify-between items-center text-sm">
+              <span className="text-gray-600">Bankkártya terminál (borravaló nélkül):</span>
+              <span className="font-bold">{formatCurrency(terminalCardNet)}</span>
+            </div>
+
+            {/* Card vs terminal difference. The terminal is the true figure; no
+                free-text reason is asked any more — a "rossz fizetési mód"
+                elütés is offered instead (never required, never blocks saving). */}
             {hasDiscrepancy && (
               <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5" />
-                  <div className="text-sm">
-                    <h4 className="font-medium text-red-800">Eltérés!</h4>
-                    <p className="text-red-700 mt-1">
-                      Bankkártya: {formatCurrency(cardValidation.difference)}
+                  <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+                  <div className="text-sm flex-1">
+                    <h4 className="font-medium text-red-800">
+                      Eltérés a terminálhoz képest: {formatCurrency(cardValidation.difference)}
+                    </h4>
+                    <p className="text-red-700 mt-1 text-xs">
+                      Pénztárgép bankkártya {formatCurrency(parseFloat(formData.card_payment) || 0)} ·
+                      terminál (borravaló nélkül) {formatCurrency(terminalCardNet)}. A terminál a mérvadó.
+                      {cardValidation.signedDifference > 0
+                        ? ' Valószínűleg készpénzt ütöttek bankkártyára.'
+                        : ' Valószínűleg bankkártyát ütöttek készpénzre.'}
                     </p>
+                    <p className="text-red-700 mt-1 text-xs">
+                      Ha rossz fizetési módra ütöttek, vegyél fel róla elütést – nem kötelező, a mentést nem
+                      akadályozza.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => addDiscrepancy(terminalDiffPreset())}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Elütés felvétele: rossz fizetési mód ({formatCurrency(cardValidation.difference)})
+                    </Button>
                   </div>
                 </div>
-
-                <Textarea
-                  label="Eltérés indoklása"
-                  value={formData.terminal_discrepancy_note}
-                  onChange={(e) => handleChange('terminal_discrepancy_note', e.target.value)}
-                  rows={2}
-                  placeholder="Kérjük, indokolja az eltérést..."
-                  className="mt-2"
-                  required={hasDiscrepancy}
-                />
+                {formData.terminal_discrepancy_note && (
+                  <p className="mt-2 text-xs text-gray-600">
+                    Korábbi indoklás: {formData.terminal_discrepancy_note}
+                  </p>
+                )}
+              </div>
+            )}
+            {!hasDiscrepancy && cardValidation.explainedByDiscrepancy && (
+              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                Eltérés a terminálhoz képest {formatCurrency(cardValidation.difference)} – a rögzített
+                „rossz fizetési mód” elütés kiadja.
               </div>
             )}
           </div>
+
+          {/* "Ma nem volt zárás" – a gép végén, ahogy kérték. Bekapcsolva a doboz
+              összecsukódik, és ennek a gépnek a zárása nem kerül mentésre. */}
+          {onToggleSkip && (
+            <div className="pt-3 border-t border-gray-100 flex items-center justify-between gap-3">
+              <p className="text-xs text-gray-500">
+                Ha ezen a gépen ma nem készült zárás, kapcsold be – így nem keletkezik üres sor.
+              </p>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={false}
+                onClick={() => onToggleSkip(true)}
+                className="flex items-center gap-2 text-sm text-gray-700 shrink-0"
+              >
+                <span className="relative inline-flex h-5 w-9 items-center rounded-full bg-gray-300">
+                  <span className="inline-block h-4 w-4 transform translate-x-1 rounded-full bg-white" />
+                </span>
+                Ma nem volt zárás
+              </button>
+            </div>
+          )}
+
+          {/* Remove this (additional) closure */}
+          {onRemove && (
+            <div className="pt-2 border-t border-gray-100">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onRemove}
+                className="text-red-600 border-red-200 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                Zárás törlése
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </Card>

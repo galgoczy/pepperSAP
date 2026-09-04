@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { fetchHouseCashSeries } from '../lib/houseCashSeries';
 
 /**
  * Hook for calculating running balances for a unit
@@ -17,86 +18,21 @@ export function useUnitBalance(unitId) {
     }
 
     try {
-      // Fetch all relevant data in parallel
-      const [
-        revenuesResult,
-        expensesResult,
-        transfersOutResult,
-        transfersInResult,
-      ] = await Promise.all([
-        // Daily revenues with cash register data
-        supabase
-          .from('daily_revenue')
-          .select('id, total_revenue, cash_register_revenue(cash_payment, card_payment, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips)')
-          .eq('unit_id', unitId),
-        // Expenses
-        supabase
-          .from('expenses')
-          .select('amount, is_official, payment_method')
-          .eq('unit_id', unitId),
-        // Transfers OUT (approved)
-        supabase
-          .from('cash_transfers')
-          .select('amount, transfer_type')
-          .eq('source_unit_id', unitId)
-          .eq('status', 'approved'),
-        // Transfers IN (approved)
-        supabase
-          .from('cash_transfers')
-          .select('amount, transfer_type')
-          .eq('destination_unit_id', unitId)
-          .eq('status', 'approved'),
-      ]);
-
-      // Calculate cash register totals
-      let totalCash = 0;
-      let totalCashRegisterRevenue = 0;
-      (revenuesResult.data || []).forEach(rev => {
-        (rev.cash_register_revenue || []).forEach(cr => {
-          totalCash += parseFloat(cr.cash_payment) || 0;
-          totalCashRegisterRevenue +=
-            (parseFloat(cr.vat_0_percent) || 0) +
-            (parseFloat(cr.vat_5_percent) || 0) +
-            (parseFloat(cr.vat_18_percent) || 0) +
-            (parseFloat(cr.vat_27_percent) || 0) +
-            (parseFloat(cr.tips) || 0);
-        });
-      });
-
-      // Calculate software revenue total
-      const totalSoftwareRevenue = (revenuesResult.data || []).reduce(
-        (sum, r) => sum + (parseFloat(r.total_revenue) || 0),
-        0
-      );
-
-      // Calculate expenses
-      const expenses = expensesResult.data || [];
-      const officialCashExpenses = expenses
-        .filter(e => e.is_official && e.payment_method === 'cash')
-        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      const nonOfficialExpenses = expenses
-        .filter(e => !e.is_official)
-        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-
-      // Calculate transfers
-      const transfersOutCash = (transfersOutResult.data || [])
-        .filter(t => t.transfer_type === 'cash')
-        .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
-      const transfersOutReserve = (transfersOutResult.data || [])
-        .filter(t => t.transfer_type === 'reserve')
-        .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
-      const transfersInCash = (transfersInResult.data || [])
-        .filter(t => t.transfer_type === 'cash')
-        .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
-      const transfersInReserve = (transfersInResult.data || [])
-        .filter(t => t.transfer_type === 'reserve')
-        .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
-
-      // Calculate balances
-      const cashBalance = totalCash - officialCashExpenses - transfersOutCash + transfersInCash;
-      const reserveBalance = (totalSoftwareRevenue - totalCashRegisterRevenue) - nonOfficialExpenses - transfersOutReserve + transfersInReserve;
-
-      setBalance({ cash: cashBalance, reserve: reserveBalance });
+      // Single source of truth: the live daily house-cash series. Its latest
+      // closing is the current balance and already accounts for register cash,
+      // HUF discrepancies (elütés), official cash expenses, the official part of
+      // EFO/wage payments (cash) and the non-official part (reserve), manual
+      // incomes, approved transfers, and approved opening-balance revisions.
+      // This keeps the főoldal balance consistent with the breakdown and the
+      // daily report.
+      const series = await fetchHouseCashSeries(unitId, null);
+      const dates = series.orderedDates;
+      if (dates.length > 0) {
+        const last = series.byDate.get(dates[dates.length - 1]);
+        setBalance({ cash: last.cashClosing, reserve: last.reserveClosing });
+      } else {
+        setBalance({ cash: 0, reserve: 0 });
+      }
     } catch (error) {
       console.error('Error fetching unit balance:', error);
       toast.error('Hiba az egyenleg betöltésekor');
@@ -124,6 +60,7 @@ export function useCentralBalance() {
     try {
       const [
         transfersInResult,
+        transfersOutResult,
         paymentsResult,
         revisionsResult,
         pocketsResult,
@@ -133,6 +70,12 @@ export function useCentralBalance() {
           .from('cash_transfers')
           .select('amount, transfer_type')
           .eq('destination_type', 'central')
+          .eq('status', 'approved'),
+        // Transfers OUT of central to a unit (approved) — reduce central balance
+        supabase
+          .from('cash_transfers')
+          .select('amount, transfer_type')
+          .eq('source_type', 'central')
           .eq('status', 'approved'),
         // Central payments
         supabase
@@ -157,6 +100,14 @@ export function useCentralBalance() {
         .filter(t => t.transfer_type === 'reserve')
         .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
 
+      // Transfers OUT of central to units (approved) — reduce central balance
+      const transfersOutCash = (transfersOutResult.data || [])
+        .filter(t => t.transfer_type === 'cash')
+        .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+      const transfersOutReserve = (transfersOutResult.data || [])
+        .filter(t => t.transfer_type === 'reserve')
+        .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+
       // Payments
       const paymentsCash = (paymentsResult.data || [])
         .filter(p => p.payment_type === 'cash')
@@ -178,8 +129,8 @@ export function useCentralBalance() {
         .reduce((sum, p) => sum + (parseFloat(p.current_amount) || 0), 0);
 
       // Calculate balances
-      const cashBalance = transfersInCash - paymentsCash + revisionsCash - totalPockets;
-      const reserveBalance = transfersInReserve - paymentsReserve + revisionsReserve;
+      const cashBalance = transfersInCash - transfersOutCash - paymentsCash + revisionsCash - totalPockets;
+      const reserveBalance = transfersInReserve - transfersOutReserve - paymentsReserve + revisionsReserve;
 
       setBalance({ cash: cashBalance, reserve: reserveBalance });
       setPocketsTotal(totalPockets);
@@ -244,11 +195,18 @@ export function useTransfers(unitId, direction = 'all') {
 
   const createTransfer = async (transferData) => {
     try {
+      const userId = (await supabase.auth.getUser()).data.user?.id;
+      // Auto-approved transfers (e.g. bank cash withdrawals) need approval
+      // metadata set at insert time, since they skip the approval step.
+      const approvalFields = transferData.status === 'approved'
+        ? { approved_by: userId, approved_at: new Date().toISOString() }
+        : {};
       const { data, error } = await supabase
         .from('cash_transfers')
         .insert([{
           ...transferData,
-          initiated_by: (await supabase.auth.getUser()).data.user?.id,
+          ...approvalFields,
+          initiated_by: userId,
         }])
         .select()
         .single();
@@ -287,7 +245,10 @@ export function useTransfers(unitId, direction = 'all') {
     }
   };
 
-  const modifyTransfer = async (transferId, newAmount) => {
+  const modifyTransfer = async (transferId, changes) => {
+    // Backward compatible: a bare number is treated as the new amount.
+    const { amount, transfer_date, transfer_type } =
+      typeof changes === 'object' && changes !== null ? changes : { amount: changes };
     try {
       // Get current transfer to save original amount
       const { data: current } = await supabase
@@ -296,15 +257,19 @@ export function useTransfers(unitId, direction = 'all') {
         .eq('id', transferId)
         .single();
 
+      const update = {
+        amount,
+        original_amount: current.original_amount || current.amount,
+        status: 'modified',
+        approved_by: (await supabase.auth.getUser()).data.user?.id,
+        approved_at: new Date().toISOString(),
+      };
+      if (transfer_date) update.transfer_date = transfer_date;
+      if (transfer_type) update.transfer_type = transfer_type;
+
       const { error } = await supabase
         .from('cash_transfers')
-        .update({
-          amount: newAmount,
-          original_amount: current.original_amount || current.amount,
-          status: 'modified',
-          approved_by: (await supabase.auth.getUser()).data.user?.id,
-          approved_at: new Date().toISOString(),
-        })
+        .update(update)
         .eq('id', transferId);
 
       if (error) throw error;
@@ -318,6 +283,100 @@ export function useTransfers(unitId, direction = 'all') {
     }
   };
 
+  // Edit a still-pending transfer's amount (before approval). Keeps it pending.
+  const editPendingTransfer = async (transferId, changes) => {
+    // Backward compatible: a bare number is treated as the new amount.
+    const { amount, transfer_date, transfer_type } =
+      typeof changes === 'object' && changes !== null ? changes : { amount: changes };
+    try {
+      const update = { amount };
+      if (transfer_date) update.transfer_date = transfer_date;
+      if (transfer_type) update.transfer_type = transfer_type;
+
+      const { error } = await supabase
+        .from('cash_transfers')
+        .update(update)
+        .eq('id', transferId)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+
+      toast.success('Átküldés módosítva');
+      fetchTransfers();
+    } catch (error) {
+      console.error('Error editing pending transfer:', error);
+      toast.error('Hiba az átküldés módosításakor');
+      throw error;
+    }
+  };
+
+  // Delete a still-pending transfer (before approval).
+  const deleteTransfer = async (transferId) => {
+    try {
+      const { error } = await supabase
+        .from('cash_transfers')
+        .delete()
+        .eq('id', transferId)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+
+      toast.success('Átküldés törölve');
+      fetchTransfers();
+    } catch (error) {
+      console.error('Error deleting transfer:', error);
+      toast.error('Hiba az átküldés törlésekor');
+      throw error;
+    }
+  };
+
+  // Bank cash withdrawals are created already approved, so the pending-only
+  // edit/delete paths above don't apply to them. These two are for the admin's
+  // "Készpénzfelvételek" tab; RLS keeps them admin-only.
+  const updateBankWithdrawal = async (transferId, changes) => {
+    try {
+      const update = {};
+      if (changes.amount !== undefined) update.amount = changes.amount;
+      if (changes.transfer_date) update.transfer_date = changes.transfer_date;
+      if (changes.withdrawn_by_name !== undefined) update.withdrawn_by_name = changes.withdrawn_by_name;
+      if (changes.notes !== undefined) update.notes = changes.notes;
+
+      const { error } = await supabase
+        .from('cash_transfers')
+        .update(update)
+        .eq('id', transferId)
+        .eq('source_type', 'bank');
+
+      if (error) throw error;
+
+      toast.success('Készpénzfelvét módosítva');
+      fetchTransfers();
+    } catch (error) {
+      console.error('Error updating bank withdrawal:', error);
+      toast.error('Hiba a készpénzfelvét módosításakor');
+      throw error;
+    }
+  };
+
+  const deleteBankWithdrawal = async (transferId) => {
+    try {
+      const { error } = await supabase
+        .from('cash_transfers')
+        .delete()
+        .eq('id', transferId)
+        .eq('source_type', 'bank');
+
+      if (error) throw error;
+
+      toast.success('Készpénzfelvét törölve');
+      fetchTransfers();
+    } catch (error) {
+      console.error('Error deleting bank withdrawal:', error);
+      toast.error('Hiba a készpénzfelvét törlésekor');
+      throw error;
+    }
+  };
+
   return {
     transfers,
     loading,
@@ -325,6 +384,10 @@ export function useTransfers(unitId, direction = 'all') {
     createTransfer,
     approveTransfer,
     modifyTransfer,
+    editPendingTransfer,
+    deleteTransfer,
+    updateBankWithdrawal,
+    deleteBankWithdrawal,
   };
 }
 
@@ -468,6 +531,37 @@ export function useRevisions() {
   };
 
   return { revisions, loading, refetch: fetchRevisions, createRevision, updateRevision, deleteRevision };
+}
+
+/**
+ * Hook returning the number of pending opening-balance revision requests
+ * (módosítási kérelmek waiting for admin approval), for badge indicators.
+ */
+export function usePendingOpeningBalanceRevisions() {
+  const [count, setCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const fetchCount = useCallback(async () => {
+    try {
+      const { count: c, error } = await supabase
+        .from('opening_balance_revisions')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending');
+
+      if (error) throw error;
+      setCount(c || 0);
+    } catch (error) {
+      console.error('Error counting pending opening balance revisions:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCount();
+  }, [fetchCount]);
+
+  return { count, loading, refetch: fetchCount };
 }
 
 /**

@@ -4,12 +4,38 @@ import { supabase, onAuthError } from '../lib/supabase';
 // eslint-disable-next-line react-refresh/only-export-components
 export const AuthContext = createContext(null);
 
-// Predefined user roles based on email
+// Ensures a given single-use OAuth `code` is only exchanged once, even if the
+// effect runs twice within the same page load (e.g. React StrictMode). A code
+// that has already been consumed fails on the second exchange attempt.
+let handledOAuthCode = null;
+
+// Predefined user roles based on email. This is the login whitelist: a user
+// with no profile row yet can only sign in if their email appears here (the
+// profile is then created with the given role/unit). Keep this in sync with the
+// real user_profiles table + units.name values.
 const EMAIL_ROLE_MAP = {
+  // Admins
   'gergo@pepperhouse.hu': { role: 'admin', unit_name: null },
   'info@pepperhouse.hu': { role: 'admin', unit_name: null },
-  'szentkiralyi@pepperhouse.hu': { role: 'unit', unit_name: 'Szentkirályi' },
+  'hr@pepperhouse.hu': { role: 'admin', unit_name: null },
+  'iroda@pepperhouse.hu': { role: 'admin', unit_name: null },
+  'penzugy@pepperhouse.hu': { role: 'admin', unit_name: null },
+  'admin@test.local': { role: 'admin', unit_name: null },
+  // Events
+  'events@pepperhouse.hu': { role: 'events', unit_name: 'Rendezvény Egység' },
   'rendezveny@pepperhouse.hu': { role: 'events', unit_name: 'Rendezvény Egység' },
+  // Units (unit_name MUST exactly match units.name)
+  'unit@pepperhouse.hu': { role: 'unit', unit_name: 'Szentkirályi' },
+  'szentkiralyi@pepperhouse.hu': { role: 'unit', unit_name: 'Szentkirályi' },
+  'knorr105@pepperhouse.hu': { role: 'unit', unit_name: 'Knorr 105' },
+  'knorr69@pepperhouse.hu': { role: 'unit', unit_name: 'Knorr 69' },
+  'knorr86@pepperhouse.hu': { role: 'unit', unit_name: 'Knorr 86' },
+  'kti@pepperhouse.hu': { role: 'unit', unit_name: 'KTI' },
+  'allamkincstar@pepperhouse.hu': { role: 'unit', unit_name: 'Államkincstár' },
+  'rsr@pepperhouse.hu': { role: 'unit', unit_name: 'RSR' },
+  'ttk@pepperhouse.hu': { role: 'unit', unit_name: 'TTK Kantin' },
+  // Accountant (read-only)
+  'konyveles@pepperhouse.hu': { role: 'accountant', unit_name: null },
 };
 
 export function AuthProvider({ children }) {
@@ -47,21 +73,41 @@ export function AuthProvider({ children }) {
       return existingProfile;
     }
 
-    // Get unit_id if needed
+    // Get unit_id if needed. The name must match units.name; we fall back to a
+    // case-insensitive match so a stray capital or trailing space in the unit
+    // record does not silently produce a unit user with no unit — which logs in
+    // fine but sees an empty app, and is hard to recognise as a naming problem.
     let unitId = null;
     if (roleConfig.unit_name) {
       const { data: unit } = await supabase
         .from('units')
         .select('id')
         .eq('name', roleConfig.unit_name)
-        .single();
-      unitId = unit?.id || null;
+        .maybeSingle();
+      if (unit?.id) {
+        unitId = unit.id;
+      } else {
+        const { data: loose } = await supabase
+          .from('units')
+          .select('id, name')
+          .ilike('name', roleConfig.unit_name.trim())
+          .maybeSingle();
+        unitId = loose?.id || null;
+        if (!unitId) {
+          console.error(
+            `A(z) "${roleConfig.unit_name}" egység nem található a units táblában, ` +
+            `így a(z) ${email} felhasználó egység nélkül jönne létre. ` +
+            'Ellenőrizd az Egységek menüben a pontos nevet.'
+          );
+          return null;
+        }
+      }
     }
 
-    // Create new profile
+    // Create new profile. Note: user_profiles has no email column (email lives
+    // on auth.users), so we must not send it or the insert fails.
     const newProfile = {
       id: authUser.id,
-      email: email,
       full_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || email.split('@')[0],
       role: roleConfig.role,
       unit_id: unitId,
@@ -155,9 +201,9 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
-    // DEBUG: Skip auth with ?skip_auth=true URL parameter
+    // DEBUG: Skip auth with ?skip_auth=true URL parameter (development builds only)
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('skip_auth') === 'true') {
+    if (import.meta.env.DEV && urlParams.get('skip_auth') === 'true') {
       console.log('DEBUG: Skipping auth, using mock admin user');
       setUser({ id: 'debug-user', email: 'debug@pepperhouse.hu' });
       setProfile({
@@ -170,11 +216,13 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    console.log('AuthContext: Starting session fetch...');
-    console.log('AuthContext: Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
-    console.log('AuthContext: Anon key set:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
-    console.log('AuthContext: localStorage keys:', Object.keys(localStorage));
-    console.log('AuthContext: Browser:', navigator.userAgent);
+    if (import.meta.env.DEV) {
+      console.log('AuthContext: Starting session fetch...');
+      console.log('AuthContext: Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+      console.log('AuthContext: Anon key set:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+      console.log('AuthContext: localStorage keys:', Object.keys(localStorage));
+      console.log('AuthContext: Browser:', navigator.userAgent);
+    }
 
     // Check if we're in an OAuth callback (code in URL) - handle manually for Safari compatibility
     const authCode = urlParams.get('code');
@@ -189,41 +237,61 @@ export function AuthProvider({ children }) {
     }
 
     if (authCode) {
-      console.log('AuthContext: OAuth callback detected, code length:', authCode.length);
-      console.log('AuthContext: Current URL:', window.location.href);
+      // Guard against exchanging the same single-use code twice (StrictMode
+      // double-invoke, remounts) - a consumed code fails on the second attempt.
+      if (handledOAuthCode === authCode) {
+        return () => { mounted = false; };
+      }
+      handledOAuthCode = authCode;
+
+      console.log('AuthContext: OAuth callback detected, completing exchange...');
+
+      // Remove the code from the URL up front so a reload/remount can't reuse it.
+      window.history.replaceState({}, '', window.location.pathname);
+
+      const clearPkceState = () => {
+        try {
+          localStorage.removeItem('supabase.auth.token-code-verifier');
+        } catch {
+          /* ignore storage errors */
+        }
+      };
+
+      // Safety timeout: never let a stalled exchange leave the user on an
+      // infinite spinner. Falls back to the login screen and clears the stale
+      // PKCE verifier so the next attempt starts from a clean state.
+      const exchangeTimeout = setTimeout(() => {
+        if (mounted) {
+          console.error('AuthContext: OAuth exchange timed out - showing login');
+          clearPkceState();
+          setLoading(false);
+        }
+      }, 12000);
 
       supabase.auth.exchangeCodeForSession(authCode)
         .then(({ data, error }) => {
-          console.log('AuthContext: exchangeCodeForSession result:', {
-            hasSession: !!data?.session,
-            hasUser: !!data?.session?.user,
-            userEmail: data?.session?.user?.email,
-            error: error?.message || error
-          });
-
-          // Clear the URL params regardless of result
-          window.history.replaceState({}, '', window.location.pathname);
-
+          clearTimeout(exchangeTimeout);
           if (!mounted) return;
 
           if (error) {
-            console.error('AuthContext: Code exchange failed:', error);
+            console.error('AuthContext: Code exchange failed:', error.message || error);
+            clearPkceState();
             setLoading(false);
             return;
           }
 
           if (data?.session) {
-            console.log('AuthContext: Session established via manual exchange, user:', data.session.user.email);
             setUser(data.session.user);
             fetchProfile(data.session.user.id, data.session.user);
           } else {
-            console.log('AuthContext: No session after exchange');
+            console.warn('AuthContext: No session after code exchange');
             setLoading(false);
           }
         })
         .catch(err => {
-          console.error('AuthContext: exchangeCodeForSession exception:', err);
-          window.history.replaceState({}, '', window.location.pathname);
+          clearTimeout(exchangeTimeout);
+          console.error('AuthContext: exchangeCodeForSession exception:', err?.message || err);
+          clearPkceState();
           if (mounted) setLoading(false);
         });
 
@@ -257,7 +325,7 @@ export function AuthProvider({ children }) {
           knownDatabases.forEach(dbName => {
             try {
               indexedDB.deleteDatabase(dbName);
-            } catch (e) {
+            } catch {
               // Ignore individual deletion errors
             }
           });
@@ -335,7 +403,21 @@ export function AuthProvider({ children }) {
 
     // Set up visibility change handler to refresh on tab focus
     const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible' && userRef.current) {
+      if (document.visibilityState !== 'visible') {
+        // Tab hidden: stop the auto-refresh timer. Browsers heavily throttle
+        // timers in background tabs, so the built-in refresh can miss and the
+        // access token silently expires - which is what makes the app load so
+        // slowly (or hang) when you come back after being idle.
+        supabase.auth.stopAutoRefresh();
+        return;
+      }
+
+      // Tab visible again: resume proactive token refresh and immediately make
+      // sure we have a valid session, so the queries that fire on focus don't
+      // stall on an expired token (no manual page reload needed).
+      supabase.auth.startAutoRefresh();
+
+      if (userRef.current) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) {
