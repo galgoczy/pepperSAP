@@ -74,6 +74,29 @@ export function buildClosureChecks(cr, dayClosures = null) {
   };
 }
 
+// Egy gép időszaki jegyzőkönyv-állapota az egyszerű / könyvelési jelentés
+// "Jkv." oszlopához. `days`: a gép zárásai a computeRegisterProtocolMarks
+// után (protocolMark + crId), `checkedSet`: a bepipált zárások
+// cash_register_revenue id-i. Akkor "minden rendben", ha egy jegyzőkönyv sem
+// hiányzik ÉS minden meglévő jegyzőkönyv ellenőrizve (pipálva) van. Ha az
+// időszakban nem volt eltérés, nincs mit pipálni – az is rendben.
+export function summarizeProtocolChecks(days, checkedSet) {
+  const has = (id) => !!id && !!checkedSet && (checkedSet instanceof Set ? checkedSet.has(id) : !!checkedSet[id]);
+  let needed = 0;
+  let missing = 0;
+  let unticked = 0;
+  (days || []).forEach((d) => {
+    if (d.protocolMark === 'missing') {
+      needed += 1;
+      missing += 1;
+    } else if (d.protocolMark === 'ok') {
+      needed += 1;
+      if (!has(d.crId)) unticked += 1;
+    }
+  });
+  return { needed, missing, unticked, allGood: missing === 0 && unticked === 0 };
+}
+
 // Egy napon ugyanazon a gépen több zárás is lehet. A lekérdezés a beágyazott
 // zárásokat nem rendezetten adja vissza (a PostgREST nem garantál sorrendet a
 // beágyazott listán), ezért a megjelenítés előtt itt tesszük sorba: dátum, majd

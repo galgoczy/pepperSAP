@@ -8,8 +8,9 @@ import { supabase } from '../../lib/supabase';
 import { formatDate, formatCurrency } from '../../lib/utils';
 import { fetchHouseCashSeries, fetchCentralHouseCashSeries } from '../../lib/houseCashSeries';
 import { isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown } from '../../lib/validations';
-import { buildClosureChecks, computeRegisterProtocolMarks, sortClosuresForDisplay } from '../../lib/registerChecks';
+import { buildClosureChecks, computeRegisterProtocolMarks, sortClosuresForDisplay, summarizeProtocolChecks } from '../../lib/registerChecks';
 import { fetchCumulativeCheckSet } from '../../hooks/useCumulativeChecks';
+import { fetchProtocolCheckSet } from '../../hooks/useProtocolChecks';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import toast from 'react-hot-toast';
@@ -1206,12 +1207,14 @@ function exportEurDiscrepancy(cr) {
 async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, software_revenue, closure_number, closure_sequence, cumulative_revenue, discrepancies, cash_registers(id, ap_number, name))')
+    .select('*, units(name), cash_register_revenue(id, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, terminal_discrepancy_note, software_revenue, closure_number, closure_sequence, cumulative_revenue, discrepancies, discrepancy_note, discrepancy_amount, cash_registers(id, ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate);
 
   // "Göngyölt ellenőrizve" ticks of this exact period (empty if none / no table).
   const checkedRegisters = await fetchCumulativeCheckSet(startDate, endDate);
+  // "Jegyzőkönyv ellenőrizve" ticks per closure (empty if none / no table).
+  const protocolChecked = await fetchProtocolCheckSet(startDate, endDate);
 
   // Group by unit and register
   const unitData = {};
@@ -1250,6 +1253,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
           vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
           software: 0,
           closures: [],
+          checkDays: [],
         };
       }
 
@@ -1259,6 +1263,14 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
         (parseFloat(cr.vat_27_percent) || 0); // borravaló nélkül
 
       const regAcc = unitData[unitId].registers[registerId];
+      if (!isBlankClosure(cr)) {
+        regAcc.checkDays.push({
+          date: row.date,
+          crId: cr.id,
+          closureNumber: cr.closure_number ?? 1,
+          ...buildClosureChecks(cr, crRevenues),
+        });
+      }
       regAcc.szep += parseFloat(cr.szep_card_payment) || 0;
       regAcc.huf += hufDiscrepancyOf(cr);
       regAcc.eur += exportEurDiscrepancy(cr);
@@ -1295,7 +1307,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
     'Egység', 'Pénztárgép', 'Első zárás', 'Utolsó zárás',
     '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA',
     'Készpénz', 'Kártya', 'Terminál', 'Időszaki', 'Időszaki eltérés', 'Eltérés',
-    'Göngyölt forgalom', 'Göngyölt ellenőrizve', 'Novo forgalom', 'EUR elütés', 'Borravaló',
+    'Göngyölt forgalom', 'Göngyölt ellenőrizve', 'Jkv. rendben', 'Novo forgalom', 'EUR elütés', 'Borravaló',
   ];
 
   const data = [];
@@ -1304,6 +1316,8 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
     .forEach((unit) => {
       Object.values(unit.registers).forEach((reg) => {
         const summary = exportClosureSummary(reg.closures);
+        computeRegisterProtocolMarks(reg.checkDays);
+        const protocolStatus = exportProtocolStatus(summarizeProtocolChecks(reg.checkDays, protocolChecked));
         const turnover = reg.vat_0 + reg.vat_5 + reg.vat_18 + reg.vat_27;
         const check = validatePaymentBreakdown({
           vatTotal: turnover, cash: reg.cash, card: reg.card, szep: reg.szep,
@@ -1328,6 +1342,7 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
           'Eltérés': reg.card - reg.terminal_card,
           'Göngyölt forgalom': summary.lastCumulative ?? '',
           'Göngyölt ellenőrizve': reg.registerId && checkedRegisters.has(reg.registerId) ? 'igen' : '',
+          'Jkv. rendben': protocolStatus,
           'Novo forgalom': reg.software,
           'EUR elütés': reg.eur,
           'Borravaló': reg.tips,
@@ -1344,11 +1359,12 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
 async function fetchCashRegisterAccountingExport(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, software_revenue, guest_count, terminal_card_total, terminal_szep, closure_number, closure_sequence, cumulative_revenue, discrepancies, discrepancy_note, discrepancy_amount, cash_registers(id, ap_number, name))')
+    .select('*, units(name), cash_register_revenue(id, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, terminal_discrepancy_note, software_revenue, guest_count, terminal_card_total, terminal_szep, closure_number, closure_sequence, cumulative_revenue, discrepancies, discrepancy_note, discrepancy_amount, cash_registers(id, ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate);
 
   const checkedRegisters = await fetchCumulativeCheckSet(startDate, endDate);
+  const protocolChecked = await fetchProtocolCheckSet(startDate, endDate);
 
   const byAp = {};
   (revenues || []).forEach((row) => {
@@ -1375,10 +1391,17 @@ async function fetchCashRegisterAccountingExport(startDate, endDate) {
           cash: 0, card: 0, szep: 0, terminal_card: 0,
           eur: 0, huf: 0,
           closures: [],
+          checkDays: [],
         };
       }
       const reg = byAp[apNumber];
       reg.unitNames.add(unitName);
+      reg.checkDays.push({
+        date: row.date,
+        crId: cr.id,
+        closureNumber: cr.closure_number ?? 1,
+        ...buildClosureChecks(cr, crRevenues),
+      });
       if (row.date < reg.firstDate) {
         reg.firstDate = row.date;
         reg.firstUnitName = unitName;
@@ -1408,7 +1431,7 @@ async function fetchCashRegisterAccountingExport(startDate, endDate) {
     'Pénztárgép', 'Első zárás', 'Utolsó zárás',
     '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA',
     'Készpénz', 'Kártya', 'Terminál', 'Időszaki', 'Időszaki eltérés', 'Eltérés',
-    'Göngyölt forgalom', 'Göngyölt ellenőrizve', 'EUR elütés',
+    'Göngyölt forgalom', 'Göngyölt ellenőrizve', 'Jkv. rendben', 'EUR elütés',
   ];
 
   const data = Object.values(byAp)
@@ -1419,6 +1442,8 @@ async function fetchCashRegisterAccountingExport(startDate, endDate) {
     )
     .map((reg) => {
       const summary = exportClosureSummary(reg.closures);
+      computeRegisterProtocolMarks(reg.checkDays);
+      const protocolStatus = exportProtocolStatus(summarizeProtocolChecks(reg.checkDays, protocolChecked));
       const total = reg.vat_0 + reg.vat_5 + reg.vat_18 + reg.vat_27;
       const check = validatePaymentBreakdown({
         vatTotal: total, cash: reg.cash, card: reg.card, szep: reg.szep,
@@ -1448,11 +1473,20 @@ async function fetchCashRegisterAccountingExport(startDate, endDate) {
         'Eltérés': reg.card - reg.terminal_card,
         'Göngyölt forgalom': summary.lastCumulative ?? '',
         'Göngyölt ellenőrizve': reg.registerId && checkedRegisters.has(reg.registerId) ? 'igen' : '',
+        'Jkv. rendben': protocolStatus,
         'EUR elütés': reg.eur,
       };
     });
 
   return { data, headers };
+}
+
+// "Jkv. rendben" oszlop szövege: ugyanaz, mint a képernyős zöld pipa / jelzés.
+function exportProtocolStatus(s) {
+  if (!s) return '';
+  if (s.allGood) return s.needed > 0 ? 'igen' : 'nem volt eltérés';
+  if (s.missing > 0) return `hiányzik: ${s.missing}`;
+  return `ellenőrizetlen: ${s.unticked}`;
 }
 
 async function fetchCashRegisterAllUnitsDetailedExport(startDate, endDate) {
@@ -2017,7 +2051,7 @@ async function fetchEventsAllUnitsExport(startDate, endDate) {
 
 // Counters and "last value" columns: summing them would be meaningless, so the
 // totals row leaves them blank.
-const NON_SUMMABLE_HEADERS = new Set(['Zárás', 'Első zárás', 'Utolsó zárás', 'Göngyölt forgalom', 'Göngyölt ellenőrizve', 'Időszaki eltérés', 'Jkv.', 'Utolsó göngyölt']);
+const NON_SUMMABLE_HEADERS = new Set(['Zárás', 'Első zárás', 'Utolsó zárás', 'Göngyölt forgalom', 'Göngyölt ellenőrizve', 'Jkv. rendben', 'Időszaki eltérés', 'Jkv.', 'Utolsó göngyölt']);
 
 function calculateTotalsRow(data, headers) {
   // Az "Összesen" felirat az első olyan azonosító oszlopba kerül, ami létezik –

@@ -4,9 +4,10 @@ import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
 import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown, validateCardPayments, methodCardAdjustmentOf, pooledTerminalFor } from '../../lib/validations';
-import { buildClosureChecks, computeRegisterProtocolMarks, sortClosuresForDisplay } from '../../lib/registerChecks';
+import { buildClosureChecks, computeRegisterProtocolMarks, sortClosuresForDisplay, summarizeProtocolChecks } from '../../lib/registerChecks';
 import { useAuth } from '../../hooks/useAuth';
 import { useCumulativeChecks } from '../../hooks/useCumulativeChecks';
+import { useProtocolChecks } from '../../hooks/useProtocolChecks';
 import toast from 'react-hot-toast';
 import { RevenueTrendChart } from '../charts/RevenueTrendChart';
 
@@ -192,7 +193,7 @@ export default function MonthlyReport({ startDate, endDate, reportType, unitId }
     return <CashRegisterAllUnitsSimpleReport data={data} totals={totals} startDate={startDate} endDate={endDate} />;
   }
   if (reportType === 'cash_register_all_detailed') {
-    return <CashRegisterAllUnitsDetailedReport data={data} totals={totals} />;
+    return <CashRegisterAllUnitsDetailedReport data={data} totals={totals} startDate={startDate} endDate={endDate} />;
   }
   if (reportType === 'cash_register_all_accounting') {
     return <CashRegisterAccountingReport data={data} totals={totals} startDate={startDate} endDate={endDate} />;
@@ -871,7 +872,7 @@ function eurDiscrepancyOf(cr) {
 async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, software_revenue, closure_number, closure_sequence, cumulative_revenue, discrepancies, cash_registers(id, ap_number, name))')
+    .select('*, units(name), cash_register_revenue(id, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, terminal_discrepancy_note, software_revenue, closure_number, closure_sequence, cumulative_revenue, discrepancies, discrepancy_note, discrepancy_amount, cash_registers(id, ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate);
 
@@ -915,6 +916,9 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
           vat_0: 0, vat_5: 0, vat_18: 0, vat_27: 0, tips: 0,
           software: 0,
           closures: [],
+          // Zárásonkénti ellenőrzések a "Jkv." oszlophoz (jegyzőkönyv
+          // megvan-e / pipálva van-e) – ugyanaz a mérce, mint a részletesben.
+          checkDays: [],
         };
       }
 
@@ -925,6 +929,14 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
       const eur = eurDiscrepancyOf(cr);
 
       const reg = unitData[unitId].registers[registerId];
+      if (!isBlankClosure(cr)) {
+        reg.checkDays.push({
+          date: row.date,
+          crId: cr.id,
+          closureNumber: cr.closure_number ?? 1,
+          ...buildClosureChecks(cr, crRevenues),
+        });
+      }
       reg.szep += parseFloat(cr.szep_card_payment) || 0;
       reg.huf += hufDiscrepancyOf(cr);
       reg.eur += eur;
@@ -956,13 +968,17 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
 
   const data = Object.values(unitData).map((unit) => ({
     ...unit,
-    registers: Object.values(unit.registers).map((reg) => ({
-      ...reg,
-      // Closure summary: first/last closure number + last cumulative revenue.
-      ...closureSummary(reg.closures),
-      // Same shape the summary component expects for the novo figure.
-      totals: { software: reg.software },
-    })),
+    registers: Object.values(unit.registers).map((reg) => {
+      // Jkv. jelölés zárásonként (eltérés → megvan-e a jegyzőkönyv).
+      computeRegisterProtocolMarks(reg.checkDays);
+      return {
+        ...reg,
+        // Closure summary: first/last closure number + last cumulative revenue.
+        ...closureSummary(reg.closures),
+        // Same shape the summary component expects for the novo figure.
+        totals: { software: reg.software },
+      };
+    }),
   })).sort((a, b) => a.unitName.localeCompare(b.unitName));
 
   const totals = {
@@ -984,7 +1000,7 @@ async function fetchCashRegisterAllUnitsSimple(startDate, endDate) {
 async function fetchCashRegisterAccounting(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, software_revenue, guest_count, terminal_card_total, terminal_szep, closure_number, closure_sequence, cumulative_revenue, discrepancies, discrepancy_note, discrepancy_amount, cash_registers(id, ap_number, name))')
+    .select('*, units(name), cash_register_revenue(id, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, terminal_discrepancy_note, software_revenue, guest_count, terminal_card_total, terminal_szep, closure_number, closure_sequence, cumulative_revenue, discrepancies, discrepancy_note, discrepancy_amount, cash_registers(id, ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate);
 
@@ -1015,11 +1031,19 @@ async function fetchCashRegisterAccounting(startDate, endDate) {
           cash: 0, card: 0, szep: 0, terminal_card: 0,
           eur: 0, huf: 0,
           closures: [],
+          // Zárásonkénti ellenőrzések a "Jkv." oszlophoz.
+          checkDays: [],
         };
       }
 
       const reg = byAp[apNumber];
       reg.unitNames.add(unitName);
+      reg.checkDays.push({
+        date: row.date,
+        crId: cr.id,
+        closureNumber: cr.closure_number ?? 1,
+        ...buildClosureChecks(cr, crRevenues),
+      });
       if (row.date < reg.firstDate) {
         reg.firstDate = row.date;
         reg.firstUnitName = unitName;
@@ -1047,13 +1071,17 @@ async function fetchCashRegisterAccounting(startDate, endDate) {
   });
 
   const data = Object.values(byAp)
-    .map((reg) => ({
-      ...reg,
-      unitNames: Array.from(reg.unitNames).sort((a, b) => a.localeCompare(b)),
-      // Időszaki forgalom: az ÁFA-kulcsok összege, borravaló nélkül.
-      total: reg.vat_0 + reg.vat_5 + reg.vat_18 + reg.vat_27,
-      ...closureSummary(reg.closures),
-    }))
+    .map((reg) => {
+      // Jkv. jelölés zárásonként – a gép teljes (egységeken átívelő) láncán.
+      computeRegisterProtocolMarks(reg.checkDays);
+      return {
+        ...reg,
+        unitNames: Array.from(reg.unitNames).sort((a, b) => a.localeCompare(b)),
+        // Időszaki forgalom: az ÁFA-kulcsok összege, borravaló nélkül.
+        total: reg.vat_0 + reg.vat_5 + reg.vat_18 + reg.vat_27,
+        ...closureSummary(reg.closures),
+      };
+    })
     // Egységek szerint sorrendben, azon belül AP-szám szerint.
     .sort(
       (a, b) =>
@@ -1075,7 +1103,7 @@ async function fetchCashRegisterAccounting(startDate, endDate) {
 async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
   const { data: revenues } = await supabase
     .from('daily_revenue')
-    .select('*, units(name), cash_register_revenue(vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, terminal_discrepancy_note, discrepancies, discrepancy_note, discrepancy_amount, software_revenue, guest_count, terminal_card_total, terminal_szep, cumulative_revenue, closure_number, closure_sequence, cash_registers(ap_number, name))')
+    .select('*, units(name), cash_register_revenue(id, vat_0_percent, vat_5_percent, vat_18_percent, vat_27_percent, tips, cash_payment, card_payment, szep_card_payment, terminal_card, terminal_discrepancy_note, discrepancies, discrepancy_note, discrepancy_amount, software_revenue, guest_count, terminal_card_total, terminal_szep, cumulative_revenue, closure_number, closure_sequence, cash_registers(id, ap_number, name))')
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: true });
@@ -1123,6 +1151,9 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
         unitId,
         apNumber,
         closureNumber: cr.closure_number ?? 1,
+        // A "jegyzőkönyv ellenőrizve" pipa ehhez a záráshoz tartozik.
+        crId: cr.id,
+        registerId: cr.cash_registers?.id || null,
         eur: eurDiscrepancyOf(cr),
         vat_0: parseFloat(cr.vat_0_percent) || 0,
         vat_5: parseFloat(cr.vat_5_percent) || 0,
@@ -2184,9 +2215,37 @@ const recordedElutesText = (row) => {
 const STICKY_TH = 'sticky top-0 z-20 bg-red-50 px-4 py-2';
 const STICKY_TH_DENSE = 'sticky top-0 z-20 bg-red-50 px-2 py-1';
 
+// "Jkv." cella az egyszerű / könyvelési jelentésben: zöld pipa, ha a gép
+// időszaki összes jegyzőkönyve megvan ÉS a részletes jelentésben pipálva is
+// van (vagy nem volt eltérés). Különben röviden, mi hiányzik.
+function ProtocolStatusCell({ summary, available, className }) {
+  const s = summary || { needed: 0, missing: 0, unticked: 0, allGood: true };
+  let content;
+  let title;
+  if (s.allGood) {
+    content = <span className="text-green-600 font-bold">✓</span>;
+    title = s.needed > 0
+      ? `Minden jegyzőkönyv megvan és ellenőrizve (${s.needed} eltéréses zárás).`
+      : 'Nem volt eltérés az időszakban, nincs szükség jegyzőkönyvre.';
+  } else if (s.missing > 0) {
+    content = <span className="text-red-600 font-semibold">✗ {s.missing}</span>;
+    title = `${s.missing} eltéréses záráshoz hiányzik a jegyzőkönyv (elütés indoklással).`;
+  } else {
+    content = <span className="text-amber-600">{s.unticked} ellenőrizetlen</span>;
+    title = `${s.unticked} jegyzőkönyv megvan, de a részletes jelentésben még nincs bepipálva, hogy ellenőrizve.` +
+      (available ? '' : ' (A pipához futtasd a 20260906_register_protocol_checks migrációt.)');
+  }
+  return (
+    <td className={`${className} text-center cursor-help`} title={title}>
+      {content}
+    </td>
+  );
+}
+
 function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) {
   const { isAdmin } = useAuth();
   const { checks, available: checksAvailable, setChecked } = useCumulativeChecks(startDate, endDate);
+  const { checks: protocolChecks, available: protocolChecksAvailable } = useProtocolChecks(startDate, endDate);
   const [savingCheck, setSavingCheck] = useState(null);
 
   const sumRegisters = (unit, key) =>
@@ -2242,6 +2301,8 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
         összege nem egyezik a KP + kártya + SZÉP összegével (fölé állva látszik a részletezés).
         {' '}A <span className="font-semibold">göngyölt</span> mellett pipálható, hogy ellenőrizve
         van – a pipa minden adminnak látszik.
+        {' '}A <span className="font-semibold">Jkv.</span> zöld pipa: az időszak minden
+        jegyzőkönyve megvan és a részletes jelentésben ellenőrizve (pipálva) van.
         {!checksAvailable && (
           <span className="text-orange-600">
             {' '}(A göngyölt pipához futtasd a 20260902_register_cumulative_checks migrációt.)
@@ -2265,6 +2326,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
               <th className={TH}>Időszaki</th>
               <th className={TH}>Eltérés</th>
               <th className={TH}>Göngyölt</th>
+              <th className={`${STICKY_TH_DENSE} text-center whitespace-nowrap`} title="Jegyzőkönyvek: minden megvan és ellenőrizve">Jkv.</th>
               <th className={TH}>Novo</th>
               <th className={TH}>EUR elütés</th>
               <th className={TH}>Borravaló</th>
@@ -2275,7 +2337,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
               <React.Fragment key={`unit-${unitIdx}-${unit.unitName}`}>
                 <tr className="bg-gray-50 font-medium">
                   <td className={`sticky left-0 z-10 bg-gray-50 ${TD}`}>{unit.unitName}</td>
-                  <td className={TD} colSpan={15}></td>
+                  <td className={TD} colSpan={16}></td>
                 </tr>
                 {(unit.registers || []).map((reg, regIdx) => {
                   const discrepancy = reg.card - (reg.terminal_card || 0);
@@ -2324,6 +2386,11 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
                           )}
                         </span>
                       </td>
+                      <ProtocolStatusCell
+                        className={TD}
+                        summary={summarizeProtocolChecks(reg.checkDays, protocolChecks)}
+                        available={protocolChecksAvailable}
+                      />
                       <td className={num}>{denseAmount(reg.software)}</td>
                       <td className={`${num} ${(reg.eur || 0) !== 0 ? 'text-orange-600 font-medium' : 'text-gray-400'}`}>
                         {eurCell(reg.eur)}
@@ -2349,6 +2416,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
                     {denseAmount(unit.card - unit.terminal_card)}
                   </td>
                   <td className={TD}></td>
+                  <td className={TD}></td>
                   <td className={`${num} font-medium`}>{denseAmount(sumRegisters(unit, 'software'))}</td>
                   <td className={`${num} font-medium ${(unit.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
                     {eurCell(unit.eur)}
@@ -2373,6 +2441,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
               <td className={`${num} ${(totals.card - totals.terminal_card) !== 0 ? 'text-orange-600' : ''}`}>
                 {denseAmount(totals.card - totals.terminal_card)}
               </td>
+              <td className={TD}></td>
               <td className={TD}></td>
               <td className={num}>{denseAmount(sumAll('software'))}</td>
               <td className={`${num} ${(totals.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
@@ -2419,6 +2488,7 @@ const TD = 'px-2 py-1 whitespace-nowrap';
 function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
   const { isAdmin } = useAuth();
   const { checks, available: checksAvailable, setChecked } = useCumulativeChecks(startDate, endDate);
+  const { checks: protocolChecks, available: protocolChecksAvailable } = useProtocolChecks(startDate, endDate);
   const [savingCheck, setSavingCheck] = useState(null);
 
   // Ugyanaz az ellenőrzés, mint az egyszerű nézetben: az ÁFA-kulcsok összegének
@@ -2497,6 +2567,8 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
         {' '}Az <span className="font-semibold">Időszaki</span> piros, ha az ÁFA-kulcsok összege nem
         egyezik a KP + kártya + SZÉP összegével.
         {' '}A <span className="font-semibold">göngyölt</span> mellett pipálható, hogy ellenőrizve van.
+        {' '}A <span className="font-semibold">Jkv.</span> zöld pipa: az időszak minden
+        jegyzőkönyve megvan és a részletes jelentésben ellenőrizve (pipálva) van.
         {!checksAvailable && (
           <span className="text-orange-600">
             {' '}(A göngyölt pipához futtasd a 20260902_register_cumulative_checks migrációt.)
@@ -2520,6 +2592,7 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
               <th className={TH}>Időszaki</th>
               <th className={TH}>Eltérés</th>
               <th className={TH}>Göngyölt</th>
+              <th className={`${STICKY_TH_DENSE} text-center whitespace-nowrap`} title="Jegyzőkönyvek: minden megvan és ellenőrizve">Jkv.</th>
               <th className={TH}>EUR elütés</th>
             </tr>
           </thead>
@@ -2585,6 +2658,11 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
                       )}
                     </span>
                   </td>
+                  <ProtocolStatusCell
+                    className={TD}
+                    summary={summarizeProtocolChecks(reg.checkDays, protocolChecks)}
+                    available={protocolChecksAvailable}
+                  />
                   <td className={`${num} ${(reg.eur || 0) !== 0 ? 'text-orange-600 font-medium' : 'text-gray-400'}`}>
                     {eurCell(reg.eur)}
                   </td>
@@ -2609,6 +2687,7 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
                 {denseAmount(totals.discrepancy)}
               </td>
               <td className={TD}></td>
+              <td className={TD}></td>
               <td className={`${num} ${(totals.eur || 0) !== 0 ? 'text-orange-600' : ''}`}>
                 {eurCell(totals.eur)}
               </td>
@@ -2620,9 +2699,27 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
   );
 }
 
-function CashRegisterAllUnitsDetailedReport({ data, totals }) {
+function CashRegisterAllUnitsDetailedReport({ data, totals, startDate, endDate }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { isAdmin } = useAuth();
+  // "Jegyzőkönyv ellenőrizve" pipák zárásonként (minden adminnak közös).
+  const { checks: protocolChecks, available: protocolChecksAvailable, setChecked: setProtocolChecked } =
+    useProtocolChecks(startDate, endDate);
+  const [savingProtocolCheck, setSavingProtocolCheck] = useState(null);
+
+  const toggleProtocolCheck = async (day, checked) => {
+    if (!day?.crId) return;
+    setSavingProtocolCheck(day.crId);
+    try {
+      await setProtocolChecked({ crId: day.crId, registerId: day.registerId, date: day.date }, checked);
+    } catch (error) {
+      console.error('Error saving protocol check:', error);
+      toast.error('A pipát nem sikerült elmenteni.');
+    } finally {
+      setSavingProtocolCheck(null);
+    }
+  };
 
   // Returning from a day: scroll back to the register the day was opened from.
   const focusKey = searchParams.get('focus');
@@ -2655,8 +2752,14 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
         <p className="text-xs text-gray-500">
           <span className="font-semibold">Jkv.</span> oszlop: eltérés esetén (terminál/kártya,
           fizetési mód vagy göngyölt) automatikus jelölés –{' '}
-          <span className="text-green-600 font-bold">✓</span> jegyzőkönyv elkészült,{' '}
-          <span className="text-red-600 font-bold">✗</span> hiányzó jegyzőkönyv. Üres = nincs eltérés.
+          <span className="text-red-600 font-bold">✗</span> hiányzó jegyzőkönyv; ha a jegyzőkönyv
+          megvan, zöld pipálható négyzet: az admin bepipálja, ha ellenőrizte, hogy tényleg megvan.
+          Üres = nincs eltérés.
+          {!protocolChecksAvailable && (
+            <span className="text-orange-600">
+              {' '}(A jegyzőkönyv-pipához futtasd a 20260906_register_protocol_checks migrációt.)
+            </span>
+          )}
           {' '}A pirosan/narancsan jelölt értékek fölé állva látszik az eltérés magyarázata.
           {' '}A sorokra kattintva a napi jelentés adott napja nyílik meg.
           {' '}Az összegek forintban (az EUR elütés kivételével).
@@ -2768,9 +2871,24 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                           >
                             {denseAmount(day.discrepancy)}
                           </td>
-                          <td className={`${TD} text-center`}>
+                          <td className={`${TD} text-center`} onClick={(e) => e.stopPropagation()}>
                             {day.protocolMark === 'ok' && (
-                              <span className="text-green-600 font-bold" title="Eltérés – jegyzőkönyv elkészült">✓</span>
+                              protocolChecksAvailable && day.crId ? (
+                                <input
+                                  type="checkbox"
+                                  className="h-3.5 w-3.5 accent-green-600 cursor-pointer disabled:cursor-not-allowed"
+                                  checked={!!protocolChecks[day.crId]}
+                                  disabled={!isAdmin || savingProtocolCheck === day.crId}
+                                  onChange={(e) => toggleProtocolCheck(day, e.target.checked)}
+                                  title={
+                                    protocolChecks[day.crId]
+                                      ? `Jegyzőkönyv ellenőrizve${protocolChecks[day.crId].checkedAt ? ` (${formatDate(protocolChecks[day.crId].checkedAt)})` : ''}`
+                                      : 'Eltérés – a jegyzőkönyv rögzítve. Pipáld be, ha ellenőrizted, hogy tényleg megvan.'
+                                  }
+                                />
+                              ) : (
+                                <span className="text-green-600 font-bold" title="Eltérés – jegyzőkönyv elkészült">✓</span>
+                              )
                             )}
                             {day.protocolMark === 'missing' && (
                               <span className="text-red-600 font-bold" title="Eltérés – hiányzó jegyzőkönyv">✗</span>
