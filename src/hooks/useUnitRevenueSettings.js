@@ -31,7 +31,7 @@ export function useUnitRevenueSettings(unitId) {
         show_mckinsey: false,
         show_ordit: false,
         show_event_revenue: false,
-        multiple_closures_enabled: false,
+        multiple_closures_enabled: true,
       });
     } catch (error) {
       console.error('Error fetching unit revenue settings:', error);
@@ -41,7 +41,7 @@ export function useUnitRevenueSettings(unitId) {
         show_mckinsey: false,
         show_ordit: false,
         show_event_revenue: false,
-        multiple_closures_enabled: false,
+        multiple_closures_enabled: true,
       });
     } finally {
       setLoading(false);
@@ -124,6 +124,7 @@ export function useAllUnitRevenueSettings() {
           show_mckinsey: unit.name === 'Államkincstár',
           show_ordit: false,
           show_event_revenue: false,
+          multiple_closures_enabled: true,
         },
       }));
 

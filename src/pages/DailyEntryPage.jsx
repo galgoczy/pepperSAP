@@ -18,7 +18,7 @@ import WagePaymentForm from '../components/expenses/WagePaymentForm';
 import PaymentEditModal from '../components/expenses/PaymentEditModal';
 import { getToday, formatCurrency, formatDate, formatDateWithWeekday, PAYMENT_METHODS, TERMINAL_TIP_WITHDRAW_RATE } from '../lib/utils';
 import { supabase } from '../lib/supabase';
-import { REGISTER_TOLERANCE, validatePaymentBreakdown, validateCardPayments, hasDocumentedDiscrepancy, hufDiscrepancyOf, eurDiscrepancyOf, methodCardAdjustmentOf } from '../lib/validations';
+import { REGISTER_TOLERANCE, validatePaymentBreakdown, validateCardPayments, hasDocumentedDiscrepancy, hufDiscrepancyOf, eurDiscrepancyOf, methodCardAdjustmentOf, pooledTerminalFor } from '../lib/validations';
 import { netCashDiscrepancy, isMethodDiscrepancy, describeDiscrepancy } from '../lib/discrepancies';
 import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote, ShieldAlert } from 'lucide-react';
 
@@ -1665,8 +1665,12 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
 
               // Card vs terminal (the terminal is the true figure). Handled by
               // a "rossz fizetési mód" elütés covering the difference, or by a
-              // legacy free-text reason.
-              if (Math.abs(cardTerminalDiff) > REGISTER_TOLERANCE) {
+              // legacy free-text reason. Több zárás egy terminál értékkel: ha a
+              // gép aznapi zárásainak kártya összege egyezik a terminállal,
+              // nincs eltérés, nem kell jegyzőkönyv.
+              const pooled = pooledTerminalFor(cr, crData);
+              const pooledOk = pooled.applies && pooled.isValid;
+              if (!pooledOk && Math.abs(cardTerminalDiff) > REGISTER_TOLERANCE) {
                 const cardCheck = validateCardPayments(
                   parseFloat(cr.card_payment) || 0,
                   parseFloat(cr.terminal_card) || 0,

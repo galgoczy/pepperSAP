@@ -38,7 +38,7 @@ export function evaluateUnitDays(revenueRows) {
       }
       byRegister[key].days.push({
         date: row.date,
-        ...buildClosureChecks(cr),
+        ...buildClosureChecks(cr, closures),
         // A hiányzó sorszám / göngyölt külön szabály, nem a marks része.
         hasSequence: cr.closure_sequence != null && cr.closure_sequence !== '',
         hasCumulative: n(cr.cumulative_revenue) > 0,

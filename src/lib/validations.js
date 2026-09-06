@@ -131,6 +131,50 @@ export const eurDiscrepancyOf = (cr) => eurDiscrepancyAmount(cr);
 // as explained.
 export const methodCardAdjustmentOf = (cr) => methodAdjustments(cr).card;
 
+// Egy napon egy gépen több zárás, de csak EGY terminál érték. Tipikus eset: a
+// kasszát lezárták, majd kiderült, hogy kimaradt kártyás forgalom, ezért
+// újranyitották és 2. zárást csináltak – a terminált viszont csak egyszer
+// zárták, így a terminál összeg a nap MINDEN zárásának kártyáját tartalmazza.
+// Ilyenkor az egy terminál értéket a gép aznapi összes zárásának kártya
+// összegével vetjük össze (a rögzített „rossz fizetési mód” elütéseket is
+// beszámítva). Ha egyezik, egyik záráson sincs kártya–terminál eltérés, nem
+// kell jegyzőkönyv. Ha NEM egyezik, minden marad a zárásonkénti szabály szerint.
+//
+// `closures`: a gép aznapi zárásai (nyers sorok vagy az űrlap adatai). Az üres
+// zárás-sorok nem számítanak. Csak akkor érvényes, ha legalább két érdemi zárás
+// van és pontosan egyen szerepel terminál érték.
+export const pooledTerminalCheck = (closures) => {
+  const list = (closures || []).filter((c) => c && !isBlankClosure(c));
+  if (list.length < 2) return { applies: false };
+  const withTerminal = list.filter((c) => num(c.terminal_card) > 0);
+  if (withTerminal.length !== 1) return { applies: false };
+  const terminal = num(withTerminal[0].terminal_card);
+  const cardSum = list.reduce((s, c) => s + num(c.card_payment), 0);
+  const adjustment = list.reduce((s, c) => s + methodCardAdjustmentOf(c), 0);
+  const check = validateCardPayments(cardSum, terminal, adjustment);
+  return {
+    applies: true,
+    isValid: check.isValid,
+    terminal,
+    cardSum,
+    difference: check.signedDifference,
+    closureCount: list.length,
+  };
+};
+
+// A zárás gépének azonosítója, akármelyik alakban jött a sor (nyers oszlop,
+// beágyazott cash_registers, vagy csak AP-szám).
+export const registerKeyOf = (cr) =>
+  cr?.cash_register_id ?? cr?.cash_registers?.id ?? cr?.cash_registers?.ap_number ?? null;
+
+// Az összevont terminál-ellenőrzés a `cr` gépére, a nap összes zárása
+// (`dayClosures`, minden gépé együtt) alapján.
+export const pooledTerminalFor = (cr, dayClosures) => {
+  const key = registerKeyOf(cr);
+  if (key == null || !Array.isArray(dayClosures)) return { applies: false };
+  return pooledTerminalCheck(dayClosures.filter((c) => registerKeyOf(c) === key));
+};
+
 // A payment-breakdown gap counts as documented once an elütés was recorded with
 // a reason on that closure — that is what the jegyzőkönyv is printed from.
 // Accepts either the discrepancies array or the whole closure, so that legacy

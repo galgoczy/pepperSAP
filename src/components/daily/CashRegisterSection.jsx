@@ -303,7 +303,12 @@ export default function CashRegisterSection({
     methodAdj.card
   );
 
-  const hasDiscrepancy = !cardValidation.isValid;
+  // Több zárás, egy terminál érték (a DailyRevenueForm számolja a gép aznapi
+  // záraiból): ha a zárások kártya összege egyezik a terminállal, ezen a
+  // záráson sincs eltérés, nem kérünk elütést.
+  const pooledTerminal = validation?.pooledTerminal || null;
+  const pooledTerminalOk = !!(pooledTerminal?.applies && pooledTerminal.isValid);
+  const hasDiscrepancy = !cardValidation.isValid && !pooledTerminalOk;
 
   // Prefill for the one-click "rossz fizetési mód" elütés from the terminal
   // difference: register card above the terminal means card was keyed instead
@@ -929,6 +934,14 @@ export default function CashRegisterSection({
                     Korábbi indoklás: {formData.terminal_discrepancy_note}
                   </p>
                 )}
+              </div>
+            )}
+            {!hasDiscrepancy && !cardValidation.isValid && pooledTerminalOk && (
+              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                Ezen a záráson a kártya és a terminál eltér ({formatCurrency(cardValidation.difference)}), de a gép
+                mai {pooledTerminal.closureCount} zárásának kártya összege ({formatCurrency(pooledTerminal.cardSum)})
+                egyezik az egy terminál értékkel ({formatCurrency(pooledTerminal.terminal)}) – rendben, nem kell
+                elütés.
               </div>
             )}
             {!hasDiscrepancy && cardValidation.explainedByDiscrepancy && (

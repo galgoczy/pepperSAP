@@ -530,7 +530,7 @@ async function fetchCashRegisterExport(startDate, endDate, unitId) {
         cash: parseFloat(cr.cash_payment) || 0,
         card: parseFloat(cr.card_payment) || 0,
         terminal_card: parseFloat(cr.terminal_card) || 0,
-        ...buildClosureChecks(cr),
+        ...buildClosureChecks(cr, crRevenues),
       };
       // Register turnover = the ÁFA buckets. Borravaló is its own column, not part of it.
       dayData.total = dayData.turnover;

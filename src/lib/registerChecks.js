@@ -17,6 +17,7 @@ import {
   hufDiscrepancyOf,
   eurDiscrepancyOf,
   methodCardAdjustmentOf,
+  pooledTerminalFor,
 } from './validations';
 import { listDiscrepancies } from './discrepancies';
 
@@ -26,7 +27,11 @@ const n = (v) => parseFloat(v) || 0;
 
 // Everything a report row needs from one raw cash_register_revenue row for the
 // checks above. Amount fields keep the names the reports already use.
-export function buildClosureChecks(cr) {
+// `dayClosures`: a nap összes zárása (minden gépé) – ebből dől el az összevont
+// terminál-ellenőrzés (több zárás, egy terminál érték; lásd pooledTerminalCheck).
+export function buildClosureChecks(cr, dayClosures = null) {
+  const pooled = pooledTerminalFor(cr, dayClosures);
+  const terminalPooled = !!(pooled.applies && pooled.isValid);
   const vat_0 = n(cr.vat_0_percent);
   const vat_5 = n(cr.vat_5_percent);
   const vat_18 = n(cr.vat_18_percent);
@@ -53,8 +58,11 @@ export function buildClosureChecks(cr) {
     paymentDiff: breakdown.difference,
     paymentGap: breakdown.applicable && !breakdown.isValid,
     discrepancy: card - terminal_card,
-    terminalExplained: validateCardPayments(card, terminal_card, methodCardAdjustmentOf(cr))
-      .explainedByDiscrepancy,
+    terminalExplained:
+      terminalPooled ||
+      validateCardPayments(card, terminal_card, methodCardAdjustmentOf(cr)).explainedByDiscrepancy,
+    // A nap több zárásának kártya összege egyezik az egy terminál értékkel.
+    terminalPooled,
     terminalNote: (cr.terminal_discrepancy_note || '').trim(),
     discrepancyDocumented: hasDocumentedDiscrepancy(cr),
     discrepancyCount: listDiscrepancies(cr).length,
@@ -120,7 +128,9 @@ export function computeRegisterProtocolMarks(days) {
     if (termDisc) {
       reasons.push(
         termHandled
-          ? 'Kártya-terminál eltérés – rendezve'
+          ? day.terminalPooled
+            ? 'Kártya-terminál eltérés – a nap zárásainak kártya összege egyezik a terminállal, rendezve'
+            : 'Kártya-terminál eltérés – rendezve'
           : 'Kártya-terminál eltérés – hiányzik a „rossz fizetési mód” elütés'
       );
     }

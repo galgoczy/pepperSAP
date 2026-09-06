@@ -10,7 +10,7 @@ import CashRegisterSection from './CashRegisterSection';
 import ProtocolItemsSection from './ProtocolItemsSection';
 import { formatCurrency, formatDateWithWeekday } from '../../lib/utils';
 import { buildWhatsappDailySummary, whatsappShareUrl, unitSendsCashLine } from '../../lib/whatsappSummary';
-import { validatePaymentBreakdown, hasDocumentedDiscrepancy, hufDiscrepancyOf, eurDiscrepancyOf, isBlankClosure } from '../../lib/validations';
+import { validatePaymentBreakdown, hasDocumentedDiscrepancy, hufDiscrepancyOf, eurDiscrepancyOf, isBlankClosure, pooledTerminalCheck } from '../../lib/validations';
 import { evaluateDayCandidate } from '../../lib/dayStatus';
 import toast from 'react-hot-toast';
 
@@ -52,7 +52,8 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
   const { cashRegisters, loading: registersLoading } = useActiveCashRegisters(unitId, date);
   const { revenues: cashRegisterRevenues, loading: closuresLoading, saveAllRevenues } = useAllCashRegisterRevenue(revenue?.id);
   const { settings: revenueSettings, loading: settingsLoading, updateSettings: updateRevenueSettings } = useUnitRevenueSettings(unitId);
-  const multiClosuresEnabled = revenueSettings?.multiple_closures_enabled ?? false;
+  // Alapból bekapcsolva (több zárás / nap); a kapcsolóval egységenként kikapcsolható.
+  const multiClosuresEnabled = revenueSettings?.multiple_closures_enabled ?? true;
   const { items: protocolItems, totalAmount: protocolItemsTotal, createItem: createProtocolItem, updateItem: updateProtocolItem, deleteItem: deleteProtocolItem, setDailyRevenueId } = useProtocolItems(revenue?.id);
   const { validationResult: eventValidation, validateEventRevenue } = useEventRevenueValidation(unitId, date);
 
@@ -344,6 +345,11 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
       const base = baselines[registerId];
       let predecessor = base ? { sequence: base.sequence, cumulative: base.cumulative } : null;
 
+      // Több zárás, egy terminál érték: a gép aznapi zárásainak kártya összegét
+      // az egy terminállal vetjük össze (lásd pooledTerminalCheck). Minden
+      // zárás-box megkapja, hogy egyezés esetén ne kérjen elütést.
+      const pooledTerminal = pooledTerminalCheck(closures.map((c) => mergedForKey(c.key)));
+
       closures.forEach((c, idx) => {
         const data = mergedForKey(c.key);
         software += parseFloat(data.software_revenue) || 0;
@@ -394,6 +400,7 @@ export default function DailyRevenueForm({ date, unitId, unitName, focusRegister
           expectedSequence,
           cumulativeWarning,
           expectedCumulative,
+          pooledTerminal,
         };
 
         // Chain: the next closure of this register is checked against this one.

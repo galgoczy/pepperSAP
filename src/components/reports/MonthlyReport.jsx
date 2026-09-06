@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
-import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown, validateCardPayments, methodCardAdjustmentOf } from '../../lib/validations';
+import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown, validateCardPayments, methodCardAdjustmentOf, pooledTerminalFor } from '../../lib/validations';
 import { buildClosureChecks, computeRegisterProtocolMarks, sortClosuresForDisplay } from '../../lib/registerChecks';
 import { useAuth } from '../../hooks/useAuth';
 import { useCumulativeChecks } from '../../hooks/useCumulativeChecks';
@@ -456,7 +456,7 @@ async function fetchCashRegisterData(startDate, endDate, unitId) {
         terminal_card: parseFloat(cr.terminal_card) || 0,
         // Everything the shared checks need (payment gap, terminal, göngyölt,
         // recorded elütés) — identical to what the admin reports evaluate.
-        ...buildClosureChecks(cr),
+        ...buildClosureChecks(cr, crRevenues),
       };
       // Register turnover = the ÁFA buckets. Borravaló is its own column, not part of it.
       dayData.total = dayData.turnover;
@@ -1149,6 +1149,11 @@ async function fetchCashRegisterAllUnitsDetailed(startDate, endDate) {
       dayData.terminalExplained = validateCardPayments(
         dayData.card, dayData.terminal_card, methodCardAdjustmentOf(cr)
       ).explainedByDiscrepancy;
+      // Több zárás, egy terminál érték: ha a gép aznapi zárásainak kártya
+      // összege egyezik a terminállal, egyik záráson sincs eltérés.
+      const pooled = pooledTerminalFor(cr, crRevenues);
+      dayData.terminalPooled = !!(pooled.applies && pooled.isValid);
+      if (dayData.terminalPooled) dayData.terminalExplained = true;
       // Turnover that the cumulative (göngyölt) Z-report increments by: VAT
       // buckets only, tips excluded (matches the daily form's validation).
       dayData.turnover = dayData.vat_0 + dayData.vat_5 + dayData.vat_18 + dayData.vat_27;
@@ -1668,9 +1673,11 @@ function CashRegisterReport({ data, totals, unitName }) {
                         title={
                           Math.abs(day.cardDiscrepancy) > REGISTER_TOLERANCE
                             ? `Pénztárgép kártya (${formatCurrency(day.card)}) és terminál (${formatCurrency(day.terminal_card)}) eltérése` +
-                              (day.terminalExplained
-                                ? ' – a rögzített „rossz fizetési mód” elütés kiadja.'
-                                : ' – a terminál a mérvadó, vegyél fel „rossz fizetési mód” elütést.')
+                              (day.terminalPooled
+                                ? ' – a nap zárásainak kártya összege egyezik az egy terminál értékkel, rendben.'
+                                : day.terminalExplained
+                                  ? ' – a rögzített „rossz fizetési mód” elütés kiadja.'
+                                  : ' – a terminál a mérvadó, vegyél fel „rossz fizetési mód” elütést.')
                             : undefined
                         }
                       >
@@ -2753,7 +2760,9 @@ function CashRegisterAllUnitsDetailedReport({ data, totals }) {
                             title={
                               day.discrepancy !== 0
                                 ? `Pénztárgép kártya (${formatCurrency(day.card)}) és terminál (${formatCurrency(day.terminal_card)}) eltérése` +
-                                  (day.terminalExplained ? ' – a rögzített „rossz fizetési mód” elütés kiadja.' : '')
+                                  (day.terminalPooled
+                                    ? ' – a nap zárásainak kártya összege egyezik az egy terminál értékkel, rendben.'
+                                    : day.terminalExplained ? ' – a rögzített „rossz fizetési mód” elütés kiadja.' : '')
                                 : undefined
                             }
                           >
