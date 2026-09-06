@@ -371,9 +371,19 @@ export default function ReportsPage() {
         />
       ) : reportType === 'traffic' ? (
         effectiveUnitId ? (
+          // A forgalmi jelentés havi: a felső dátumválasztó kezdő dátumának
+          // hónapját mutatja, a saját lapozója pedig a felső dátumokat is
+          // átállítja (a hónap első–utolsó napjára), így a kettő együtt mozog.
           <TrafficReport
             unitId={effectiveUnitId}
             unitName={units.find((u) => u.id === effectiveUnitId)?.name || ''}
+            yearMonth={String(startDate || '').slice(0, 7) || undefined}
+            onYearMonthChange={(ym) => {
+              const [y, m] = ym.split('-').map(Number);
+              const last = new Date(y, m, 0).getDate();
+              setStartDate(`${ym}-01`);
+              setEndDate(`${ym}-${String(last).padStart(2, '0')}`);
+            }}
           />
         ) : (
           <Card>
