@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Calculator, CreditCard, AlertTriangle, ChevronDown, ChevronUp, Printer, Plus, Trash2, Save } from 'lucide-react';
+import { Calculator, CreditCard, AlertTriangle, CheckCircle, ChevronDown, ChevronUp, Printer, Plus, Trash2, Save } from 'lucide-react';
 import { Card, Input, Select, Button } from '../common';
 import { Textarea } from '../common/Input';
 import { formatCurrency, formatDate, TERMINAL_TIP_WITHDRAW_RATE } from '../../lib/utils';
-import { validateCardPayments, validatePaymentBreakdown, hasDocumentedDiscrepancy } from '../../lib/validations';
+import { validateCardPayments, validatePaymentBreakdown, hasDocumentedDiscrepancy, isBlankClosure } from '../../lib/validations';
 import {
   DISCREPANCY_KINDS,
   PAYMENT_METHOD_LABELS,
@@ -269,7 +269,21 @@ export default function CashRegisterSection({
 
   // Discrepancy management functions
   const addDiscrepancy = (preset = {}) => {
-    const newDiscrepancies = [...(formData.discrepancies || []), { ...DEFAULT_DISCREPANCY, ...preset }];
+    // Kézi felvitelnél („Új elütés”) is a látott kártya–terminál eltérés irányát
+    // adjuk alapnak: ha a terminál a több (kimaradt kártya), „Készpénz helyett
+    // Bankkártya”, különben a fordítottja. Az alapértelmezett fix irány miatt a
+    // kézzel felvitt elütés gyakran nem fedte az eltérést, és nem lett zöld.
+    const directional =
+      hasDiscrepancy && !('keyed' in preset) && !('actual' in preset)
+        ? {
+            keyed: cardValidation.signedDifference > 0 ? 'card' : 'cash',
+            actual: cardValidation.signedDifference > 0 ? 'cash' : 'card',
+          }
+        : {};
+    const newDiscrepancies = [
+      ...(formData.discrepancies || []),
+      { ...DEFAULT_DISCREPANCY, ...directional, ...preset },
+    ];
     handleChange('discrepancies', newDiscrepancies);
   };
 
@@ -279,8 +293,13 @@ export default function CashRegisterSection({
   };
 
   const updateDiscrepancy = (index, field, value) => {
+    patchDiscrepancy(index, { [field]: value });
+  };
+
+  // Több mező egyszerre (pl. irány megfordítása: keyed + actual együtt).
+  const patchDiscrepancy = (index, patch) => {
     const newDiscrepancies = formData.discrepancies.map((d, i) =>
-      i === index ? { ...d, [field]: value } : d
+      i === index ? { ...d, ...patch } : d
     );
     handleChange('discrepancies', newDiscrepancies);
   };
@@ -342,6 +361,51 @@ export default function CashRegisterSection({
   // payment breakdown gap or a recorded elütés) — used to flag a collapsed
   // register box in the background.
   const hasAnyDiscrepancy = hasDiscrepancy || paymentGap || (formData.discrepancies || []).length > 0;
+
+  // Zöld pipa a fejlécben: a zárás minden ellenőrzésen átment – vagy eleve nem
+  // volt eltérés, vagy elütéssel rendezve van. Ugyanaz a mérce, mint a
+  // jelentések Jkv. jelölése és a napi státusz: kártya–terminál, fizetési
+  // módok, sorszám/göngyölt figyelmeztetés (göngyöltet bármely rögzített elütés
+  // rendezi), és forgalomnál legyen sorszám és göngyölt is kitöltve.
+  const closureBlank = isBlankClosure(formData);
+  const sequenceOk = validation?.sequenceWarning == null;
+  const cumulativeOk =
+    validation?.cumulativeWarning == null || (formData.discrepancies || []).length > 0;
+  const zFieldsOk =
+    cashRegisterTotal <= 0 ||
+    (String(formData.closure_sequence ?? '').trim() !== '' &&
+      (parseFloat(formData.cumulative_revenue) || 0) > 0);
+  const closureAllOk =
+    !closureBlank && !hasDiscrepancy && !paymentGapUndocumented && sequenceOk && cumulativeOk && zFieldsOk;
+
+  // Segítség a kézzel felvitt elütéshez, ha a kártya–terminál eltérés még
+  // nincs fedve: ha ez az elütés FORDÍTOTT iránnyal pont fedné, vagy „téves
+  // összeg” fajtával lett felvéve, de az összege a terminál-eltérés, egy
+  // kattintással javítható. (A terminál a mérvadó: ha több, mint a pénztárgép
+  // kártya, készpénz helyett kellett volna kártyára ütni, és fordítva.)
+  const terminalHintFor = (disc) => {
+    if (!hasDiscrepancy || (disc?.currency || 'HUF') !== 'HUF') return null;
+    const amount = Math.abs(parseFloat(disc?.amount) || 0);
+    if (!amount) return null;
+    const card = parseFloat(formData.card_payment) || 0;
+    const terminal = parseFloat(formData.terminal_card) || 0;
+    const wantKeyed = cardValidation.signedDifference > 0 ? 'card' : 'cash';
+    const wantActual = cardValidation.signedDifference > 0 ? 'cash' : 'card';
+    if (isMethodDiscrepancy(disc)) {
+      const keyed = disc.keyed || 'card';
+      const actual = disc.actual || 'cash';
+      const contribution = keyed === 'card' ? -amount : actual === 'card' ? amount : 0;
+      if (contribution === 0) return null;
+      const flipped = methodAdj.card - 2 * contribution;
+      return validateCardPayments(card, terminal, flipped).isValid
+        ? { type: 'flip', wantKeyed, wantActual }
+        : null;
+    }
+    const asMethod = methodAdj.card + (wantKeyed === 'card' ? -amount : amount);
+    return validateCardPayments(card, terminal, asMethod).isValid
+      ? { type: 'kind', wantKeyed, wantActual }
+      : null;
+  };
 
   // Terminal card breakdown (display + reserve tip cost)
   const terminalCardTip = parseFloat(formData.terminal_card_tip) || 0;
@@ -441,6 +505,16 @@ export default function CashRegisterSection({
             <ChevronUp className="h-5 w-5 text-gray-400" />
           ) : (
             <ChevronDown className="h-5 w-5 text-gray-400" />
+          )}
+          {/* Jobb szélen: zöld pipa, ha a zárás minden ellenőrzésen átment
+              (eleve rendben volt, vagy elütéssel/jegyzőkönyvvel rendezve). */}
+          {closureAllOk && (
+            <span
+              className="shrink-0 inline-flex"
+              title="Minden rendben: nincs eltérés, vagy elütéssel rendezve."
+            >
+              <CheckCircle className="h-5 w-5 text-green-600" aria-label="Minden rendben" />
+            </span>
           )}
         </div>
       </button>
@@ -735,6 +809,35 @@ export default function CashRegisterSection({
                           placeholder="Elütés indoklása..."
                         />
                       </div>
+                      {(() => {
+                        const hint = terminalHintFor(disc);
+                        if (!hint) return null;
+                        const dirLabel = `${PAYMENT_METHOD_LABELS[hint.wantKeyed]} helyett ${PAYMENT_METHOD_LABELS[hint.wantActual]}`;
+                        return (
+                          <div className="md:col-span-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 flex flex-wrap items-center gap-2">
+                            <AlertTriangle className="h-4 w-4 shrink-0" />
+                            <span className="flex-1 min-w-[12rem]">
+                              {hint.type === 'flip'
+                                ? `Ez az elütés fordított iránnyal fedné a terminál-eltérést: ${dirLabel}.`
+                                : `Ez az összeg pont a terminál-eltérés, de „téves összeg” fajtával a terminál-eltérést nem fedi. Rossz fizetési mód kell: ${dirLabel}.`}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                patchDiscrepancy(index, {
+                                  kind: DISCREPANCY_KINDS.METHOD,
+                                  keyed: hint.wantKeyed,
+                                  actual: hint.wantActual,
+                                })
+                              }
+                            >
+                              {hint.type === 'flip' ? 'Irány megfordítása' : 'Átállítás rossz fizetési módra'}
+                            </Button>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
