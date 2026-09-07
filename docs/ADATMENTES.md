@@ -157,6 +157,29 @@ curl -sS "https://api.telegram.org/bot$(cat ~/.pepper-telegram-token)/sendMessag
 Ha `"ok":true` a válasz, működik. Ha `"chat not found"` vagy „bot can't
 initiate conversation”, akkor a `/start` hiányzik.
 
+### Teljes lemez-hozzáférés a `/bin/bash`-nek – EZ NÉLKÜL AZ IDŐZÍTÉS NEM MŰKÖDIK
+
+Ezt az időzítés beállítása **előtt** csináld meg. A kézi futtatás enélkül is
+megy, az időzített viszont nem, és ez a legkönnyebben elnézhető hiba.
+
+macOS-en a `~/Documents` (Dokumentumok) és a külső lemezek **védett helyek**. A
+Terminálból indított futásnál a Terminál engedélyét használjuk, ezért minden
+rendben. A launchd viszont a `/bin/bash`-t indítja, aminek nincs saját
+engedélye, így már a script beolvasása is elbukik – a gép hajnalban némán
+semmit nem csinál.
+
+**Rendszerbeállítások → Adatvédelem és biztonság → Teljes lemez-hozzáférés →
+`+` gomb → a Finder ablakban `⌘⇧G` → `/bin/bash` → Megnyitás.** A kapcsoló
+maradjon bekapcsolva.
+
+Ugyanez az engedély kell a „Geri háttér” külső lemezre másoláshoz is, tehát ez
+az egy lépés mindkét problémát megoldja.
+
+> A `/bin/bash` teljes lemez-hozzáférása azt jelenti, hogy minden bash script
+> hozzáfér a védett mappákhoz. Egy dedikált, céges Mac minin ez rendben van. Ha
+> ezt szűkebbre akarod, a másik út: tedd a git checkoutot a Dokumentumokon
+> kívülre (pl. `~/pepperSAP`), és akkor csak a külső lemezhez kell engedély.
+
 ### Időzítés (0–24 üzemelő gép)
 
 ```bash
@@ -184,8 +207,17 @@ Betöltés és azonnali próba:
 launchctl load ~/Library/LaunchAgents/com.pepperhouse.sap-backup.plist
 launchctl list | grep pepperhouse     # meg kell jelennie egy sornak
 launchctl start com.pepperhouse.sap-backup
+
+# Az ellenőrzés SORRENDJE fontos: előbb a launchd naplója, csak utána a scripté.
+# Ha az időzített futás el sem indul, a backup.log-ba nem kerül semmi, és a
+# tegnapi sorokat látva könnyű azt hinni, hogy minden rendben.
+launchctl print gui/$(id -u)/com.pepperhouse.sap-backup | grep -E 'last exit|runs'
+tail -5 ~/PepperBackup/launchd.err.log   # ennek üresnek kell lennie
 tail -20 ~/PepperBackup/backup.log
 ```
+
+A `last exit code = 0` a jó. Ha `126` és a `launchd.err.log`-ban „Operation not
+permitted” áll, a `/bin/bash` teljes lemez-hozzáférése hiányzik (lásd fentebb).
 
 Ha a `load` azt írja, hogy „service already loaded”, előbb `launchctl unload
 ~/Library/LaunchAgents/com.pepperhouse.sap-backup.plist`, aztán újra `load`.
@@ -202,12 +234,12 @@ Végül győződj meg róla, hogy a **„Geri háttér” automatikusan felcsato
 újraindulás után (a Finderben látszik-e). Ha nem, a mentés attól még elkészül a
 belső lemezen, de a külső másolat elmarad.
 
-> **Ha kézzel indítva elkészül a külső másolat, időzítve viszont nem:** a macOS
-> adatvédelme (TCC) a háttérben futó folyamatoktól külön engedélyt kér a
-> cserélhető kötetekhez. Ilyenkor Rendszerbeállítások → Adatvédelem és biztonság
-> → **Teljes lemez-hozzáférés**, és vedd fel a `/bin/bash` programot (a Finder
-> ablakban ⌘⇧G, majd `/bin/bash`). A napló ilyenkor a „másodpéldány nem készült
-> el” sort írja.
+> **Ha kézzel minden megy, időzítve viszont nem:** szinte biztosan a fenti
+> teljes lemez-hozzáférés hiányzik. Két külön tünete van, attól függően, hogy a
+> védett hely melyik: ha a scriptet nem tudja beolvasni (a `~/Documents`-ből),
+> akkor el sem indul, `last exit code = 126` és „Operation not permitted” a
+> `launchd.err.log`-ban; ha csak a külső lemezhez nem fér hozzá, akkor lefut, és
+> a napló a „másodpéldány nem készült el” sort írja.
 
 ---
 
@@ -473,7 +505,8 @@ kiterjesztésekről – ezek a Supabase-specifikus dolgok, helyben nem gond.
 | `password authentication failed` | Rossz vagy időközben lecserélt adatbázis jelszó. Frissítsd a `~/.pepper-db-password` fájlt. |
 | `unbound variable` a konfig egy sorára | A jelszóban `$` van, és dupla idézőjelben szerepel. Tedd külön fájlba, vagy használj egyszeres idézőjelet. |
 | `server version mismatch` | Régi `pg_dump`. `brew upgrade libpq`, és a konfigurációban a Homebrew-s útvonal legyen. |
-| Nem fut hajnalban | `launchctl list | grep pepperhouse` – ha nincs benne, töltsd be újra. Nézd meg az automatikus bejelentkezést és az energiabeállításokat. |
+| Nem fut hajnalban, de kézzel megy | ELŐSZÖR ezt nézd: `launchctl print gui/$(id -u)/com.pepperhouse.sap-backup \| grep 'last exit'` és `tail ~/PepperBackup/launchd.err.log`. A `126` + „Operation not permitted” azt jelenti, hogy a `/bin/bash`-nek nincs Teljes lemez-hozzáférése, ezért a `~/Documents`-ben lévő scriptet be sem tudja olvasni. A `backup.log` ilyenkor néma, mert a script el sem indul. |
+| Nem fut hajnalban | `launchctl list \| grep pepperhouse` – ha nincs benne, töltsd be újra. Egy korábbi `unload -w` tiltását a sima `load` nem oldja fel: `launchctl print-disabled gui/$(id -u) \| grep pepperhouse`. Nézd meg az automatikus bejelentkezést és az energiabeállításokat is. |
 | „a mentés gyanúsan kicsi” | A kapcsolat megszakadt futás közben. A régi mentések érintetlenek; futtasd újra kézzel. |
 | Nem jön Telegram üzenet | Elküldted a `/start`-ot a botnak? A `PEPPER_TELEGRAM_CHAT_ID` és a token fájl stimmel? Próbáld a fenti `curl` paranccsal. |
 | `mkdir: /Users/valaki: Permission denied` | A konfigban más felhasználó neve maradt az útvonalban. Írd át `$HOME`-ra. |
