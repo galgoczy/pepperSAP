@@ -20,6 +20,7 @@ import { getToday, formatCurrency, formatDate, formatDateWithWeekday, PAYMENT_ME
 import { supabase } from '../lib/supabase';
 import { REGISTER_TOLERANCE, validatePaymentBreakdown, validateCardPayments, hasDocumentedDiscrepancy, hufDiscrepancyOf, eurDiscrepancyOf, methodCardAdjustmentOf, pooledTerminalFor } from '../lib/validations';
 import { netCashDiscrepancy, isMethodDiscrepancy, describeDiscrepancy } from '../lib/discrepancies';
+import { employeeInvoiceReserveCost } from '../lib/expenseVat';
 import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote, ShieldAlert } from 'lucide-react';
 
 // Shift a YYYY-MM-DD date string by whole days, using local date components so
@@ -217,15 +218,23 @@ export default function DailyEntryPage() {
         return a.is_official ? -1 : 1;
       });
 
-      // Calculate expense totals
-      const officialExpenses = expenses
+      // Calculate expense totals.
+      // Dolgozói számla: a teljes összeget a Központ állja, ezért az egység
+      // egyik zsebét sem terheli vele; a számla ÁFA tartalmának FELE viszont a
+      // Tartalékot csökkenti (ugyanaz a szabály, mint a házipénztárban).
+      const employeeInvoices = expenses.filter(e => e.is_employee_invoice);
+      const unitExpenses = expenses.filter(e => !e.is_employee_invoice);
+      const employeeInvoiceReserve = employeeInvoices.reduce(
+        (sum, e) => sum + employeeInvoiceReserveCost(e), 0
+      );
+      const officialExpenses = unitExpenses
         .filter(e => e.is_official === true)
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      const nonOfficialExpenses = expenses
+      const nonOfficialExpenses = unitExpenses
         .filter(e => e.is_official === false)
-        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0) + employeeInvoiceReserve;
       // Cash-only official expenses (for the Pénztár zárás on the cash report)
-      const officialCashExpenses = expenses
+      const officialCashExpenses = unitExpenses
         .filter(e => e.is_official === true && e.payment_method === 'cash')
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
 

@@ -46,6 +46,10 @@ function normalizeExpense(e) {
     currency: e.currency || 'HUF',
     payment_method: e.payment_method || null,
     is_official: e.is_official,
+    // Dolgozói számla: a Központ készpénzét terheli, nem az egységét.
+    is_employee_invoice: e.is_employee_invoice ?? false,
+    vat_rate: e.vat_rate ?? null,
+    vat_amount: e.vat_amount ?? null,
     date: e.invoice_date,
     // Alternative date basis for transfer invoices (list can switch to it).
     fulfillment_date: e.fulfillment_date || null,

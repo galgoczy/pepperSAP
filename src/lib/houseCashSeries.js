@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { TERMINAL_TIP_WITHDRAW_RATE } from './utils';
 import { netCashDiscrepancy } from './discrepancies';
+import { employeeInvoiceReserveCost } from './expenseVat';
 
 // Computes a unit's daily house-cash series (Pénztár zseb + Tartalék) live from
 // raw data, from zero through full history. This is the single source of truth
@@ -16,6 +17,29 @@ import { netCashDiscrepancy } from './discrepancies';
 //   reserve = (software revenue - register revenue + other extra income)
 //             - (non-official expenses + non-official EFO/wage)
 //             +/- approved reserve transfers
+//
+// Dolgozói számla a kivétel: annak a TELJES összegét a Központ készpénze állja
+// (lásd fetchCentralHouseCashSeries), az egységnél pedig csak a számla ÁFA
+// tartalmának fele terheli a tartalékot.
+
+// Az ÁFA / dolgozói számla oszlopok csak a 20260907-es migráció után léteznek.
+// Ha az még nem futott le, a bővített lekérdezés hibára futna, és ezzel MINDEN
+// kiadás kiesne a házipénztárból – a napi rögzítés nyitó egyenlege is elromlana.
+// Ezért ilyenkor a régi oszlopokkal kérdezünk újra.
+const EXPENSE_BASE_COLS =
+  'invoice_date, supplier_name, item_description, amount, is_official, payment_method';
+const EXPENSE_VAT_COLS = `${EXPENSE_BASE_COLS}, vat_rate, vat_amount, is_employee_invoice`;
+
+async function fetchUnitExpenses(unitId, endDate) {
+  const run = (cols) => {
+    let q = supabase.from('expenses').select(cols).eq('unit_id', unitId);
+    if (endDate) q = q.lte('invoice_date', endDate);
+    return q;
+  };
+  const withVat = await run(EXPENSE_VAT_COLS);
+  if (!withVat.error) return withVat;
+  return run(EXPENSE_BASE_COLS);
+}
 //
 // Running balance: opening = previous day's closing; closing = opening + movement.
 // An approved opening-balance revision sets a NEW anchor for its target date
@@ -58,13 +82,7 @@ export async function fetchHouseCashSeries(unitId, endDate) {
         .eq('unit_id', unitId),
       'date'
     ),
-    dateFilter(
-      supabase
-        .from('expenses')
-        .select('invoice_date, supplier_name, item_description, amount, is_official, payment_method')
-        .eq('unit_id', unitId),
-      'invoice_date'
-    ),
+    fetchUnitExpenses(unitId, endDate),
     dateFilter(
       supabase
         .from('house_cash')
@@ -162,6 +180,16 @@ export async function fetchHouseCashSeries(unitId, endDate) {
     const amount = parseFloat(e.amount) || 0;
     const row = ensure(e.invoice_date);
     const label = e.supplier_name + (e.item_description ? ` - ${e.item_description}` : '');
+    // Dolgozói számla: az egység készpénzét NEM terheli (a teljes összeget a
+    // Központ állja), a tartalékát viszont a számla ÁFA tartalmának fele igen.
+    if (e.is_employee_invoice) {
+      const half = employeeInvoiceReserveCost(e);
+      if (half > 0) {
+        row.reserveExpenses += half;
+        row.reservePaymentItems.push({ label: `${label} (dolgozói számla – ÁFA fele)`, amount: half });
+      }
+      return;
+    }
     if (e.is_official && e.payment_method === 'cash') {
       row.cashExpenses += amount;
       row.cashPaymentItems.push({ label, amount });
@@ -255,12 +283,16 @@ export async function fetchHouseCashSeries(unitId, endDate) {
 //             - central payments - active pockets + revisions
 // Mapped into the unit row shape:
 //   revenue   = transfers IN
-//   expenses  = central payments + active pockets
+//   expenses  = central payments + active pockets + dolgozói számlák
 //   transfers = -(transfers OUT) + revisions   (signed)
+//
+// Dolgozói számla: az egységeknél rögzített, de a Központ készpénzéből fizetett
+// számla. A teljes összege itt jelenik meg költségként; az egységnél csak az
+// ÁFA tartalom fele terheli a tartalékot (lásd fetchHouseCashSeries).
 export async function fetchCentralHouseCashSeries(endDate) {
   const dateFilter = (q, col) => (endDate ? q.lte(col, endDate) : q);
 
-  const [inRes, outRes, payRes, revRes, pocketRes] = await Promise.all([
+  const [inRes, outRes, payRes, revRes, pocketRes, employeeRes] = await Promise.all([
     dateFilter(
       supabase
         .from('cash_transfers')
@@ -293,6 +325,16 @@ export async function fetchCentralHouseCashSeries(endDate) {
       .from('cash_pockets')
       .select('current_amount, status, created_at, name')
       .eq('status', 'active'),
+    // Dolgozói számlák minden egységből. A migráció előtt ez a lekérdezés
+    // hibázik; a `.data || []` miatt ez csak annyit jelent, hogy nincs ilyen
+    // számla – ami a migráció előtt igaz is.
+    dateFilter(
+      supabase
+        .from('expenses')
+        .select('invoice_date, supplier_name, item_description, amount, units(name)')
+        .eq('is_employee_invoice', true),
+      'invoice_date'
+    ),
   ]);
 
   const byDate = new Map();
@@ -343,6 +385,17 @@ export async function fetchCentralHouseCashSeries(endDate) {
     const row = ensure(r.revision_date);
     if (r.revision_type === 'reserve') row.reserveTransfers += amount;
     else row.cashTransfers += amount;
+  });
+
+  // Dolgozói számlák -> a Központ készpénzét terhelik, teljes összeggel
+  (employeeRes.data || []).forEach((e) => {
+    const amount = parseFloat(e.amount) || 0;
+    if (!amount || !e.invoice_date) return;
+    const row = ensure(e.invoice_date);
+    const who = e.units?.name ? ` (${e.units.name})` : '';
+    const label = `Dolgozói számla${who} - ${e.supplier_name || e.item_description || 'számla'}`;
+    row.cashExpenses += amount;
+    row.cashPaymentItems.push({ label, amount });
   });
 
   // Active pockets -> cash expenses on creation date (current_amount still held)

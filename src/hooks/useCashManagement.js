@@ -64,6 +64,7 @@ export function useCentralBalance() {
         paymentsResult,
         revisionsResult,
         pocketsResult,
+        employeeInvoicesResult,
       ] = await Promise.all([
         // Transfers IN to central (approved)
         supabase
@@ -90,6 +91,14 @@ export function useCentralBalance() {
           .from('cash_pockets')
           .select('current_amount')
           .eq('status', 'active'),
+        // Dolgozói számlák: az egységeknél rögzítjük őket, de a teljes összegük
+        // a Központ készpénzét terheli. (A migráció előtt ez a lekérdezés
+        // hibázik, ilyenkor a `.data || []` üres lista – akkor még nincs is
+        // ilyen számla.)
+        supabase
+          .from('expenses')
+          .select('amount')
+          .eq('is_employee_invoice', true),
       ]);
 
       // Transfers in
@@ -128,8 +137,12 @@ export function useCentralBalance() {
       const totalPockets = (pocketsResult.data || [])
         .reduce((sum, p) => sum + (parseFloat(p.current_amount) || 0), 0);
 
+      // Dolgozói számlák (reduce cash) – teljes összeggel
+      const employeeInvoicesCash = (employeeInvoicesResult.data || [])
+        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+
       // Calculate balances
-      const cashBalance = transfersInCash - transfersOutCash - paymentsCash + revisionsCash - totalPockets;
+      const cashBalance = transfersInCash - transfersOutCash - paymentsCash + revisionsCash - totalPockets - employeeInvoicesCash;
       const reserveBalance = transfersInReserve - transfersOutReserve - paymentsReserve + revisionsReserve;
 
       setBalance({ cash: cashBalance, reserve: reserveBalance });

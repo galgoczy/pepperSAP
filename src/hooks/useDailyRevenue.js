@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { fetchHouseCashSeries, openingForDate } from '../lib/houseCashSeries';
 import { TERMINAL_TIP_WITHDRAW_RATE } from '../lib/utils';
+import { employeeInvoiceReserveCost } from '../lib/expenseVat';
 import toast from 'react-hot-toast';
 
 export function useDailyRevenue(unitId, date) {
@@ -304,9 +305,12 @@ export function useHouseCash(unitId, date) {
         // closing always equals the next day's opening, regardless of gaps or
         // whether the házipénztár tab was explicitly saved).
         fetchHouseCashSeries(unitId, date),
+        // Teljes sor: az ÁFA / dolgozói számla oszlopokat is használjuk, és egy
+        // explicit oszloplista a migráció előtt hibára futna – ami itt a napi
+        // rögzítés nyitó/záró egyenlegét vinné el.
         supabase
           .from('expenses')
-          .select('amount, is_official, payment_method')
+          .select('*')
           .eq('unit_id', unitId)
           .eq('invoice_date', date),
         supabase
@@ -334,7 +338,15 @@ export function useHouseCash(unitId, date) {
       const reserveTransfersToday = seriesRow?.reserveTransfers || 0;
 
       // Calculate expenses
-      const expenses = expensesResult.data || [];
+      const allExpenses = expensesResult.data || [];
+      // Dolgozói számla: a teljes összeget a Központ állja, az egység egyik
+      // zsebét sem terheli vele. Az egységnél csak a számla ÁFA tartalmának
+      // FELE jelenik meg, tartalék-költségként (lásd houseCashSeries.js).
+      const employeeInvoices = allExpenses.filter(e => e.is_employee_invoice);
+      const expenses = allExpenses.filter(e => !e.is_employee_invoice);
+      const employeeInvoiceReserve = employeeInvoices.reduce(
+        (sum, e) => sum + employeeInvoiceReserveCost(e), 0
+      );
       // Hivatalos (számlás) kifizetések - minden is_official=true
       const officialExpenses = expenses
         .filter(e => e.is_official === true)
@@ -343,10 +355,11 @@ export function useHouseCash(unitId, date) {
       const officialCashExpenses = expenses
         .filter(e => e.is_official === true && e.payment_method === 'cash')
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      // Nem számlás kifizetések - is_official=false
+      // Nem számlás kifizetések - is_official=false, plusz a dolgozói számlák
+      // ÁFA-fele: mindkettő a Tartalékot csökkenti.
       const nonOfficialExpenses = expenses
         .filter(e => e.is_official === false)
-        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+        .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0) + employeeInvoiceReserve;
 
       // Fetch cash register revenues separately if we have a daily_revenue record
       let cashRegisterRevenues = [];

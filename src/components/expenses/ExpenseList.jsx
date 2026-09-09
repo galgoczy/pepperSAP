@@ -26,6 +26,9 @@ import { formatCurrency, formatDate, PAYMENT_METHODS, getFirstDayOfMonth, getLas
 function itemSource(item) {
   // Central costs come out of the central pénztár, not a unit's házipénztár.
   if (item.kind === 'central') return 'central';
+  // A dolgozói számlát is a Központ fizeti (az egységnél csak az ÁFA fele
+  // jelenik meg tartalék-költségként).
+  if (item.is_employee_invoice) return 'central';
   const pm = item.payment_method;
   if (pm && pm !== 'cash') return 'bank';
   if (item.is_official === false) return 'reserve';
@@ -328,6 +331,14 @@ export default function ExpenseList({
                         <p className="text-xs text-gray-500">
                           {item.reference}
                         </p>
+                      )}
+                      {item.is_employee_invoice && (
+                        <span
+                          className="mt-0.5 inline-block px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded"
+                          title="Dolgozói számla: a teljes összeg a Központ készpénzét terheli, az egység tartalékát az ÁFA fele."
+                        >
+                          Dolgozói számla
+                        </span>
                       )}
                     </div>
                   </TableCell>
