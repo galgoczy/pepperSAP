@@ -8,6 +8,12 @@
 --   1) Beérkezett jelölés 6 számlán. A tábla készpénz/kártya blokkjában mind
 --      a 11 sor meg van jelölve naranccsal, online viszont csak 5 volt.
 --   2) A szállítólevél számok bekerülnek a megjegyzésbe 7 számlán.
+--   3) A tábla 29. sorának szállítólevelei az MV Gastro MV-2026/33752
+--      számlához kerülnek (egyeztetve).
+--
+-- A Spar A03104240/1800/00001 tétele NEM változik: a táblában "fejes sali"
+-- áll, online viszont már ott a teljesebb "fejes saláta". Ezért nincs mit
+-- pótolni rajta.
 --
 -- Amihez SZÁNDÉKOSAN nem nyúl:
 --   * Dátumok. Tíz átutalásos számlánál eltér a tábla kelt dátuma az onlinetól,
@@ -73,24 +79,24 @@ UPDATE expenses e
    AND (e.notes IS NULL OR position(v.szlev in e.notes) = 0);
 
 -- ---------------------------------------------------------------------------
--- 3) OPCIONÁLIS – a tábla 29. sorának szállítólevelei
+-- 3) A tábla 29. sorának szállítólevelei -> MV Gastro MV-2026/33752
 --
 --    A 29. sorban csak három szállítólevél áll, számla nélkül. NEM a fölötte
 --    lévő Magyarüdítő sor folytatása: azok VFRTRSZ formátumúak, ami az MV
---    Gastro-é, a Magyarüdítő szállítólevele 962516368 alakú. Nagy valószínűséggel
---    az MV Gastro MV-2026/33752 számláé, ami online megvan, de a táblából
---    hiányzik. Ha ezt megerősíted, vedd ki a kommentet.
+--    Gastro-é, a Magyarüdítő szállítólevele 962516368 alakú. Az MV Gastro
+--    MV-2026/33752 számláé, ami online megvan (tétel: "zöldség áru"), de az
+--    Excel táblából hiányzik. Egyeztetve.
 -- ---------------------------------------------------------------------------
--- UPDATE expenses e
---    SET notes = CASE
---                  WHEN e.notes IS NULL OR btrim(e.notes) = '' THEN 'Szállítólevél: VFRTRSZ-2026/33879, VFRTRSZ-2026/33947, VFRTRSZ-2026/34028'
---                  ELSE e.notes || E'\n' || 'Szállítólevél: VFRTRSZ-2026/33879, VFRTRSZ-2026/33947, VFRTRSZ-2026/34028'
---                END
---   FROM units u
---  WHERE e.unit_id = u.id
---    AND u.name ILIKE '%knorr%86%'
---    AND e.invoice_number = 'MV-2026/33752'
---    AND (e.notes IS NULL OR position('VFRTRSZ-2026/33879, VFRTRSZ-2026/33947, VFRTRSZ-2026/34028' in e.notes) = 0);
+UPDATE expenses e
+   SET notes = CASE
+                 WHEN e.notes IS NULL OR btrim(e.notes) = '' THEN 'Szállítólevél: VFRTRSZ-2026/33879, VFRTRSZ-2026/33947, VFRTRSZ-2026/34028'
+                 ELSE e.notes || E'\n' || 'Szállítólevél: VFRTRSZ-2026/33879, VFRTRSZ-2026/33947, VFRTRSZ-2026/34028'
+               END
+  FROM units u
+ WHERE e.unit_id = u.id
+   AND u.name ILIKE '%knorr%86%'
+   AND e.invoice_number = 'MV-2026/33752'
+   AND (e.notes IS NULL OR position('VFRTRSZ-2026/33879, VFRTRSZ-2026/33947, VFRTRSZ-2026/34028' in e.notes) = 0);
 
 -- ---------------------------------------------------------------------------
 -- 4) Ellenőrzés
@@ -106,4 +112,5 @@ WHERE u.name ILIKE '%knorr%86%'
   AND e.invoice_date BETWEEN DATE '2026-08-01' AND DATE '2026-08-31'
   AND e.is_official;
 -- Várt: osszes_szamla = 32, beerkezettnek_jelolt = 11,
---       szallitolevellel = 7, osszeg = 2406619
+--       szallitolevellel = 8, osszeg = 2406619
+--       (7 a tábla soraiból + az MV Gastro MV-2026/33752)
