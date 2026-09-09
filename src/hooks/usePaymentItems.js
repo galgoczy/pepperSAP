@@ -25,6 +25,10 @@ function normalizeCentralPayment(p) {
     payment_method: 'cash',
     // 'cash' = számlás központi kifizetés, 'reserve' = számla nélküli.
     is_official: p.payment_type === 'cash',
+    // Admin-oldali állapot jelölések – az exportban is megjelennek.
+    received: !!p.received,
+    scanned: !!p.scanned,
+    paid: !!p.paid,
     date: p.payment_date,
     fulfillment_date: null,
     created_at: p.created_at,
@@ -50,8 +54,10 @@ function normalizeExpense(e) {
     is_employee_invoice: e.is_employee_invoice ?? false,
     vat_rate: e.vat_rate ?? null,
     vat_amount: e.vat_amount ?? null,
-    // Szín jelölés (ha van) – a lista exportjában is megjelenik.
-    mark_color: e.mark_color || null,
+    // Admin-oldali állapot jelölések – az exportban is megjelennek.
+    received: !!e.received,
+    scanned: !!e.scanned,
+    paid: !!e.paid,
     date: e.invoice_date,
     // Alternative date basis for transfer invoices (list can switch to it).
     fulfillment_date: e.fulfillment_date || null,

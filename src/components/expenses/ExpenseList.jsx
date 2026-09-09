@@ -3,7 +3,6 @@ import { Receipt, Filter, ChevronUp, ChevronDown, Search, X, FileSpreadsheet } f
 import toast from 'react-hot-toast';
 import { usePaymentItems, PAYMENT_KIND_META } from '../../hooks/usePaymentItems';
 import { exportPaymentsToExcel, itemSource, effectiveDate } from '../../lib/paymentExport';
-import { MARK_ROW_CLASS } from '../../lib/markColors';
 import {
   Table,
   TableHead,
@@ -330,10 +329,7 @@ export default function ExpenseList({
               return (
                 <TableRow
                   key={item.id}
-                  className={[
-                    item.editable === false ? '' : 'cursor-pointer hover:bg-gray-50',
-                    item.mark_color ? MARK_ROW_CLASS[item.mark_color] || '' : '',
-                  ].filter(Boolean).join(' ')}
+                  className={item.editable === false ? '' : 'cursor-pointer hover:bg-gray-50'}
                   onClick={item.editable === false ? undefined : () => onEdit(item)}
                 >
                   <TableCell>

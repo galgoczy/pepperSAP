@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Receipt, ChevronUp, ChevronDown, Search, X } from 'lucide-react';
+import { Receipt, ChevronUp, ChevronDown, Search, X, FileSpreadsheet } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import {
@@ -13,48 +13,12 @@ import {
   EmptyState,
   LoadingSpinner,
   Select,
+  Button,
 } from '../common';
 import { formatCurrency, formatDate, PAYMENT_METHODS, matchesSearch } from '../../lib/utils';
 import toast from 'react-hot-toast';
-
-// The three admin-side states an official invoice can be marked with. These are
-// bookkeeping flags only — they never affect the units' data entry or the
-// amounts. "paid" only applies to transfer invoices.
-// Colours: received = salmon, scanned = green, paid = yellow.
-const STATES = [
-  {
-    key: 'received',
-    label: 'Beérkezett',
-    dot: 'bg-[#FA8072] border-[#FA8072]',
-    // Faint version shown before the mark is set, so the colour still identifies it.
-    dotIdle: 'bg-[#FA8072]/25 border-[#FA8072]/50 hover:bg-[#FA8072]/50',
-    row: 'bg-[#FA8072]/25',
-    text: 'text-[#B4483C]',
-    atField: 'received_at',
-    byField: 'received_by',
-  },
-  {
-    key: 'scanned',
-    label: 'Szkennelt',
-    dot: 'bg-green-500 border-green-500',
-    dotIdle: 'bg-green-500/25 border-green-500/50 hover:bg-green-500/50',
-    row: 'bg-green-500/25',
-    text: 'text-green-700',
-    atField: 'scanned_at',
-    byField: 'scanned_by',
-  },
-  {
-    key: 'paid',
-    label: 'Fizetett',
-    dot: 'bg-yellow-400 border-yellow-400',
-    dotIdle: 'bg-yellow-400/25 border-yellow-400/50 hover:bg-yellow-400/50',
-    row: 'bg-yellow-400/25',
-    text: 'text-yellow-700',
-    atField: 'paid_at',
-    byField: 'paid_by',
-    transferOnly: true,
-  },
-];
+import { INVOICE_STATES as STATES, statesFor, furthestState } from '../../lib/invoiceStatus';
+import { exportInvoiceStatusToExcel } from '../../lib/paymentExport';
 
 // Admin view of official (számlás) payments, where the invoice's handling can be
 // tracked: received / scanned / paid.
@@ -164,12 +128,9 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
     }
   };
 
-  const statesFor = (item) =>
-    STATES.filter((s) => !s.transferOnly || item.payment_method === 'transfer');
-
-  // The furthest-along active state colours the row (paid > scanned > received).
-  const rowState = (item) =>
-    [...statesFor(item)].reverse().find((s) => item[s.key]) || null;
+  // Az állapotok és a sor színe a lib/invoiceStatus.js-ből jön, hogy a lista és
+  // az Excel export soha ne térhessen el egymástól.
+  const rowState = furthestState;
 
   const visibleItems = items.filter((item) => {
     // 'cash_card' is a combined option: cash and card payments together.
@@ -239,6 +200,28 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
   const notPaidCount = items.filter((i) => i.payment_method === 'transfer' && !i.paid).length;
   const totalAmount = visibleItems.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
 
+  // Export: pontosan a képernyőn lévő (szűrt + rendezett) lista megy Excelbe,
+  // az állapot jelölésekkel és a hozzájuk tartozó sorszínnel együtt.
+  const handleExport = () => {
+    if (sortedItems.length === 0) return;
+    try {
+      exportInvoiceStatusToExcel(sortedItems, {
+        startDate,
+        endDate,
+        search,
+        stateFilter,
+        methodFilter,
+        unitName: unitId
+          ? sortedItems.find((i) => i.units?.name)?.units?.name || ''
+          : 'Minden egység',
+      });
+      toast.success(`${sortedItems.length} számla exportálva`);
+    } catch (error) {
+      console.error('Error exporting invoices:', error);
+      toast.error('Az export nem sikerült.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -250,6 +233,19 @@ export default function ReceivedInvoicesList({ unitId, isAdmin, startDate, endDa
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-4">
+        {/* Azt viszi Excelbe, ami épp a listában van – a szűrőkkel és a
+            kereséssel együtt, az állapot jelölésekkel és sorszínnel. */}
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={handleExport}
+          disabled={sortedItems.length === 0}
+          title="A szűrt lista exportálása Excelbe"
+        >
+          <FileSpreadsheet className="h-4 w-4" />
+          Excel export
+        </Button>
+
         <Select
           value={stateFilter}
           onChange={(e) => setStateFilter(e.target.value)}

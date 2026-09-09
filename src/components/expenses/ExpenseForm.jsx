@@ -12,7 +12,6 @@ import {
   defaultVatRate,
   vatAmountOf,
 } from '../../lib/expenseVat';
-import { MARK_COLOR_OPTIONS } from '../../lib/markColors';
 
 const rateLabel = (rate) =>
   rate === VAT_RATE_CUSTOM ? 'Egyedi (ÁFA forintban)' : `${rate}%`;
@@ -41,7 +40,6 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
     is_employee_invoice: false,
     vat_rate: defaultVatRate({ isOfficial: true, isEmployeeInvoice: false }),
     vat_amount: '',
-    mark_color: null,
     notes: '',
   });
 
@@ -66,7 +64,6 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
         // hivatalosnál 27%, nem hivatalosnál 0%.
         vat_rate: expense.vat_rate || defaultVatRate({ isOfficial, isEmployeeInvoice }),
         vat_amount: expense.vat_amount ?? '',
-        mark_color: expense.mark_color || null,
         notes: expense.notes || '',
       });
       setVatNotice(null);
@@ -378,33 +375,6 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
           value={formData.fulfillment_date}
           onChange={(e) => handleChange('fulfillment_date', e.target.value)}
         />
-      </div>
-
-      {/* Szín jelölés: a listában kiemeli a sort, és az Excel exportba is
-          átmegy (külön oszlopban és a sor háttereként). */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Szín jelölés</label>
-        <div className="flex flex-wrap items-center gap-2">
-          {MARK_COLOR_OPTIONS.map((color) => {
-            const active = (formData.mark_color || null) === color.value;
-            return (
-              <button
-                key={color.label}
-                type="button"
-                onClick={() => handleChange('mark_color', color.value)}
-                title={color.label}
-                aria-label={color.label}
-                aria-pressed={active}
-                className={`h-7 w-7 rounded-full border-2 transition-transform ${color.swatch} ${
-                  active ? 'ring-2 ring-offset-2 ring-pepper-red scale-110' : 'hover:scale-105'
-                }`}
-              />
-            );
-          })}
-          <span className="ml-1 text-xs text-gray-500">
-            {MARK_COLOR_OPTIONS.find((c) => (c.value || null) === (formData.mark_color || null))?.label || 'Nincs'}
-          </span>
-        </div>
       </div>
 
       <Textarea
