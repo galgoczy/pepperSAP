@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, ChevronLeft, Users, Banknote } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Users, Banknote, CalendarDays } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Modal, Select } from '../components/common';
@@ -9,21 +9,15 @@ import ExpenseForm from '../components/expenses/ExpenseForm';
 import EfoPaymentForm from '../components/expenses/EfoPaymentForm';
 import WagePaymentForm from '../components/expenses/WagePaymentForm';
 import PaymentEditModal from '../components/expenses/PaymentEditModal';
-import { getFirstDayOfMonth, getLastDayOfMonth } from '../lib/utils';
-
-// Get previous month's first and last day (LOCAL components — toISOString()
-// shifts back a day in timezones ahead of UTC like Hungary).
-function getPreviousMonthDates() {
-  const now = new Date();
-  const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
-  const ymd = (d) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return {
-    start: ymd(firstDay),
-    end: ymd(lastDay),
-  };
-}
+import {
+  getFirstDayOfMonth,
+  getLastDayOfMonth,
+  formatDate,
+  formatYearMonth,
+  monthRange,
+  shiftYearMonth,
+  currentYearMonth,
+} from '../lib/utils';
 
 export default function ExpensesPage() {
   const { isAdmin, unitId } = useAuth();
@@ -66,18 +60,32 @@ export default function ExpensesPage() {
     setIsFormOpen(false);
   };
 
-  const isCurrentMonth = startDate === getFirstDayOfMonth() && endDate === getLastDayOfMonth();
+  // Hónapléptetés. A megjelenített hónap a kezdő dátumból jön; a nyilak egész
+  // hónapra állítják az időszakot, előre és hátra egyaránt. A Szűrők panelen a
+  // dátumok szabadon is átállíthatók, ilyenkor "egyedi időszak" látszik, és a
+  // nyíl a kezdő dátum hónapjából lép tovább.
+  const shownMonth = String(startDate || '').slice(0, 7);
+  const range = monthRange(shownMonth);
+  const isWholeMonth = startDate === range.start && endDate === range.end;
+  const isCurrentMonth = isWholeMonth && shownMonth === currentYearMonth();
 
-  const handlePreviousMonth = () => {
-    const prev = getPreviousMonthDates();
-    setStartDate(prev.start);
-    setEndDate(prev.end);
+  const goToMonth = (ym) => {
+    const r = monthRange(ym);
+    if (!r.start) return;
+    setStartDate(r.start);
+    setEndDate(r.end);
   };
+
+  const stepMonth = (delta) => goToMonth(shiftYearMonth(shownMonth, delta));
 
   const handleCurrentMonth = () => {
     setStartDate(getFirstDayOfMonth());
     setEndDate(getLastDayOfMonth());
   };
+
+  const periodLabel = isWholeMonth
+    ? formatYearMonth(shownMonth)
+    : `${formatDate(startDate)} – ${formatDate(endDate)}`;
 
   return (
     <div className="space-y-6">
@@ -118,20 +126,48 @@ export default function ExpensesPage() {
           />
         )}
 
+        {/* Hónapléptető: bármelyik korábbi vagy későbbi hónapra el lehet jutni,
+            és mindig látszik, melyik időszakot nézzük. */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => stepMonth(-1)}
+            title="Előző hónap"
+            aria-label="Előző hónap"
+            className="rounded-lg border border-gray-300 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+
+          <div className="min-w-[168px] text-center">
+            <div className="flex items-center justify-center gap-1.5 text-sm font-semibold text-gray-900">
+              <CalendarDays className="h-4 w-4 text-pepper-red" />
+              {periodLabel}
+            </div>
+            {!isWholeMonth && (
+              <div className="text-[11px] text-gray-500">egyedi időszak</div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => stepMonth(1)}
+            title="Következő hónap"
+            aria-label="Következő hónap"
+            className="rounded-lg border border-gray-300 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
         <Button
           variant={isCurrentMonth ? 'primary' : 'secondary'}
           size="sm"
           onClick={handleCurrentMonth}
+          disabled={isCurrentMonth}
+          title="Ugrás az aktuális hónapra"
         >
           Aktuális hónap
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={handlePreviousMonth}
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Előző hónap
         </Button>
       </div>
 

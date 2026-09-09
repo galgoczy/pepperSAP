@@ -80,12 +80,44 @@ export const getToday = () => {
   return toLocalYmd(new Date());
 };
 
+// A mai nap hónapja "YYYY-MM" alakban.
+export const currentYearMonth = () => getToday().slice(0, 7);
+
 // Add (or subtract) days to a YYYY-MM-DD date string, returning YYYY-MM-DD
 export const addDays = (ymd, days) => {
   const [y, m, d] = ymd.split('-').map(Number);
   const date = new Date(y, m - 1, d);
   date.setDate(date.getDate() + days);
   return toLocalYmd(date);
+};
+
+// Hónap szintű léptetés és címkézés (a Számlák menü hónapváltójához).
+const HU_MONTHS = [
+  'január', 'február', 'március', 'április', 'május', 'június',
+  'július', 'augusztus', 'szeptember', 'október', 'november', 'december',
+];
+
+// "2026-08" -> "2026. augusztus"
+export const formatYearMonth = (ym) => {
+  const [y, m] = String(ym || '').split('-').map(Number);
+  if (!y || !m || m < 1 || m > 12) return '';
+  return `${y}. ${HU_MONTHS[m - 1]}`;
+};
+
+// "2026-08" -> { start: '2026-08-01', end: '2026-08-31' }
+export const monthRange = (ym) => {
+  const [y, m] = String(ym || '').split('-').map(Number);
+  if (!y || !m) return { start: '', end: '' };
+  const last = new Date(y, m, 0).getDate();
+  return { start: `${ym}-01`, end: `${ym}-${String(last).padStart(2, '0')}` };
+};
+
+// shiftYearMonth('2026-01', -1) -> '2025-12'
+export const shiftYearMonth = (ym, delta) => {
+  const [y, m] = String(ym || '').split('-').map(Number);
+  if (!y || !m) return ym;
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
 // Get first day of current month
