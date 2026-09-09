@@ -50,6 +50,8 @@ function normalizeExpense(e) {
     is_employee_invoice: e.is_employee_invoice ?? false,
     vat_rate: e.vat_rate ?? null,
     vat_amount: e.vat_amount ?? null,
+    // Szín jelölés (ha van) – a lista exportjában is megjelenik.
+    mark_color: e.mark_color || null,
     date: e.invoice_date,
     // Alternative date basis for transfer invoices (list can switch to it).
     fulfillment_date: e.fulfillment_date || null,

@@ -1,6 +1,9 @@
 import { useState } from 'react';
-import { Receipt, Filter, ChevronUp, ChevronDown, Search, X } from 'lucide-react';
+import { Receipt, Filter, ChevronUp, ChevronDown, Search, X, FileSpreadsheet } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { usePaymentItems, PAYMENT_KIND_META } from '../../hooks/usePaymentItems';
+import { exportPaymentsToExcel, itemSource, effectiveDate } from '../../lib/paymentExport';
+import { MARK_ROW_CLASS } from '../../lib/markColors';
 import {
   Table,
   TableHead,
@@ -17,23 +20,9 @@ import {
 } from '../common';
 import { formatCurrency, formatDate, PAYMENT_METHODS, getFirstDayOfMonth, getLastDayOfMonth, matchesSearch } from '../../lib/utils';
 
-// Which "pot" a payment comes out of:
-//   bank      – anything paid from the bank account (card, MOL card, transfer, …)
-//   house     – official cash (Házipénztár)
-//   reserve   – non-official cash (Tartalék)
-// EFO/wage items have no is_official flag; their official part moves the house
-// cash, so they are grouped under Házipénztár.
-function itemSource(item) {
-  // Central costs come out of the central pénztár, not a unit's házipénztár.
-  if (item.kind === 'central') return 'central';
-  // A dolgozói számlát is a Központ fizeti (az egységnél csak az ÁFA fele
-  // jelenik meg tartalék-költségként).
-  if (item.is_employee_invoice) return 'central';
-  const pm = item.payment_method;
-  if (pm && pm !== 'cash') return 'bank';
-  if (item.is_official === false) return 'reserve';
-  return 'house';
-}
+// A "melyik zsebből megy" besorolás és az átutalásos számlák dátum-alapja a
+// lib/paymentExport.js-ben él, mert az exportnak és a listának ugyanazt kell
+// látnia. (itemSource, effectiveDate – importálva fentebb.)
 
 const SORTABLE = {
   kind: (i) => PAYMENT_KIND_META[i.kind]?.label || '',
@@ -43,15 +32,6 @@ const SORTABLE = {
   date: (i, dateBasis) => effectiveDate(i, dateBasis) || '',
   amount: (i) => i.amount || 0,
 };
-
-// Transfer invoices can be listed by their issue date (kelt) or, optionally, by
-// their fulfillment date (teljesítés). Everything else always uses its own date.
-function effectiveDate(item, dateBasis) {
-  if (dateBasis === 'fulfillment' && item.payment_method === 'transfer') {
-    return item.fulfillment_date || item.date;
-  }
-  return item.date;
-}
 
 export default function ExpenseList({
   unitId,
@@ -159,6 +139,29 @@ export default function ExpenseList({
     0
   );
 
+  // Export: pontosan a képernyőn lévő (szűrt + rendezett) lista megy Excelbe.
+  const handleExport = () => {
+    if (sortedItems.length === 0) return;
+    try {
+      exportPaymentsToExcel(sortedItems, {
+        startDate,
+        endDate,
+        search,
+        kindFilter,
+        paymentFilter,
+        sourceFilter,
+        dateBasis,
+        unitName: unitId
+          ? sortedItems.find((i) => i.units?.name)?.units?.name || ''
+          : 'Minden egység',
+      });
+      toast.success(`${sortedItems.length} tétel exportálva`);
+    } catch (error) {
+      console.error('Error exporting payments:', error);
+      toast.error('Az export nem sikerült.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -180,6 +183,19 @@ export default function ExpenseList({
           >
             <Filter className="h-4 w-4" />
             Szűrők
+          </Button>
+
+          {/* Azt viszi Excelbe, ami épp a listában van – a szűrőkkel és a
+              kereséssel együtt, a képernyőn látott sorrendben. */}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleExport}
+            disabled={sortedItems.length === 0}
+            title="A szűrt lista exportálása Excelbe"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Excel export
           </Button>
 
           {/* Kereső: ahogy gépel, úgy szűkül a lista (név + tétel). */}
@@ -314,7 +330,10 @@ export default function ExpenseList({
               return (
                 <TableRow
                   key={item.id}
-                  className={item.editable === false ? '' : 'cursor-pointer hover:bg-gray-50'}
+                  className={[
+                    item.editable === false ? '' : 'cursor-pointer hover:bg-gray-50',
+                    item.mark_color ? MARK_ROW_CLASS[item.mark_color] || '' : '',
+                  ].filter(Boolean).join(' ')}
                   onClick={item.editable === false ? undefined : () => onEdit(item)}
                 >
                   <TableCell>
