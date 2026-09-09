@@ -71,6 +71,29 @@ DELETE FROM expenses
  WHERE id IN (SELECT id FROM dupes WHERE rn > 1);
 
 -- ---------------------------------------------------------------------------
+-- 1b) A megmaradó sorok szállítónevének rendbetétele
+--
+--     A törlés a korábban rögzített sort hagyja meg, de éppen azokon rosszabb
+--     a név: a Fejér Foodnál szóköz van a végén, a Rojik pedig csak "ROJIK".
+--     A törölt (későbbi) sorokon volt a jobbik név, ezért azt visszük át.
+-- ---------------------------------------------------------------------------
+UPDATE expenses e
+   SET supplier_name = btrim(e.supplier_name)
+  FROM units u
+ WHERE e.unit_id = u.id
+   AND u.name = 'RSR'
+   AND e.invoice_number IN ('FF/2026-007660', 'A-003622-LI/2026')
+   AND e.supplier_name <> btrim(e.supplier_name);
+
+UPDATE expenses e
+   SET supplier_name = 'ROJIK KFT'
+  FROM units u
+ WHERE e.unit_id = u.id
+   AND u.name = 'RSR'
+   AND e.invoice_number = 'A-003622-LI/2026'
+   AND btrim(e.supplier_name) = 'ROJIK';
+
+-- ---------------------------------------------------------------------------
 -- 2) Elgépelt számlaszámok javítása (a tábla az irányadó)
 -- ---------------------------------------------------------------------------
 UPDATE expenses e
