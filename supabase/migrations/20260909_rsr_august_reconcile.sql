@@ -41,13 +41,20 @@ END $$;
 --    a legrégebben rögzített sor MARAD, a többi törlődik. A Rojiknál a két sor
 --    szállítóneve eltér ("ROJIK KFT" és "ROJIK"), ezért a nevet nem is nézzük.
 --
---    Előtte érdemes megnézni, mit fog törölni:
---      SELECT e.id, e.supplier_name, e.invoice_number, e.amount, e.invoice_date, e.created_at
---        FROM expenses e JOIN units u ON u.id = e.unit_id
---       WHERE u.name = 'RSR'
---         AND e.invoice_number IN ('FF/2026-007660', 'A-003622-LI/2026')
---       ORDER BY e.invoice_number, e.created_at;
+--    Hogy futtatás ELŐTT látszódjon, mit érint: a törlés alatt közvetlenül ott
+--    van ugyanez SELECT-ként, valódi utasításként (nem kommentben, hogy ne
+--    lehessen elrontani a kimásolásnál).
 -- ---------------------------------------------------------------------------
+
+-- Futtatás előtti ellenőrzés: ez a négy sor az érintett (2 Fejér Food, 2 Rojik).
+-- A törlés páronként a korábbi created_at értékűt hagyja meg.
+SELECT e.id, e.supplier_name, e.invoice_number, e.amount, e.invoice_date, e.created_at
+FROM expenses e
+JOIN units u ON u.id = e.unit_id
+WHERE u.name = 'RSR'
+  AND e.invoice_date BETWEEN DATE '2026-08-01' AND DATE '2026-08-31'
+  AND e.invoice_number IN ('FF/2026-007660', 'A-003622-LI/2026')
+ORDER BY e.invoice_number, e.created_at;
 WITH dupes AS (
   SELECT e.id,
          ROW_NUMBER() OVER (
