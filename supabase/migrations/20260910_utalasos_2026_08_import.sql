@@ -2,14 +2,14 @@
 -- Utalásos tábla – 2026. augusztus, első kör
 -- Készült: 2026-09-10
 --
--- Forrás: docs/utalásos táblázat 2026.xlsx, a 2026 augusztusi teljesítésű sorok.
+-- Forrás: docs/utalásos táblázat 2026_full.xlsx (a TELJES, 96 lapos fájl), a 2026 augusztusi teljesítésű sorok.
 -- Az egység kódok leképezése számlaszám-egyezésből lett levezetve az online
 -- adattal (002=KTI, 003=Szentkirályi, 005=Államkincstár, 006=Knorr 69,
 -- 008=RSR, 009=Knorr 86, 010=Knorr 105).
 --
 -- Két lépés:
---   1) 87 új átutalásos számla felvétele (10 879 886 Ft).
---   2) 44 már online lévő számlán a hiányzó állapot jelölések pótlása.
+--   1) 93 új átutalásos számla felvétele (11 385 942 Ft).
+--   2) 46 már online lévő számlán a hiányzó állapot jelölések pótlása.
 --
 -- Az állapotok a tábla SZÍNKÓDJAIBÓL jönnek, mert az megbízhatóbb, mint az
 -- "Utalva" oszlop (160 sárga sor van, de csak 80-ban van dátum):
@@ -24,8 +24,8 @@
 --
 -- MOST KIMARAD, későbbi körre felírva:
 --   * 7 KOMP sor (kompenzációval rendezve, szeptemberben) - 1 413 846 Ft
---   * 14 sor egység kód nélkül - 3 006 771 Ft (lásd docs/hianyzo_egysegkod_2026_08.csv)
---   * 42 K0 (központi) sor - 10 000 659 Ft: nincs "Központ" nevű egység
+--   * 6 sor egység kód nélkül - 1 181 528 Ft (lásd docs/hianyzo_egysegkod_2026_08.csv)
+--   * 44 K0 (központi) sor - 5 733 501 Ft: nincs "Központ" nevű egység
 --   * 7 K00 ("egyéb") sor - 74 352 Ft, félretéve
 --
 -- Minden tétel ÁTUTALÁSOS és hivatalos, tehát a bankszámlát terheli: a
@@ -48,7 +48,7 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------------------
--- 1) Új átutalásos számlák (87 db)
+-- 1) Új átutalásos számlák (93 db)
 -- ---------------------------------------------------------------------------
 INSERT INTO expenses (
   unit_id, supplier_name, invoice_number, amount, currency, payment_method,
@@ -65,6 +65,7 @@ SELECT
 FROM units u
 JOIN (VALUES
     ('KTI', 'Közlekedéstudományi és Építésügyi', 'V106-01525', 25400, DATE '2026-08-04', DATE '2026-08-19', 'Helyiségbérleti díj 202608 hó', true, true, DATE '2026-08-18'),
+    ('KTI', 'Magyarüdítő Forg. Kft', '702661166', 115179, DATE '2026-08-27', DATE '2026-09-22', 'pepsi', true, false, NULL),
     ('Knorr 105', 'P&P Pékárú Kft', '15691/B/2026', 186038, DATE '2026-08-01', DATE '2026-08-01', 'pékárú', true, true, DATE '2026-08-01'),
     ('Knorr 105', 'Silver Tojás Kft', '12449/2026', 89595, DATE '2026-08-03', DATE '2026-08-11', 'tojás', true, true, DATE '2026-08-11'),
     ('Knorr 105', 'Pribofood Kft', '98594/2026', 63235, DATE '2026-08-03', DATE '2026-08-11', 'tej', true, true, DATE '2026-08-11'),
@@ -96,7 +97,7 @@ JOIN (VALUES
     ('Knorr 105', 'Coca-Cola HBC Mo Kft', '1604981610', 353178, DATE '2026-08-14', DATE '2026-08-28', 'cola', true, true, DATE '2026-08-17'),
     ('Knorr 105', 'P&P Pékárú Kft', '16524/B/2026', 322552, DATE '2026-08-14', DATE '2026-08-14', 'pékárú', true, true, DATE '2026-08-17'),
     ('Knorr 105', 'P&P Pékárú Kft', '16954/B/2026', 146361, DATE '2026-08-17', DATE '2026-08-17', 'pékárú', true, true, DATE '2026-08-17'),
-    ('Knorr 105', 'Ismeretlen szállító', 'FRIGO-2026-535', 44450, DATE '2026-08-19', DATE '2026-09-03', 'Általános karbantartás', false, true, DATE '2026-09-01'),
+    ('Knorr 105', 'Ismeretlen szállító', 'FRIGO-2026-535', 44450, DATE '2026-08-19', DATE '2026-09-03', 'Általános karbantartás', true, true, DATE '2026-09-01'),
     ('Knorr 105', 'Ismeretlen szállító', 'EKS-2610836', 6350, DATE '2026-08-20', DATE '2026-08-20', '', true, true, DATE '2026-08-11'),
     ('Knorr 105', 'P&P Pékárú Kft', '17127/B/2026', 191190, DATE '2026-08-21', DATE '2026-08-21', 'pékárú', true, true, DATE '2026-09-01'),
     ('Knorr 105', 'P&P Pékárú Kft', '17162/B/2026', 273952, DATE '2026-08-21', DATE '2026-08-21', 'pékárú', true, true, DATE '2026-08-21'),
@@ -114,6 +115,7 @@ JOIN (VALUES
     ('Knorr 105', 'S.P.I.N. Kft.', 'A26/2876', 37327, DATE '2026-08-28', DATE '2026-09-05', 'üditő', true, false, NULL),
     ('Knorr 105', 'S.P.I.N. Kft.', 'A26/353H', -37327, DATE '2026-08-28', DATE '2026-09-05', 'üditő', true, true, DATE '2026-09-05'),
     ('Knorr 105', 'Pribofood Kft', '110707/2026', 7917, DATE '2026-08-31', DATE '2026-09-08', 'tej', true, false, NULL),
+    ('Knorr 105', 'Pribofood Kft', '110755/2026', 122705, DATE '2026-08-31', DATE '2026-09-08', 'tej', true, false, NULL),
     ('Knorr 105', 'Silver Tojás Kft', '14439/2026', 62757, DATE '2026-08-31', DATE '2026-09-08', 'tojás', true, false, NULL),
     ('Knorr 105', 'Alois Dallmayr Bt', 'ESZLA-2610971', 392957, DATE '2026-08-31', DATE '2026-09-09', 'kv', true, false, NULL),
     ('Knorr 105', 'Kelet Higiénia Kereskedelmi és Szolgáltató Kft.', 'K10804/26', 313365, DATE '2026-08-31', DATE '2026-09-15', 'tisztitószer', true, false, NULL),
@@ -121,6 +123,7 @@ JOIN (VALUES
     ('Knorr 69', 'Alois Dallmayr Bt', 'ESZLA-2610516', 10630, DATE '2026-08-17', DATE '2026-08-25', 'kv', true, false, NULL),
     ('Knorr 69', 'Pribofood Kft', '107347/2026', 60049, DATE '2026-08-24', DATE '2026-09-01', 'tej', true, true, DATE '2026-09-01'),
     ('Knorr 69', 'Assist-Trend Bp Kft', 'B06421/2026', 82737, DATE '2026-08-25', DATE '2026-09-02', 'tisztitószer', true, true, DATE '2026-09-04'),
+    ('Knorr 69', 'MV Gastro Kft.', 'MV-2026/33753', 56522, DATE '2026-08-31', DATE '2026-09-11', 'zöldség', true, false, NULL),
     ('Knorr 86', 'Ismeretlen szállító', 'FRIGO-2026-488', 44450, DATE '2026-08-04', DATE '2026-08-13', 'Hűtőkamra hibafelmérés', true, true, DATE '2026-08-11'),
     ('Knorr 86', 'Pribofood Kft', '107516/2026', 6145, DATE '2026-08-24', DATE '2026-09-01', 'tej', true, true, DATE '2026-09-01'),
     ('Knorr 86', 'Ismeretlen szállító', 'RP-2026-1722', 26925, DATE '2026-08-27', DATE '2026-09-04', 'rétes', true, true, DATE '2026-09-04'),
@@ -128,7 +131,8 @@ JOIN (VALUES
     ('RSR', 'Ismeretlen szállító', 'E-BGNF-2026-183', 20320, DATE '2026-08-03', DATE '2026-08-11', 'rovarirtás', true, true, DATE '2026-08-11'),
     ('RSR', 'Ismeretlen szállító', 'E-2026-829', 29364, DATE '2026-08-04', DATE '2026-08-12', 'digitális nyomtatás', true, true, DATE '2026-08-11'),
     ('RSR', 'Rákosmenti Nonprofit Kft.', 'E-RKSMN-2026-120', 901700, DATE '2026-08-05', DATE '2026-08-11', 'bérleti dij', true, true, DATE '2026-08-18'),
-    ('RSR', 'Fejér Food Kft.', 'FF / 2026-008029', 89154, DATE '2026-08-18', DATE '2026-08-26', 'szóda', false, true, DATE '2026-09-01'),
+    ('RSR', 'Magyarüdítő Forg. Kft', '702658340', 101603, DATE '2026-08-18', DATE '2026-09-16', 'pepsi', true, false, NULL),
+    ('RSR', 'Fejér Food Kft.', 'FF / 2026-008029', 89154, DATE '2026-08-18', DATE '2026-08-26', 'szóda', true, true, DATE '2026-09-01'),
     ('RSR', 'Rauch Hungária Kft.', '7000495800', 61676, DATE '2026-08-19', DATE '2026-09-18', 'üditő', true, true, DATE '2026-09-18'),
     ('RSR', 'Rauch Hungária Kft.', '7000496556', -61676, DATE '2026-08-19', DATE '2026-09-18', 'üditő', true, true, DATE '2026-09-18'),
     ('RSR', 'Rauch Hungária Kft.', '7000496557', 61676, DATE '2026-08-19', DATE '2026-09-18', 'üditő', true, false, NULL),
@@ -136,6 +140,7 @@ JOIN (VALUES
     ('RSR', 'Ismeretlen szállító', 'E-KA-2026-1', 60000, DATE '2026-08-24', DATE '2026-08-24', 'zenei szolgáltatás', true, true, DATE '2026-08-24'),
     ('Szentkirályi', 'Silver Tojás Kft', '12399/2026', 26838, DATE '2026-08-03', DATE '2026-08-11', 'tojás', true, true, DATE '2026-08-11'),
     ('Szentkirályi', 'Silver Tojás Kft', '12450/2026', -26838, DATE '2026-08-03', DATE '2026-08-11', 'tojás', true, true, DATE '2026-08-11'),
+    ('Szentkirályi', 'MV Gastro Kft.', 'MV-2026/33283', 39116, DATE '2026-08-05', DATE '2026-08-18', 'zöldség', true, true, DATE '2026-08-18'),
     ('Szentkirályi', 'Silver Tojás Kft', '13457/2026', 26838, DATE '2026-08-17', DATE '2026-08-25', 'tojás', true, true, DATE '2026-08-25'),
     ('Szentkirályi', 'Silver Tojás Kft', '13566/2026', -26838, DATE '2026-08-17', DATE '2026-08-25', 'tojás', true, true, DATE '2026-08-25'),
     ('Államkincstár', 'Magyar Államkincstár', 'V106-02225', 88900, DATE '2026-08-06', DATE '2026-09-07', 'Üzemeltetési átalánydíj 2026. szeptember', true, true, DATE '2026-08-18'),
@@ -146,6 +151,7 @@ JOIN (VALUES
     ('Államkincstár', 'MV Gastro Kft.', 'MV-2026/33583', 43577, DATE '2026-08-18', DATE '2026-08-31', 'zöldség', true, true, DATE '2026-09-01'),
     ('Államkincstár', 'Biofilter', '2026-PXL4/032149', 21812, DATE '2026-08-21', DATE '2026-08-21', 'Rendelkezésre állási díj', true, true, DATE '2026-08-21'),
     ('Államkincstár', 'Gastroil Mo. Zrt', 'W/2026/1702814', 56920, DATE '2026-08-24', DATE '2026-09-01', 'olaj', true, true, DATE '2026-09-01'),
+    ('Államkincstár', 'Coca-Cola HBC Mo Kft', '1604991068', 70931, DATE '2026-08-31', DATE '2026-09-14', 'cola', true, true, DATE '2026-09-01'),
     ('Államkincstár', 'Benei és Társa Vagyonkezelő Kft', '2256/VBG/2026', 46653, DATE '2026-08-31', DATE '2026-08-31', 'sütemény', true, true, DATE '2026-09-01'),
     ('Államkincstár', 'Assist-Trend Bp Kft', 'B06601/2026', 92732, DATE '2026-08-31', DATE '2026-09-08', 'tisztitószer', true, true, DATE '2026-09-08'),
     ('Államkincstár', 'MV Gastro Kft.', 'MV-2026/33746', 235919, DATE '2026-08-31', DATE '2026-09-11', 'zöldség', true, false, NULL),
@@ -161,7 +167,7 @@ WHERE NOT EXISTS (
 );
 
 -- ---------------------------------------------------------------------------
--- 2) Állapot jelölések pótlása a már online lévő számlákon (44 db)
+-- 2) Állapot jelölések pótlása a már online lévő számlákon (46 db)
 --    Meglévő jelölést nem vesz vissza, csak hiányzót állít be.
 -- ---------------------------------------------------------------------------
 UPDATE expenses e
@@ -194,6 +200,7 @@ UPDATE expenses e
     ('Knorr 86', '107760/2026', true, true, DATE '2026-09-01'),
     ('Knorr 86', '702659468', true, false, NULL),
     ('Knorr 86', '14221/2026', true, false, NULL),
+    ('Knorr 86', 'MV-2026/33752', true, false, NULL),
     ('Knorr 86', '110708/2026', true, false, NULL),
     ('Knorr 86', '110767/2026', true, false, NULL),
     ('RSR', '702652424', true, true, DATE '2026-08-29'),
@@ -213,6 +220,7 @@ UPDATE expenses e
     ('Szentkirályi', '105820/2026', true, true, DATE '2026-09-01'),
     ('Szentkirályi', '2026-PXL4/031643', true, true, DATE '2026-08-21'),
     ('Szentkirályi', '702659469', true, false, NULL),
+    ('Szentkirályi', '261083912', true, false, NULL),
     ('Szentkirályi', '110817/2026', true, false, NULL),
     ('Szentkirályi', '14468/2026', true, false, NULL),
     ('Szentkirályi', 'MV-2026/33772', true, false, NULL)
