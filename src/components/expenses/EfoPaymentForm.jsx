@@ -1,37 +1,41 @@
 import { useState, useEffect } from 'react';
+import { Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { useUnits } from '../../hooks/useSupabase';
-import { Button, Input, Select } from '../common';
+import { Button, Input, Select, ConfirmModal } from '../common';
 import { formatCurrency } from '../../lib/utils';
 import toast from 'react-hot-toast';
 
 const QUALIFICATION_THRESHOLD = 22000;
 const NON_QUALIFICATION_THRESHOLD = 19000;
 
-export default function EfoPaymentForm({ onSuccess, onCancel, unitId: propUnitId, defaultDate }) {
+export default function EfoPaymentForm({ onSuccess, onCancel, onDelete, unitId: propUnitId, defaultDate, payment }) {
   const { isAdmin, unitId: authUnitId } = useAuth();
   const { units } = useUnits();
   const [saving, setSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const [formData, setFormData] = useState({
-    unit_id: propUnitId || authUnitId || '',
-    payment_date: defaultDate || new Date().toISOString().split('T')[0],
-    employee_name: '',
-    total_amount: '',
-    requires_qualification: true,
-    payment_method: 'cash',
-    notes: '',
-  });
+  const [formData, setFormData] = useState(() => ({
+    unit_id: payment?.unit_id || propUnitId || authUnitId || '',
+    payment_date: payment?.payment_date || defaultDate || new Date().toISOString().split('T')[0],
+    employee_name: payment?.employee_name || '',
+    total_amount: payment?.total_amount != null ? String(payment.total_amount) : '',
+    requires_qualification: payment?.requires_qualification ?? true,
+    payment_method: payment?.payment_method || 'cash',
+    notes: payment?.notes || '',
+  }));
 
   useEffect(() => {
+    // Only sync defaults when creating a new record (no existing payment).
+    if (payment) return;
     if (!formData.unit_id && (propUnitId || authUnitId)) {
       setFormData(prev => ({ ...prev, unit_id: propUnitId || authUnitId }));
     }
     if (defaultDate && formData.payment_date !== defaultDate) {
       setFormData(prev => ({ ...prev, payment_date: defaultDate }));
     }
-  }, [propUnitId, authUnitId, formData.unit_id, defaultDate, formData.payment_date]);
+  }, [payment, propUnitId, authUnitId, formData.unit_id, defaultDate, formData.payment_date]);
 
   const unitOptions = units
     .filter(u => u.type === 'restaurant')
@@ -85,26 +89,56 @@ export default function EfoPaymentForm({ onSuccess, onCancel, unitId: propUnitId
         formData.requires_qualification
       );
 
-      const { error } = await supabase
-        .from('efo_payments')
-        .insert([{
-          unit_id: formData.unit_id,
-          payment_date: formData.payment_date,
-          employee_name: formData.employee_name.trim(),
-          total_amount: totalAmount,
-          requires_qualification: formData.requires_qualification,
-          official_amount,
-          extra_amount,
-          payment_method: formData.payment_method,
-          notes: formData.notes.trim() || null,
-        }]);
+      const record = {
+        unit_id: formData.unit_id,
+        payment_date: formData.payment_date,
+        employee_name: formData.employee_name.trim(),
+        total_amount: totalAmount,
+        requires_qualification: formData.requires_qualification,
+        official_amount,
+        extra_amount,
+        payment_method: formData.payment_method,
+        notes: formData.notes.trim() || null,
+      };
 
-      if (error) throw error;
-      toast.success('EFO kifizetés rögzítve');
+      if (payment) {
+        const { error } = await supabase
+          .from('efo_payments')
+          .update(record)
+          .eq('id', payment.id);
+        if (error) throw error;
+        toast.success('EFO kifizetés módosítva');
+      } else {
+        const { error } = await supabase
+          .from('efo_payments')
+          .insert([record]);
+        if (error) throw error;
+        toast.success('EFO kifizetés rögzítve');
+      }
       onSuccess?.();
     } catch (error) {
       console.error('Error saving EFO payment:', error);
       toast.error('Hiba a mentéskor');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!payment) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('efo_payments')
+        .delete()
+        .eq('id', payment.id);
+      if (error) throw error;
+      toast.success('EFO kifizetés törölve');
+      onDelete?.();
+      onSuccess?.();
+    } catch (error) {
+      console.error('Error deleting EFO payment:', error);
+      toast.error('Hiba a törléskor');
     } finally {
       setSaving(false);
     }
@@ -215,14 +249,34 @@ export default function EfoPaymentForm({ onSuccess, onCancel, unitId: propUnitId
         placeholder="pl. túlóra, bónusz, stb."
       />
 
-      <div className="flex justify-end gap-2 pt-4">
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Mégse
-        </Button>
-        <Button type="submit" loading={saving}>
-          Mentés
-        </Button>
+      <div className="flex justify-between gap-2 pt-4">
+        {payment ? (
+          <Button type="button" variant="danger" onClick={() => setShowDeleteConfirm(true)}>
+            <Trash2 className="h-4 w-4" />
+            Törlés
+          </Button>
+        ) : (
+          <div />
+        )}
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Mégse
+          </Button>
+          <Button type="submit" loading={saving}>
+            {payment ? 'Mentés' : 'Rögzítés'}
+          </Button>
+        </div>
       </div>
+
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+        title="EFO kifizetés törlése"
+        message="Biztosan törölni szeretnéd ezt az EFO kifizetést? Ez a művelet visszavonhatatlan."
+        confirmText="Törlés"
+        confirmVariant="danger"
+      />
     </form>
   );
 }

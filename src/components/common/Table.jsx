@@ -28,10 +28,11 @@ export function TableBody({ children, className = '' }) {
   );
 }
 
-export function TableRow({ children, className = '', onClick, hover = true }) {
+export function TableRow({ children, className = '', onClick, hover = true, title }) {
   return (
     <tr
       onClick={onClick}
+      title={title}
       className={cn(
         hover && 'hover:bg-gray-50',
         onClick && 'cursor-pointer',

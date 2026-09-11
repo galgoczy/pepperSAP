@@ -258,6 +258,20 @@ export default function CashierImportPage() {
               results.errors.push(`Pénztárgép létrehozás hiba: ${register.apNumber}`);
               continue;
             }
+
+            // Open a date-ranged assignment starting far in the past so the
+            // imported historical days can later be edited (the daily form
+            // offers registers by unit + date).
+            const { error: assignError } = await supabase
+              .from('cash_register_assignments')
+              .insert({
+                cash_register_id: newReg.id,
+                unit_id: unitId,
+                start_date: '2000-01-01',
+                end_date: null,
+              });
+            if (assignError) console.error('Error creating register assignment:', assignError);
+
             registerMap[register.apNumber] = newReg.id;
           }
         }
@@ -298,12 +312,14 @@ export default function CashierImportPage() {
             const registerId = registerMap[rec.apNumber];
             if (!registerId) continue;
 
-            // Upsert cash_register_revenue
+            // Upsert cash_register_revenue (import = the first/only closure of
+            // the day for the register; closure_number 1).
             const { error: upsertError } = await supabase
               .from('cash_register_revenue')
               .upsert({
                 daily_revenue_id: dailyRevenueId,
                 cash_register_id: registerId,
+                closure_number: 1,
                 vat_0_percent: rec.vat_0,
                 vat_5_percent: rec.vat_5,
                 vat_18_percent: rec.vat_18,
@@ -315,7 +331,7 @@ export default function CashierImportPage() {
                 discrepancy_amount: rec.discrepancy !== 0 ? rec.discrepancy : 0,
                 discrepancy_note: rec.discrepancy !== 0 ? 'Excel import eltérés' : null,
               }, {
-                onConflict: 'daily_revenue_id,cash_register_id',
+                onConflict: 'daily_revenue_id,cash_register_id,closure_number',
               });
 
             if (upsertError) throw upsertError;

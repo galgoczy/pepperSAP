@@ -21,17 +21,19 @@ const hashParams = new URLSearchParams(window.location.hash.substring(1));
 const hasAuthCodeInUrl = urlParams.has('code') || hashParams.has('access_token');
 const hasError = urlParams.has('error') || hashParams.has('error');
 
-console.log('OAuth debug:', {
-  hasCodeVerifier: !!hasCodeVerifier,
-  hasSessionToken: !!hasSessionToken,
-  hasAuthCodeInUrl,
-  hasError,
-  urlCode: urlParams.get('code')?.substring(0, 20) + '...',
-  urlError: urlParams.get('error'),
-  errorDescription: urlParams.get('error_description'),
-  hash: window.location.hash ? 'present' : 'none',
-  fullUrl: window.location.href.substring(0, 100) + '...'
-});
+if (import.meta.env.DEV) {
+  console.log('OAuth debug:', {
+    hasCodeVerifier: !!hasCodeVerifier,
+    hasSessionToken: !!hasSessionToken,
+    hasAuthCodeInUrl,
+    hasError,
+    urlCode: urlParams.get('code')?.substring(0, 20) + '...',
+    urlError: urlParams.get('error'),
+    errorDescription: urlParams.get('error_description'),
+    hash: window.location.hash ? 'present' : 'none',
+    fullUrl: window.location.href.substring(0, 100) + '...'
+  });
+}
 
 if (hasError) {
   console.error('OAuth error detected:', urlParams.get('error'), urlParams.get('error_description'));
@@ -44,32 +46,28 @@ if (hasCodeVerifier && !hasSessionToken && !hasAuthCodeInUrl && !hasError) {
   console.log('PKCE code verifier found with OAuth callback in URL - completing auth flow...');
 }
 
-// Check if we had a previous timeout (set by AuthContext)
-const hadPreviousTimeout = localStorage.getItem('supabase_session_timeout') === 'true';
-if (hadPreviousTimeout) {
-  console.log('Previous session timeout detected, clearing all auth data...');
-  // Clear all Supabase-related data
-  const keysToRemove = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && (key.includes('supabase') || key.includes('sb-'))) {
-      keysToRemove.push(key);
-    }
-  }
-  keysToRemove.forEach(key => localStorage.removeItem(key));
-  // Also try to clear IndexedDB
-  try {
-    indexedDB.deleteDatabase('supabase-auth');
-  } catch (e) {
-    console.log('Could not clear IndexedDB:', e);
-  }
-  // Clear the flag
-  localStorage.removeItem('supabase_session_timeout');
-}
+// Pass-through auth lock.
+//
+// supabase-js serializes auth operations (getSession, exchangeCodeForSession,
+// token refresh) behind a Web Locks (navigator.locks) lock and waits
+// indefinitely to acquire it. In this app that lock was the cause of login
+// hangs: a contended/stale lock made the OAuth exchange stall, and even after
+// we bypassed it on a timeout, every auth operation still burned several
+// seconds waiting for the lock first (the repeated "Auth lock not acquired"
+// warnings) - which added up to the ~minute-long login delay.
+//
+// This app is effectively single-tab, so we skip the cross-tab lock entirely
+// and run auth operations directly. Each underlying request still has its own
+// 10s fetch timeout, so this cannot hang indefinitely.
+//
+// NOTE: the trade-off is that two browser tabs refreshing the token at the
+// exact same moment are no longer serialized. If multi-tab token-refresh races
+// ever surface, reintroduce a bounded lock here.
+const authLock = async (_name, _acquireTimeout, fn) => fn();
 
 // Custom fetch with timeout for Safari compatibility
 const fetchWithTimeout = (url, options = {}) => {
-  console.log('Supabase fetch:', url);
+  if (import.meta.env.DEV) console.log('Supabase fetch:', url);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
@@ -78,7 +76,7 @@ const fetchWithTimeout = (url, options = {}) => {
     signal: controller.signal,
   })
     .then(response => {
-      console.log('Supabase fetch response:', url, response.status);
+      if (import.meta.env.DEV) console.log('Supabase fetch response:', url, response.status);
       return response;
     })
     .catch(error => {
@@ -90,12 +88,13 @@ const fetchWithTimeout = (url, options = {}) => {
 
 export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder', {
   auth: {
-    autoRefreshToken: !hadPreviousTimeout, // Disable auto refresh if we had timeout
-    persistSession: !hadPreviousTimeout,   // Disable persistence if we had timeout
-    detectSessionInUrl: false, // Disable automatic - we handle OAuth callback manually in AuthContext for Safari compatibility
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false, // We complete the OAuth (PKCE) callback manually in AuthContext.
     flowType: 'pkce', // Explicit PKCE flow for better cross-browser compatibility
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
     storageKey: 'supabase.auth.token',
+    lock: authLock, // Bounded lock (see above) to avoid indefinite hangs.
   },
   global: {
     headers: {

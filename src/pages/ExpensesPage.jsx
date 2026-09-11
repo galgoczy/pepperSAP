@@ -1,24 +1,23 @@
 import { useState } from 'react';
-import { Plus, ChevronLeft, ChevronRight, Users, Banknote } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Users, Banknote, CalendarDays } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useUnits } from '../hooks/useSupabase';
 import { Card, Button, Modal, Select } from '../components/common';
 import ExpenseList from '../components/expenses/ExpenseList';
+import ReceivedInvoicesList from '../components/expenses/ReceivedInvoicesList';
 import ExpenseForm from '../components/expenses/ExpenseForm';
 import EfoPaymentForm from '../components/expenses/EfoPaymentForm';
 import WagePaymentForm from '../components/expenses/WagePaymentForm';
-import { getFirstDayOfMonth, getLastDayOfMonth } from '../lib/utils';
-
-// Get previous month's first and last day
-function getPreviousMonthDates() {
-  const now = new Date();
-  const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
-  return {
-    start: firstDay.toISOString().split('T')[0],
-    end: lastDay.toISOString().split('T')[0],
-  };
-}
+import PaymentEditModal from '../components/expenses/PaymentEditModal';
+import {
+  getFirstDayOfMonth,
+  getLastDayOfMonth,
+  formatDate,
+  formatYearMonth,
+  monthRange,
+  shiftYearMonth,
+  currentYearMonth,
+} from '../lib/utils';
 
 export default function ExpensesPage() {
   const { isAdmin, unitId } = useAuth();
@@ -26,17 +25,25 @@ export default function ExpensesPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isEfoFormOpen, setIsEfoFormOpen] = useState(false);
   const [isWageFormOpen, setIsWageFormOpen] = useState(false);
-  const [editingExpense, setEditingExpense] = useState(null);
+  const [editingItem, setEditingItem] = useState(null);
   const [selectedUnit, setSelectedUnit] = useState('all');
   const [startDate, setStartDate] = useState(getFirstDayOfMonth());
   const [endDate, setEndDate] = useState(getLastDayOfMonth());
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [activeTab, setActiveTab] = useState('expenses');
+
+  const refreshList = () => setRefreshKey((k) => k + 1);
 
   // Unit options for admin filter
+  // Every unit is selectable, not just the restaurants: costs can also be booked
+  // on the events unit (Rendezvény) and the central one (Központ).
   const unitOptions = [
     { value: 'all', label: 'Összes egység' },
-    ...units
-      .filter(u => u.type === 'restaurant')
-      .sort((a, b) => a.name.localeCompare(b.name))
+    ...[...units]
+      .sort((a, b) => {
+        const rank = (u) => (u.type === 'restaurant' ? 0 : 1);
+        return rank(a) - rank(b) || (a.name || '').localeCompare(b.name || '', 'hu');
+      })
       .map(u => ({ value: u.id, label: u.name }))
   ];
 
@@ -45,35 +52,47 @@ export default function ExpensesPage() {
     ? (selectedUnit === 'all' ? null : selectedUnit)
     : unitId;
 
-  const handleEdit = (expense) => {
-    setEditingExpense(expense);
-    setIsFormOpen(true);
+  const handleEdit = (item) => {
+    setEditingItem(item);
   };
 
   const handleClose = () => {
     setIsFormOpen(false);
-    setEditingExpense(null);
   };
 
-  const isCurrentMonth = startDate === getFirstDayOfMonth() && endDate === getLastDayOfMonth();
+  // Hónapléptetés. A megjelenített hónap a kezdő dátumból jön; a nyilak egész
+  // hónapra állítják az időszakot, előre és hátra egyaránt. A Szűrők panelen a
+  // dátumok szabadon is átállíthatók, ilyenkor "egyedi időszak" látszik, és a
+  // nyíl a kezdő dátum hónapjából lép tovább.
+  const shownMonth = String(startDate || '').slice(0, 7);
+  const range = monthRange(shownMonth);
+  const isWholeMonth = startDate === range.start && endDate === range.end;
+  const isCurrentMonth = isWholeMonth && shownMonth === currentYearMonth();
 
-  const handlePreviousMonth = () => {
-    const prev = getPreviousMonthDates();
-    setStartDate(prev.start);
-    setEndDate(prev.end);
+  const goToMonth = (ym) => {
+    const r = monthRange(ym);
+    if (!r.start) return;
+    setStartDate(r.start);
+    setEndDate(r.end);
   };
+
+  const stepMonth = (delta) => goToMonth(shiftYearMonth(shownMonth, delta));
 
   const handleCurrentMonth = () => {
     setStartDate(getFirstDayOfMonth());
     setEndDate(getLastDayOfMonth());
   };
 
+  const periodLabel = isWholeMonth
+    ? formatYearMonth(shownMonth)
+    : `${formatDate(startDate)} – ${formatDate(endDate)}`;
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Kifizetések</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Számlák</h1>
           <p className="text-gray-500 mt-1">
             Számlák és kiadások nyilvántartása
           </p>
@@ -82,7 +101,7 @@ export default function ExpensesPage() {
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setIsFormOpen(true)}>
             <Plus className="h-4 w-4" />
-            Új kifizetés
+            Számla / kifizetés
           </Button>
           <Button variant="secondary" onClick={() => setIsEfoFormOpen(true)}>
             <Users className="h-4 w-4" />
@@ -95,64 +114,131 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {/* Filters row for admin */}
-      {isAdmin && (
-        <div className="flex flex-wrap items-center gap-4">
+      {/* Filters row: unit selector (admin only) + month quick-select (everyone) */}
+      <div className="flex flex-wrap items-center gap-4">
+        {isAdmin && (
           <Select
+            label="Egység"
             value={selectedUnit}
             onChange={(e) => setSelectedUnit(e.target.value)}
             options={unitOptions}
             className="w-48"
           />
+        )}
 
-          {isCurrentMonth ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handlePreviousMonth}
+        {/* Hónapléptető: bármelyik korábbi vagy későbbi hónapra el lehet jutni,
+            és mindig látszik, melyik időszakot nézzük. */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => stepMonth(-1)}
+            title="Előző hónap"
+            aria-label="Előző hónap"
+            className="rounded-lg border border-gray-300 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+
+          <div className="min-w-[168px] text-center">
+            <div className="flex items-center justify-center gap-1.5 text-sm font-semibold text-gray-900">
+              <CalendarDays className="h-4 w-4 text-pepper-red" />
+              {periodLabel}
+            </div>
+            {!isWholeMonth && (
+              <div className="text-[11px] text-gray-500">egyedi időszak</div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => stepMonth(1)}
+            title="Következő hónap"
+            aria-label="Következő hónap"
+            className="rounded-lg border border-gray-300 bg-white p-1.5 text-gray-600 hover:bg-gray-50"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <Button
+          variant={isCurrentMonth ? 'primary' : 'secondary'}
+          size="sm"
+          onClick={handleCurrentMonth}
+          disabled={isCurrentMonth}
+          title="Ugrás az aktuális hónapra"
+        >
+          Aktuális hónap
+        </Button>
+      </div>
+
+      {/* Tabs (admin only) */}
+      {isAdmin && (
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex gap-6">
+            <button
+              onClick={() => setActiveTab('expenses')}
+              className={`whitespace-nowrap border-b-2 px-1 py-2 text-sm font-medium transition-colors ${
+                activeTab === 'expenses'
+                  ? 'border-pepper-red text-pepper-red'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
             >
-              <ChevronLeft className="h-4 w-4" />
-              Előző hónap
-            </Button>
-          ) : (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleCurrentMonth}
+              Számlák áttekintése
+            </button>
+            <button
+              onClick={() => setActiveTab('received')}
+              className={`whitespace-nowrap border-b-2 px-1 py-2 text-sm font-medium transition-colors ${
+                activeTab === 'received'
+                  ? 'border-pepper-red text-pepper-red'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
             >
-              Aktuális hónap
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          )}
+              Beérkezett számlák
+            </button>
+          </nav>
         </div>
       )}
 
-      {/* Expense list */}
+      {/* Content */}
       <Card>
-        <ExpenseList
-          unitId={filterUnitId}
-          onEdit={handleEdit}
-          isAdmin={isAdmin}
-          startDate={startDate}
-          endDate={endDate}
-          onDateChange={(start, end) => {
-            setStartDate(start);
-            setEndDate(end);
-          }}
-        />
+        {isAdmin && activeTab === 'received' ? (
+          <ReceivedInvoicesList
+            key={`received-${refreshKey}`}
+            unitId={filterUnitId}
+            isAdmin={isAdmin}
+            startDate={startDate}
+            endDate={endDate}
+            onEdit={handleEdit}
+          />
+        ) : (
+          <ExpenseList
+            key={refreshKey}
+            unitId={filterUnitId}
+            onEdit={handleEdit}
+            isAdmin={isAdmin}
+            startDate={startDate}
+            endDate={endDate}
+            onDateChange={(start, end) => {
+              setStartDate(start);
+              setEndDate(end);
+            }}
+          />
+        )}
       </Card>
 
-      {/* Expense form modal */}
+      {/* New expense form modal */}
       <Modal
         isOpen={isFormOpen}
         onClose={handleClose}
-        title={editingExpense ? 'Kifizetés szerkesztése' : 'Új kifizetés'}
+        title="Számla / kifizetés"
         size="lg"
       >
         <ExpenseForm
-          expense={editingExpense}
           unitId={isAdmin ? null : unitId}
-          onSuccess={handleClose}
+          onSuccess={() => {
+            handleClose();
+            refreshList();
+          }}
           onCancel={handleClose}
         />
       </Modal>
@@ -166,7 +252,10 @@ export default function ExpensesPage() {
       >
         <EfoPaymentForm
           unitId={isAdmin ? null : unitId}
-          onSuccess={() => setIsEfoFormOpen(false)}
+          onSuccess={() => {
+            setIsEfoFormOpen(false);
+            refreshList();
+          }}
           onCancel={() => setIsEfoFormOpen(false)}
         />
       </Modal>
@@ -180,10 +269,21 @@ export default function ExpensesPage() {
       >
         <WagePaymentForm
           unitId={isAdmin ? null : unitId}
-          onSuccess={() => setIsWageFormOpen(false)}
+          onSuccess={() => {
+            setIsWageFormOpen(false);
+            refreshList();
+          }}
           onCancel={() => setIsWageFormOpen(false)}
         />
       </Modal>
+
+      {/* Edit modal for any payment kind */}
+      <PaymentEditModal
+        item={editingItem}
+        unitId={isAdmin ? null : unitId}
+        onClose={() => setEditingItem(null)}
+        onSaved={refreshList}
+      />
     </div>
   );
 }

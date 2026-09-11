@@ -10,9 +10,12 @@ import {
   Clock,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import { useAnimatedNumber } from '../../hooks/useAnimatedNumber';
+import TrafficReport from '../reports/TrafficReport';
 import { Card, Button, LoadingSpinner } from '../common';
 import { supabase } from '../../lib/supabase';
+import { fetchHouseCashSeries } from '../../lib/houseCashSeries';
 import { formatCurrency, formatDate, getToday } from '../../lib/utils';
 
 // Color options for marking
@@ -37,6 +40,7 @@ function AnimatedCurrency({ value, hasData = true }) {
 
 export default function UnitDashboard() {
   const { unitId, profile } = useAuth();
+  const { settings, updateSetting } = useAppSettings();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -70,8 +74,7 @@ export default function UnitDashboard() {
         // Fetch all data in parallel for better performance
         const [
           previousDayRevenueResult,
-          allCashRevenuesResult,
-          cashExpensesResult,
+          houseCashSeries,
           weeklyRevenuesResult,
           recentExpensesResult,
           recentEntriesResult,
@@ -83,18 +86,11 @@ export default function UnitDashboard() {
             .eq('unit_id', unitId)
             .eq('date', yesterdayStr)
             .maybeSingle(),
-          // All cash revenues for running house cash calculation
-          supabase
-            .from('daily_revenue')
-            .select('cash_payment')
-            .eq('unit_id', unitId)
-            .lte('date', today),
-          // All cash expenses for running house cash calculation
-          supabase
-            .from('expenses')
-            .select('amount')
-            .eq('unit_id', unitId)
-            .eq('payment_method', 'cash'),
+          // Authoritative house-cash series (same source as the Házipénztár page /
+          // daily report): its latest closing is the current balance, and already
+          // accounts for register cash, discrepancies, official + non-official
+          // expenses (EFO/wage too), incomes, transfers and revisions.
+          fetchHouseCashSeries(unitId, today),
           // Weekly revenue (Monday to yesterday - not including today)
           supabase
             .from('daily_revenue')
@@ -123,16 +119,12 @@ export default function UnitDashboard() {
           0
         );
 
-        // Calculate running house cash: sum of cash revenues - cash expenses
-        const totalCashRevenue = (allCashRevenuesResult.data || []).reduce(
-          (sum, r) => sum + (parseFloat(r.cash_payment) || 0),
-          0
-        );
-        const totalCashExpenses = (cashExpensesResult.data || []).reduce(
-          (sum, r) => sum + (parseFloat(r.amount) || 0),
-          0
-        );
-        const runningHouseCash = totalCashRevenue - totalCashExpenses;
+        // House cash balance = latest closing of the series (cash + reserve).
+        const dates = houseCashSeries.orderedDates;
+        const lastRow = dates.length ? houseCashSeries.byDate.get(dates[dates.length - 1]) : null;
+        const runningHouseCash = lastRow
+          ? (lastRow.cashClosing + lastRow.reserveClosing)
+          : 0;
 
         setStats({
           previousDayRevenue: previousDayRevenueResult.data,
@@ -181,13 +173,45 @@ export default function UnitDashboard() {
           </p>
         </div>
 
-        <Link to="/daily">
-          <Button>
-            <Plus className="h-4 w-4" />
-            Napi adatok rögzítése
-          </Button>
-        </Link>
+        <div className="flex items-center gap-4">
+          {/* Desktop-only: pin the traffic report to the top of the dashboard. */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={settings.dashboardTrafficReport}
+            onClick={() => updateSetting('dashboardTrafficReport', !settings.dashboardTrafficReport)}
+            className="hidden lg:flex items-center gap-2 text-sm text-gray-600"
+            title="A forgalmi jelentés megjelenítése a vezérlőpult tetején"
+          >
+            <span
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                settings.dashboardTrafficReport ? 'bg-pepper-red' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  settings.dashboardTrafficReport ? 'translate-x-4' : 'translate-x-1'
+                }`}
+              />
+            </span>
+            Forgalmi jelentés
+          </button>
+
+          <Link to="/daily">
+            <Button>
+              <Plus className="h-4 w-4" />
+              Napi adatok rögzítése
+            </Button>
+          </Link>
+        </div>
       </div>
+
+      {/* Traffic report first, when switched on (desktop only) */}
+      {settings.dashboardTrafficReport && unitId && (
+        <div className="hidden lg:block">
+          <TrafficReport unitId={unitId} unitName={profile?.unit_name || ''} />
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -218,6 +242,7 @@ export default function UnitDashboard() {
               <p className="text-xl font-bold text-blue-800 break-words">
                 <AnimatedCurrency value={stats.runningHouseCash} />
               </p>
+              <p className="text-xs text-blue-500">Készpénz + tartalék</p>
             </div>
           </div>
         </Card>
