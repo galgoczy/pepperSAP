@@ -1679,7 +1679,15 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
               // nincs eltérés, nem kell jegyzőkönyv.
               const pooled = pooledTerminalFor(cr, crData);
               const pooledOk = pooled.applies && pooled.isValid;
-              if (!pooledOk && Math.abs(cardTerminalDiff) > REGISTER_TOLERANCE) {
+              // Összevont esetben (több zárás, egy terminál érték) a zárásonkénti
+              // különbség félrevezető, és nem is zárásonként kell rendezni: a
+              // tétel egyszer, a terminált hordozó záráson jelenik meg, a napi
+              // maradék összeggel.
+              const pooledUnresolved =
+                pooled.applies && !pooled.isValid && (parseFloat(cr.terminal_card) || 0) > 0;
+              const perClosureDiff =
+                !pooled.applies && Math.abs(cardTerminalDiff) > REGISTER_TOLERANCE;
+              if (pooledUnresolved || perClosureDiff) {
                 const cardCheck = validateCardPayments(
                   parseFloat(cr.card_payment) || 0,
                   parseFloat(cr.terminal_card) || 0,
@@ -1689,8 +1697,8 @@ function IncompleteEntriesList({ unitId, onSelectDate }) {
                   register: registerName,
                   apNumber,
                   type: 'Kártya-terminál eltérés',
-                  amount: cardTerminalDiff,
-                  note: cardCheck.explainedByDiscrepancy
+                  amount: pooled.applies ? pooled.signedRemaining : cardTerminalDiff,
+                  note: !pooled.applies && cardCheck.explainedByDiscrepancy
                     ? 'Rossz fizetési mód elütés rögzítve'
                     : cr.terminal_discrepancy_note,
                 };

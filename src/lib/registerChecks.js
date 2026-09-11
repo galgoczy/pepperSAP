@@ -124,7 +124,12 @@ export function computeRegisterProtocolMarks(days) {
   });
   let prevCumulative = null;
   ordered.forEach((day) => {
-    const termDisc = Math.abs(day.discrepancy) > REGISTER_TOLERANCE;
+    // Ha a gépen aznap több zárás van egyetlen terminál értékkel, és a zárások
+    // kártya összege (a rögzített elütésekkel együtt) kiadja a terminált, akkor
+    // ezen a gépen aznap NINCS kártya-terminál eltérés. A zárásonkénti
+    // különbség ilyenkor önmagában semmit nem jelent, ezért jegyzőkönyvet sem
+    // kérünk rá – sem hiányzót, sem pipálandót.
+    const termDisc = !day.terminalPooled && Math.abs(day.discrepancy) > REGISTER_TOLERANCE;
     const termHandled = !!day.terminalExplained || (day.terminalNote || '').length > 0;
 
     const payDisc = !!day.paymentGap;
@@ -151,9 +156,7 @@ export function computeRegisterProtocolMarks(days) {
     if (termDisc) {
       reasons.push(
         termHandled
-          ? day.terminalPooled
-            ? 'Kártya-terminál eltérés – a nap zárásainak kártya összege egyezik a terminállal, rendezve'
-            : 'Kártya-terminál eltérés – rendezve'
+          ? 'Kártya-terminál eltérés – rendezve'
           : 'Kártya-terminál eltérés – hiányzik a „rossz fizetési mód” elütés'
       );
     }

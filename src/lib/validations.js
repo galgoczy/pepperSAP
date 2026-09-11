@@ -152,12 +152,19 @@ export const pooledTerminalCheck = (closures) => {
   const cardSum = list.reduce((s, c) => s + num(c.card_payment), 0);
   const adjustment = list.reduce((s, c) => s + methodCardAdjustmentOf(c), 0);
   const check = validateCardPayments(cardSum, terminal, adjustment);
+  // Ami az elütések beszámítása UTÁN is eltérés. Ez az a szám, amiről még
+  // elütést kell felvenni – a nyers különbség (`difference`) ennél nagyobb
+  // lehet, ha már van rögzített „rossz fizetési mód” elütés a nap zárásain.
+  const signedRemaining = check.signedDifference + adjustment;
   return {
     applies: true,
     isValid: check.isValid,
     terminal,
     cardSum,
+    adjustment,
     difference: check.signedDifference,
+    signedRemaining,
+    remaining: Math.abs(signedRemaining),
     closureCount: list.length,
   };
 };

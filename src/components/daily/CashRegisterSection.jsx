@@ -273,11 +273,13 @@ export default function CashRegisterSection({
     // adjuk alapnak: ha a terminál a több (kimaradt kártya), „Készpénz helyett
     // Bankkártya”, különben a fordítottja. Az alapértelmezett fix irány miatt a
     // kézzel felvitt elütés gyakran nem fedte az eltérést, és nem lett zöld.
+    // Több zárás egy terminállal: a napi maradék iránya a mérvadó, nem ezé az
+    // egy zárásé (lásd terminalGapSigned).
     const directional =
       hasDiscrepancy && !('keyed' in preset) && !('actual' in preset)
         ? {
-            keyed: cardValidation.signedDifference > 0 ? 'card' : 'cash',
-            actual: cardValidation.signedDifference > 0 ? 'cash' : 'card',
+            keyed: terminalGapSigned > 0 ? 'card' : 'cash',
+            actual: terminalGapSigned > 0 ? 'cash' : 'card',
           }
         : {};
     const newDiscrepancies = [
@@ -323,11 +325,28 @@ export default function CashRegisterSection({
   );
 
   // Több zárás, egy terminál érték (a DailyRevenueForm számolja a gép aznapi
-  // záraiból): ha a zárások kártya összege egyezik a terminállal, ezen a
-  // záráson sincs eltérés, nem kérünk elütést.
+  // záraiból). Ilyenkor a zárásonkénti kártya–terminál összevetésnek nincs
+  // értelme: az egyik záráson nincs is terminál érték, a másikon meg a nap
+  // TELJES kártyaforgalma szerepel. Ezért ebben az esetben mindent a napi
+  // összesített számokból nézünk – a zárások kártya összegét a rögzített
+  // „rossz fizetési mód” elütésekkel együtt vetjük össze az egy terminállal,
+  // akármelyik záráson van felvéve az elütés.
   const pooledTerminal = validation?.pooledTerminal || null;
-  const pooledTerminalOk = !!(pooledTerminal?.applies && pooledTerminal.isValid);
-  const hasDiscrepancy = !cardValidation.isValid && !pooledTerminalOk;
+  const pooledApplies = !!pooledTerminal?.applies;
+  const pooledTerminalOk = !!(pooledApplies && pooledTerminal.isValid);
+  // Ezen a záráson van-e a gép aznapi egyetlen terminál értéke. A teendő
+  // (elütés felvétele) ott jelenik meg, nem mind a két záráson.
+  const carriesTerminal = (parseFloat(formData.terminal_card) || 0) > 0;
+  const hasDiscrepancy = pooledApplies
+    ? !pooledTerminalOk && carriesTerminal
+    : !cardValidation.isValid;
+
+  // A még nem magyarázott eltérés: összevont esetben a napi maradék (az
+  // elütések beszámítása után), egyébként a zárás saját különbsége.
+  const terminalGapSigned = pooledApplies
+    ? pooledTerminal.signedRemaining
+    : cardValidation.signedDifference;
+  const terminalGap = Math.abs(terminalGapSigned);
 
   // Prefill for the one-click "rossz fizetési mód" elütés from the terminal
   // difference: register card above the terminal means card was keyed instead
@@ -335,9 +354,9 @@ export default function CashRegisterSection({
   const terminalDiffPreset = () => ({
     kind: DISCREPANCY_KINDS.METHOD,
     currency: 'HUF',
-    amount: String(Math.round(cardValidation.difference)),
-    keyed: cardValidation.signedDifference > 0 ? 'card' : 'cash',
-    actual: cardValidation.signedDifference > 0 ? 'cash' : 'card',
+    amount: String(Math.round(terminalGap)),
+    keyed: terminalGapSigned > 0 ? 'card' : 'cash',
+    actual: terminalGapSigned > 0 ? 'cash' : 'card',
   });
 
   // Turnover vs payment methods: the VAT buckets have to add up to
@@ -357,10 +376,16 @@ export default function CashRegisterSection({
   const paymentGapDocumented = hasDocumentedDiscrepancy(formData.discrepancies);
   const paymentGapUndocumented = paymentGap && !paymentGapDocumented;
 
+  // A kártya–terminál oldal rendben van-e. Összevont esetben a napi összesített
+  // dönt, és MINDEN záráson ugyanaz az eredmény – így nem lesz zöld pipa azon a
+  // záráson, ahol éppen nincs terminál érték, miközben a gép napja nem stimmel.
+  const terminalOk = pooledApplies ? pooledTerminalOk : cardValidation.isValid;
+
   // Whether this closure has any kind of discrepancy (terminal/card mismatch, a
   // payment breakdown gap or a recorded elütés) — used to flag a collapsed
   // register box in the background.
-  const hasAnyDiscrepancy = hasDiscrepancy || paymentGap || (formData.discrepancies || []).length > 0;
+  const hasAnyDiscrepancy =
+    !terminalOk || paymentGap || (formData.discrepancies || []).length > 0;
 
   // Zöld pipa a fejlécben: a zárás minden ellenőrzésen átment – vagy eleve nem
   // volt eltérés, vagy elütéssel rendezve van. Ugyanaz a mérce, mint a
@@ -376,7 +401,7 @@ export default function CashRegisterSection({
     (String(formData.closure_sequence ?? '').trim() !== '' &&
       (parseFloat(formData.cumulative_revenue) || 0) > 0);
   const closureAllOk =
-    !closureBlank && !hasDiscrepancy && !paymentGapUndocumented && sequenceOk && cumulativeOk && zFieldsOk;
+    !closureBlank && terminalOk && !paymentGapUndocumented && sequenceOk && cumulativeOk && zFieldsOk;
 
   // Segítség a kézzel felvitt elütéshez, ha a kártya–terminál eltérés még
   // nincs fedve: ha ez az elütés FORDÍTOTT iránnyal pont fedné, vagy „téves
@@ -387,21 +412,24 @@ export default function CashRegisterSection({
     if (!hasDiscrepancy || (disc?.currency || 'HUF') !== 'HUF') return null;
     const amount = Math.abs(parseFloat(disc?.amount) || 0);
     if (!amount) return null;
-    const card = parseFloat(formData.card_payment) || 0;
-    const terminal = parseFloat(formData.terminal_card) || 0;
-    const wantKeyed = cardValidation.signedDifference > 0 ? 'card' : 'cash';
-    const wantActual = cardValidation.signedDifference > 0 ? 'cash' : 'card';
+    // Összevont esetben (több zárás, egy terminál) a napi összesített számokkal
+    // mérünk: ennek az elütésnek a megfordítása a nap egészét hozza-e helyre.
+    const card = pooledApplies ? pooledTerminal.cardSum : parseFloat(formData.card_payment) || 0;
+    const terminal = pooledApplies ? pooledTerminal.terminal : parseFloat(formData.terminal_card) || 0;
+    const baseAdj = pooledApplies ? pooledTerminal.adjustment : methodAdj.card;
+    const wantKeyed = terminalGapSigned > 0 ? 'card' : 'cash';
+    const wantActual = terminalGapSigned > 0 ? 'cash' : 'card';
     if (isMethodDiscrepancy(disc)) {
       const keyed = disc.keyed || 'card';
       const actual = disc.actual || 'cash';
       const contribution = keyed === 'card' ? -amount : actual === 'card' ? amount : 0;
       if (contribution === 0) return null;
-      const flipped = methodAdj.card - 2 * contribution;
+      const flipped = baseAdj - 2 * contribution;
       return validateCardPayments(card, terminal, flipped).isValid
         ? { type: 'flip', wantKeyed, wantActual }
         : null;
     }
-    const asMethod = methodAdj.card + (wantKeyed === 'card' ? -amount : amount);
+    const asMethod = baseAdj + (wantKeyed === 'card' ? -amount : amount);
     return validateCardPayments(card, terminal, asMethod).isValid
       ? { type: 'kind', wantKeyed, wantActual }
       : null;
@@ -869,9 +897,11 @@ export default function CashRegisterSection({
                 suffix="Ft"
                 size="sm"
                 error={
-                  !cardValidation.isValid
-                    ? `Eltérés a terminálhoz képest: ${formatCurrency(cardValidation.difference)}`
-                    : null
+                  terminalOk
+                    ? null
+                    : pooledApplies
+                      ? `A mai zárások kártya összege ennyivel tér el a terminál értékétől: ${formatCurrency(terminalGap)}`
+                      : `Eltérés a terminálhoz képest: ${formatCurrency(cardValidation.difference)}`
                 }
               />
               {/* SZÉP card - hidden for now */}
@@ -945,7 +975,7 @@ export default function CashRegisterSection({
                 onChange={(e) => handleTerminalChange('terminal_card_total', e.target.value)}
                 suffix="Ft"
                 size="sm"
-                className={!cardValidation.isValid ? 'ring-2 ring-red-300' : ''}
+                className={terminalOk ? '' : 'ring-2 ring-red-300'}
               />
               <Input
                 label="Borravaló (bankkártya)"
@@ -1007,18 +1037,34 @@ export default function CashRegisterSection({
                   <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
                   <div className="text-sm flex-1">
                     <h4 className="font-medium text-red-800">
-                      Eltérés a terminálhoz képest: {formatCurrency(cardValidation.difference)}
+                      Eltérés a terminálhoz képest: {formatCurrency(terminalGap)}
                     </h4>
-                    <p className="text-red-700 mt-1 text-xs">
-                      Pénztárgép bankkártya {formatCurrency(parseFloat(formData.card_payment) || 0)} ·
-                      terminál (borravaló nélkül) {formatCurrency(terminalCardNet)}. A terminál a mérvadó.
-                      {cardValidation.signedDifference > 0
-                        ? ' Valószínűleg készpénzt ütöttek bankkártyára.'
-                        : ' Valószínűleg bankkártyát ütöttek készpénzre.'}
-                    </p>
+                    {pooledApplies ? (
+                      <p className="text-red-700 mt-1 text-xs">
+                        A gépen ma {pooledTerminal.closureCount} zárás van, de csak egy terminál érték, ezért
+                        a zárások együtt számítanak: kártya összesen{' '}
+                        {formatCurrency(pooledTerminal.cardSum)}
+                        {pooledTerminal.adjustment !== 0 &&
+                          ` (a rögzített elütésekkel ${formatCurrency(pooledTerminal.cardSum + pooledTerminal.adjustment)})`}{' '}
+                        · terminál (borravaló nélkül) {formatCurrency(pooledTerminal.terminal)}. A terminál a
+                        mérvadó.
+                        {terminalGapSigned > 0
+                          ? ' Valószínűleg készpénzt ütöttek bankkártyára.'
+                          : ' Valószínűleg bankkártyát ütöttek készpénzre.'}
+                      </p>
+                    ) : (
+                      <p className="text-red-700 mt-1 text-xs">
+                        Pénztárgép bankkártya {formatCurrency(parseFloat(formData.card_payment) || 0)} ·
+                        terminál (borravaló nélkül) {formatCurrency(terminalCardNet)}. A terminál a mérvadó.
+                        {terminalGapSigned > 0
+                          ? ' Valószínűleg készpénzt ütöttek bankkártyára.'
+                          : ' Valószínűleg bankkártyát ütöttek készpénzre.'}
+                      </p>
+                    )}
                     <p className="text-red-700 mt-1 text-xs">
                       Ha rossz fizetési módra ütöttek, vegyél fel róla elütést – nem kötelező, a mentést nem
                       akadályozza.
+                      {pooledApplies && ' Az elütés a gép bármelyik mai zárásán felvehető, összevontan számít.'}
                     </p>
                     <Button
                       type="button"
@@ -1028,7 +1074,7 @@ export default function CashRegisterSection({
                       onClick={() => addDiscrepancy(terminalDiffPreset())}
                     >
                       <Plus className="h-4 w-4" />
-                      Elütés felvétele: rossz fizetési mód ({formatCurrency(cardValidation.difference)})
+                      Elütés felvétele: rossz fizetési mód ({formatCurrency(terminalGap)})
                     </Button>
                   </div>
                 </div>
@@ -1039,15 +1085,28 @@ export default function CashRegisterSection({
                 )}
               </div>
             )}
-            {!hasDiscrepancy && !cardValidation.isValid && pooledTerminalOk && (
+            {/* Csak akkor magyarázunk, ha van mit: ezen a záráson eltér a kártya
+                és a terminál, vagy a napot elütés hozta helyre. Egy sima nap ne
+                kapjon fölösleges dobozt. */}
+            {pooledTerminalOk && (!cardValidation.isValid || pooledTerminal.adjustment !== 0) && (
               <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
-                Ezen a záráson a kártya és a terminál eltér ({formatCurrency(cardValidation.difference)}), de a gép
-                mai {pooledTerminal.closureCount} zárásának kártya összege ({formatCurrency(pooledTerminal.cardSum)})
-                egyezik az egy terminál értékkel ({formatCurrency(pooledTerminal.terminal)}) – rendben, nem kell
-                elütés.
+                A gépen ma {pooledTerminal.closureCount} zárás van, de csak egy terminál érték, ezért a zárások
+                együtt számítanak: kártya összesen {formatCurrency(pooledTerminal.cardSum)}
+                {pooledTerminal.adjustment !== 0 &&
+                  ` – a rögzített „rossz fizetési mód” elütéssel ${formatCurrency(pooledTerminal.cardSum + pooledTerminal.adjustment)} –`}{' '}
+                egyezik az egy terminál értékkel ({formatCurrency(pooledTerminal.terminal)}). Rendben, nem kell
+                (több) elütés.
               </div>
             )}
-            {!hasDiscrepancy && cardValidation.explainedByDiscrepancy && (
+            {pooledApplies && !pooledTerminalOk && !carriesTerminal && (
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                A gép mai terminál értéke a másik záráson van, ezért a kártyát összevontan ellenőrizzük. A nap
+                zárásainak kártya összege {formatCurrency(terminalGap)}-tal tér el a terminál értékétől – a
+                teendő annál a zárásnál látszik, ahol a terminál összege szerepel. Az elütés bármelyik mai
+                záráson felvehető.
+              </div>
+            )}
+            {!pooledApplies && !hasDiscrepancy && cardValidation.explainedByDiscrepancy && (
               <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
                 Eltérés a terminálhoz képest {formatCurrency(cardValidation.difference)} – a rögzített
                 „rossz fizetési mód” elütés kiadja.
