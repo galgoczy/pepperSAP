@@ -36,7 +36,18 @@ const EMAIL_ROLE_MAP = {
   'ttk@pepperhouse.hu': { role: 'unit', unit_name: 'TTK Kantin' },
   // Accountant (read-only)
   'konyveles@pepperhouse.hu': { role: 'accountant', unit_name: null },
+  // Külső könyvelő (read-only, CSAK a könyvelési pénztárgép jelentés).
+  // A profilt az admin hozza létre az adatbázisban (lásd a
+  // 20260916_external_accountant_role.sql migrációt); ez a sor csak akkor
+  // számít, ha a profil még nem létezik. Nem @pepperhouse.hu cím is lehet –
+  // az ilyen felhasználó email + jelszóval lép be, nem Microsofttal.
+  // 'konyvelo@kulsocegneve.hu': { role: 'ext_accountant', unit_name: null },
 };
+
+// Az a két szerepkör, amelyik csak olvas. A külső könyvelő mindenben úgy
+// viselkedik, mint a könyvelő (nem ír semmit), csak kevesebbet lát – ezért az
+// isAccountant mindkettőre igaz, és a szűkítést az isExtAccountant adja.
+const ACCOUNTANT_ROLES = ['accountant', 'ext_accountant'];
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -516,9 +527,14 @@ export function AuthProvider({ children }) {
     isAdmin: profile?.role === 'admin',
     isUnit: profile?.role === 'unit',
     isEvents: profile?.role === 'events',
-    isAccountant: profile?.role === 'accountant',
-    canEdit: profile?.role !== 'accountant',
-    canViewAllUnits: profile?.role === 'admin' || profile?.role === 'accountant',
+    // Könyvelő (belső vagy külső): olvas, nem ír.
+    isAccountant: ACCOUNTANT_ROLES.includes(profile?.role),
+    // Külső könyvelő: kizárólag a "Pénztárgép forgalom - könyvelés" jelentést
+    // látja (és töltheti le) tetszőleges időszakra, mást semmit.
+    isExtAccountant: profile?.role === 'ext_accountant',
+    canEdit: !ACCOUNTANT_ROLES.includes(profile?.role),
+    canViewAllUnits:
+      profile?.role === 'admin' || ACCOUNTANT_ROLES.includes(profile?.role),
     unitId: profile?.unit_id,
     role: profile?.role,
     refetchProfile: () => user && fetchProfile(user.id),

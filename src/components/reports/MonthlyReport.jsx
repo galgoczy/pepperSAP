@@ -1093,7 +1093,8 @@ async function fetchCashRegisterAccounting(startDate, endDate) {
   const totals = {
     vat_0: sum('vat_0'), vat_5: sum('vat_5'), vat_18: sum('vat_18'), vat_27: sum('vat_27'),
     cash: sum('cash'), card: sum('card'), szep: sum('szep'),
-    terminal_card: sum('terminal_card'), total: sum('total'), eur: sum('eur'),
+    terminal_card: sum('terminal_card'), total: sum('total'),
+    eur: sum('eur'), huf: sum('huf'),
   };
   totals.discrepancy = totals.card - totals.terminal_card;
 
@@ -2580,6 +2581,10 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
         egyezik a KP + kártya + SZÉP összegével. Ez időszaki összesítés, ezért a napi
         készpénz-kerekítések miatt {PERIOD_TOLERANCE} Ft-ig nem jelöljük – a rögzített Ft és
         EUR elütéssel való összevetésben is. A napi rögzítés szigorú marad.
+        {' '}A <span className="font-semibold">BK eltérés</span> a bankkártya eltérés: a
+        pénztárgép szerinti kártyás forgalom mínusz a terminál összege.
+        {' '}A <span className="font-semibold">Ft elütés</span> az időszakban rögzített
+        „téves összeg” (túlütés) elütések összege forintban; az EUR elütés külön oszlopban.
         {' '}A <span className="font-semibold">göngyölt</span> mellett pipálható, hogy ellenőrizve van.
         {' '}A <span className="font-semibold">Jkv.</span> zöld pipa: az időszak minden
         jegyzőkönyve megvan és a részletes jelentésben ellenőrizve (pipálva) van.
@@ -2604,7 +2609,8 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
               <th className={TH}>Kártya</th>
               <th className={TH}>Terminál</th>
               <th className={TH}>Időszaki</th>
-              <th className={TH}>Eltérés</th>
+              <th className={TH} title="Bankkártya eltérés: pénztárgép szerinti kártya − terminál">BK eltérés</th>
+              <th className={TH} title="Rögzített „téves összeg” (túlütés) elütések összege forintban">Ft elütés</th>
               <th className={TH}>Göngyölt</th>
               <th className={`${STICKY_TH_DENSE} text-center whitespace-nowrap`} title="Jegyzőkönyvek: minden megvan és ellenőrizve">Jkv.</th>
               <th className={TH}>EUR elütés</th>
@@ -2653,6 +2659,18 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
                   <td className={`${num} ${discrepancy !== 0 ? 'text-orange-600 font-medium' : ''}`}>
                     {denseAmount(discrepancy)}
                   </td>
+                  {/* Rögzített „téves összeg” (túlütés) elütések forintban – az
+                      EUR elütésnek külön oszlopa van a sor végén. */}
+                  <td
+                    className={`${num} ${(reg.huf || 0) !== 0 ? 'text-orange-600 font-medium cursor-help' : 'text-gray-300'}`}
+                    title={
+                      (reg.huf || 0) !== 0
+                        ? `Az időszakban rögzített „téves összeg” elütések összege: ${denseAmount(reg.huf)} Ft`
+                        : undefined
+                    }
+                  >
+                    {(reg.huf || 0) !== 0 ? denseAmount(reg.huf) : '-'}
+                  </td>
                   <td className={`${num} ${checked ? 'text-green-700 font-medium' : ''}`}>
                     <span className="inline-flex items-center justify-end gap-1.5">
                       <span>{reg.lastCumulative == null ? '-' : denseAmount(reg.lastCumulative)}</span>
@@ -2699,6 +2717,9 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
               <td className={num}>{denseAmount(totals.total)}</td>
               <td className={`${num} ${totals.discrepancy !== 0 ? 'text-orange-600' : ''}`}>
                 {denseAmount(totals.discrepancy)}
+              </td>
+              <td className={`${num} ${(totals.huf || 0) !== 0 ? 'text-orange-600' : ''}`}>
+                {(totals.huf || 0) !== 0 ? denseAmount(totals.huf) : '-'}
               </td>
               <td className={TD}></td>
               <td className={TD}></td>

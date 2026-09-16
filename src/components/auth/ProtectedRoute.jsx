@@ -7,7 +7,7 @@ export default function ProtectedRoute({
   allowedRoles = null,
   requireAdmin = false,
 }) {
-  const { isAuthenticated, loading, role, isAdmin, profile, signOut } = useAuth();
+  const { isAuthenticated, loading, role, isAdmin, isExtAccountant, profile, signOut } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -41,6 +41,13 @@ export default function ProtectedRoute({
         </div>
       </div>
     );
+  }
+
+  // Külső könyvelő: a Jelentéseken kívül semmit nem érhet el – URL-t beírva
+  // sem. A külső ellenőrzés a menüben és a jelentésválasztóban is megvan, ez
+  // itt a zár: minden más útvonalról visszairányítunk a jelentésekre.
+  if (isExtAccountant && location.pathname !== '/reports') {
+    return <Navigate to="/reports" replace />;
   }
 
   // Check for admin requirement

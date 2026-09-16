@@ -83,7 +83,7 @@ function getMonthlyTableMonthOptions() {
 }
 
 export default function ReportsPage() {
-  const { isAdmin, isEvents, isAccountant, canViewAllUnits, unitId } = useAuth();
+  const { isAdmin, isEvents, isAccountant, isExtAccountant, canViewAllUnits, unitId } = useAuth();
   const { units } = useUnits();
   const { settings, updateSetting } = useAppSettings();
   // The report's selection lives in the URL, so leaving the page and coming back
@@ -101,6 +101,8 @@ export default function ReportsPage() {
 
   // Set default report type based on user role
   const getDefaultReportType = () => {
+    // Külső könyvelő: egyetlen jelentés, minden egységgel.
+    if (isExtAccountant) return 'cash_register_all_accounting';
     if (isEvents) return 'events';
     if (isAccountant && !unitId) return 'cash_register_all_simple';
     if (isAccountant) return 'cash_register';
@@ -140,6 +142,10 @@ export default function ReportsPage() {
 
   // Determine available report types based on user role and selected unit
   const getAvailableReportTypes = () => {
+    if (isExtAccountant) {
+      return [{ value: 'cash_register_all_accounting', label: 'Pénztárgép forgalom - könyvelés' }];
+    }
+
     if (isEvents) {
       return [{ value: 'events', label: 'Rendezvény összesítő' }];
     }
@@ -174,6 +180,12 @@ export default function ReportsPage() {
 
   const availableReportTypes = getAvailableReportTypes();
 
+  // A jelentés típusa és az egység az URL-ben van, tehát kézzel átírható. A
+  // külső könyvelőnél ezért nem a state-re, hanem erre a lezárt értékre
+  // építünk: neki mindig a könyvelési pénztárgép jelentés jár, az összes
+  // egységgel – bármi is áll a címsorban.
+  const effectiveReportType = isExtAccountant ? 'cash_register_all_accounting' : reportType;
+
   // Reset report type if current selection is not available
   const handleUnitChange = (newUnit) => {
     setSelectedUnit(newUnit);
@@ -194,8 +206,8 @@ export default function ReportsPage() {
     ...restaurantUnits.map((unit) => ({ value: unit.id, label: unit.name })),
   ];
 
-  // Determine effective unit ID for reports
-  const effectiveUnitId = canViewAllUnits ? selectedUnit : unitId;
+  // Determine effective unit ID for reports ('' = összes egység)
+  const effectiveUnitId = isExtAccountant ? '' : canViewAllUnits ? selectedUnit : unitId;
 
   return (
     <div className="space-y-6">
@@ -217,7 +229,7 @@ export default function ReportsPage() {
       {/* Filters */}
       <Card>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {reportType === 'monthly_table' ? (
+          {effectiveReportType === 'monthly_table' ? (
             // Month selector for monthly table
             <>
               <div className="sm:col-span-2 space-y-1">
@@ -326,7 +338,7 @@ export default function ReportsPage() {
             </>
           )}
 
-          {canViewAllUnits && (
+          {canViewAllUnits && !isExtAccountant && (
             <Select
               label="Egység"
               value={selectedUnit}
@@ -337,7 +349,7 @@ export default function ReportsPage() {
 
           <Select
             label="Riport típusa"
-            value={reportType}
+            value={effectiveReportType}
             onChange={(e) => setReportType(e.target.value)}
             options={availableReportTypes}
           />
@@ -345,7 +357,7 @@ export default function ReportsPage() {
       </Card>
 
       {/* Admin link for monthly data entry */}
-      {isAdmin && reportType === 'monthly_table' && (
+      {isAdmin && effectiveReportType === 'monthly_table' && (
         <Card className="bg-blue-50 border-blue-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -365,11 +377,11 @@ export default function ReportsPage() {
       )}
 
       {/* Report content */}
-      {reportType === 'monthly_table' ? (
+      {effectiveReportType === 'monthly_table' ? (
         <MonthlyTableReport
           yearMonth={selectedYearMonth}
         />
-      ) : reportType === 'traffic' ? (
+      ) : effectiveReportType === 'traffic' ? (
         effectiveUnitId ? (
           // A forgalmi jelentés havi: a felső dátumválasztó kezdő dátumának
           // hónapját mutatja, a saját lapozója pedig a felső dátumokat is
@@ -392,14 +404,14 @@ export default function ReportsPage() {
             </p>
           </Card>
         )
-      ) : reportType === 'house_cash' ? (
+      ) : effectiveReportType === 'house_cash' ? (
         <HouseCashReport
           unitId={effectiveUnitId}
           units={units}
           startDate={startDate}
           endDate={endDate}
         />
-      ) : reportType === 'full_traffic' ? (
+      ) : effectiveReportType === 'full_traffic' ? (
         <div className="space-y-8">
           <MonthlyReport
             startDate={startDate}
@@ -415,11 +427,11 @@ export default function ReportsPage() {
           />
         </div>
       ) : (
-        <ErrorBoundary resetKey={reportType} title="Hiba a jelentés megjelenítésekor">
+        <ErrorBoundary resetKey={effectiveReportType} title="Hiba a jelentés megjelenítésekor">
           <MonthlyReport
             startDate={startDate}
             endDate={endDate}
-            reportType={reportType}
+            reportType={effectiveReportType}
             unitId={effectiveUnitId}
           />
         </ErrorBoundary>
@@ -432,7 +444,7 @@ export default function ReportsPage() {
         startDate={startDate}
         endDate={endDate}
         unitId={effectiveUnitId}
-        reportType={reportType}
+        reportType={effectiveReportType}
         selectedYearMonth={selectedYearMonth}
       />
     </div>

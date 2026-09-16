@@ -1432,7 +1432,7 @@ async function fetchCashRegisterAccountingExport(startDate, endDate) {
   const headers = [
     'Pénztárgép', 'Első zárás', 'Utolsó zárás',
     '0% ÁFA', '5% ÁFA', '18% ÁFA', '27% ÁFA',
-    'Készpénz', 'Kártya', 'Terminál', 'Időszaki', 'Időszaki eltérés', 'Eltérés',
+    'Készpénz', 'Kártya', 'Terminál', 'Időszaki', 'Időszaki eltérés', 'BK eltérés', 'Ft elütés',
     'Göngyölt forgalom', 'Göngyölt ellenőrizve', 'Jkv. rendben', 'EUR elütés',
   ];
 
@@ -1474,7 +1474,10 @@ async function fetchCashRegisterAccountingExport(startDate, endDate) {
         'Terminál': reg.terminal_card,
         'Időszaki': total,
         'Időszaki eltérés': paymentGap ? check.difference : '',
-        'Eltérés': reg.card - reg.terminal_card,
+        // Bankkártya eltérés (pénztárgép kártya − terminál) és a „téves összeg”
+        // elütések forintban – ugyanaz a két oszlop, mint a képernyőn.
+        'BK eltérés': reg.card - reg.terminal_card,
+        'Ft elütés': reg.huf,
         'Göngyölt forgalom': summary.lastCumulative ?? '',
         'Göngyölt ellenőrizve': reg.registerId && checkedRegisters.has(reg.registerId) ? 'igen' : '',
         'Jkv. rendben': protocolStatus,
