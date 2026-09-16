@@ -77,6 +77,18 @@ const ROW_TYPE_STYLES = {
   unitTotal: { font: { bold: true }, fill: { fgColor: { rgb: 'FECACA' } } },
   grandTotalRow: { fill: { fgColor: { rgb: 'F3F4F6' } } },
   grandTotal: { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: 'B91C1C' } } },
+  // A lap végére fűzött "Összesen" / "Mindösszesen" sor.
+  totalsRow: { font: { bold: true }, fill: { fgColor: { rgb: 'FECACA' } } },
+};
+
+// A képernyős jelentésben a Mindösszesen sor terminál szerinti bankkártya
+// összege sárga kiemelést kap – ezért a számért olvassák a kimutatást. A
+// letöltött fájlban ugyanígy nézzen ki.
+const TOTAL_ROW_TYPES = new Set(['totalsRow', 'grandTotal']);
+const HIGHLIGHT_HEADERS = new Set(['Terminál']);
+const HIGHLIGHT_STYLE = {
+  fill: { fgColor: { rgb: 'FEF08A' } },
+  font: { bold: true, color: { rgb: '111827' } },
 };
 
 // Keret, jobbra igazított számok, sávozás és jelzőszínek az egész lapon.
@@ -105,6 +117,11 @@ export function applySheetFormatting(ws, headers, rowTypes = []) {
             if (semantic.fill) style.fill = semantic.fill;
             style.font = { ...(style.font || {}), ...semantic.font };
           }
+        }
+        // A sárga kiemelés a sor saját hátterét is felülírja (a képernyőn is).
+        if (TOTAL_ROW_TYPES.has(rowType) && HIGHLIGHT_HEADERS.has(headers[col])) {
+          style.fill = HIGHLIGHT_STYLE.fill;
+          style.font = { ...(style.font || {}), ...HIGHLIGHT_STYLE.font };
         }
       }
       cell.s = style;

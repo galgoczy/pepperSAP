@@ -2230,6 +2230,10 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
   // alapján) a közös applySheetFormatting dolga – lentebb, a sor végén fut le,
   // hogy a képernyő, az Excel és a PDF ugyanazokat a színeket használja.
 
+  // A sorok fajtája a formázáshoz; a végére fűzött összesítő sor is kap egyet,
+  // hogy ugyanúgy nézzen ki, mint a képernyőn (és a terminál összeg sárga legyen).
+  const rowTypes = data.map((r) => r._rowType || 'data');
+
   // Add totals row (skip for cash_register_all_detailed, full_monthly_all, and monthly_table since they have their own grandTotal rows)
   if (reportType !== 'cash_register_all_detailed' && reportType !== 'full_monthly_all' && reportType !== 'monthly_table') {
     const cleanTotalsRow = {};
@@ -2240,21 +2244,7 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
       skipHeader: true,
       origin: -1,
     });
-
-    // Update range after adding totals
-    const updatedRange = XLSX.utils.decode_range(ws['!ref']);
-
-    // Style totals row (grand total for cash_register or regular totals)
-    const totalsRowIndex = updatedRange.e.r;
-    for (let col = updatedRange.s.c; col <= updatedRange.e.c; col++) {
-      const cell = XLSX.utils.encode_cell({ r: totalsRowIndex, c: col });
-      if (ws[cell]) {
-        ws[cell].s = {
-          font: { bold: true },
-          fill: { fgColor: { rgb: 'FECACA' } },
-        };
-      }
-    }
+    rowTypes.push('totalsRow');
   }
 
   // Format numeric cells
@@ -2272,7 +2262,7 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
   }
 
   // Keret, sávozás, jelzőszínek, majd a legalján a készítés időbélyege.
-  applySheetFormatting(ws, headers, data.map((r) => r._rowType || 'data'));
+  applySheetFormatting(ws, headers, rowTypes);
   appendGeneratedStamp(ws);
 
   const wb = XLSX.utils.book_new();
