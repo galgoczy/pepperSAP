@@ -82,6 +82,17 @@ export const validateSzepPayments = (cashRegisterSzep, terminalSzep) => {
 // the two together cover the gap.
 const EUR_EXACT_TOLERANCE = 0.5; // Ft – decimal rounding only
 
+// Készpénzes kerekítés: a pénztárgép az ÁFA-kulcsokon a pontos összeget viszi,
+// a fiókba viszont 5 Ft-ra kerekítve érkezik a készpénz. Egy zárás alatt – és
+// pláne egy egész időszak összesítésében – ez néhány forintot mindig elmozdít,
+// anélkül hogy bárki elütött volna bármit. Ezért a fizetési módok ellenőrzése
+// 10 Ft-ot tűr.
+//
+// A kártya–terminál összevetés ezzel szemben marad a szigorúbb 5 Ft-on
+// (REGISTER_TOLERANCE): ott nincs kerekítés, a kártyás összeg mindkét oldalon
+// pontos, tehát ott egy néhány forintos eltérés valódi jel.
+export const PAYMENT_BREAKDOWN_TOLERANCE = 10; // Ft
+
 export const validatePaymentBreakdown = ({
   vatTotal, cash, card, szep, hufDiscrepancy = 0, eurDiscrepancy = 0,
 }) => {
@@ -90,17 +101,17 @@ export const validatePaymentBreakdown = ({
   const gap = Math.abs(difference);
   const elutes = Math.abs(hufDiscrepancy || 0);
   const eur = Math.abs(eurDiscrepancy || 0);
-  const rawOk = gap <= REGISTER_TOLERANCE;
+  const rawOk = gap <= PAYMENT_BREAKDOWN_TOLERANCE;
   // Sign-agnostic: the elütés amount is recorded as a positive figure whichever
   // side it inflated.
   const explainedByDiscrepancy =
-    !rawOk && elutes > 0 && Math.abs(gap - elutes) <= REGISTER_TOLERANCE;
+    !rawOk && elutes > 0 && Math.abs(gap - elutes) <= PAYMENT_BREAKDOWN_TOLERANCE;
   const explainedByEur =
     !rawOk &&
     !explainedByDiscrepancy &&
     eur > 0 &&
     (Math.abs(gap - eur) <= EUR_EXACT_TOLERANCE ||
-      (elutes > 0 && Math.abs(gap - (elutes + eur)) <= REGISTER_TOLERANCE));
+      (elutes > 0 && Math.abs(gap - (elutes + eur)) <= PAYMENT_BREAKDOWN_TOLERANCE));
 
   return {
     paid,

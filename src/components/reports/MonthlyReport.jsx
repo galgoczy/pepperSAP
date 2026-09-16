@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
-import { REGISTER_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown, validateCardPayments, methodCardAdjustmentOf, pooledTerminalFor } from '../../lib/validations';
+import { REGISTER_TOLERANCE, PAYMENT_BREAKDOWN_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown, validateCardPayments, methodCardAdjustmentOf, pooledTerminalFor } from '../../lib/validations';
 import { buildClosureChecks, computeRegisterProtocolMarks, sortClosuresForDisplay, summarizeProtocolChecks } from '../../lib/registerChecks';
 import { useAuth } from '../../hooks/useAuth';
 import { useCumulativeChecks } from '../../hooks/useCumulativeChecks';
@@ -2299,6 +2299,7 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
         {' '}Az összegek forintban (az EUR elütés kivételével).
         {' '}Az <span className="font-semibold">Időszaki</span> piros, ha az ÁFA-kulcsok
         összege nem egyezik a KP + kártya + SZÉP összegével (fölé állva látszik a részletezés).
+        {' '}A készpénz 5 Ft-os kerekítése miatt {PAYMENT_BREAKDOWN_TOLERANCE} Ft-ig nem jelöljük.
         {' '}A <span className="font-semibold">göngyölt</span> mellett pipálható, hogy ellenőrizve
         van – a pipa minden adminnak látszik.
         {' '}A <span className="font-semibold">Jkv.</span> zöld pipa: az időszak minden
@@ -2565,7 +2566,8 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
         „N egység” jelzés (fölé állva látszik, hol dolgozott).
         {' '}Az összegek forintban (az EUR elütés kivételével).
         {' '}Az <span className="font-semibold">Időszaki</span> piros, ha az ÁFA-kulcsok összege nem
-        egyezik a KP + kártya + SZÉP összegével.
+        egyezik a KP + kártya + SZÉP összegével. A készpénz 5 Ft-os kerekítése miatt{' '}
+        {PAYMENT_BREAKDOWN_TOLERANCE} Ft-ig nem jelöljük.
         {' '}A <span className="font-semibold">göngyölt</span> mellett pipálható, hogy ellenőrizve van.
         {' '}A <span className="font-semibold">Jkv.</span> zöld pipa: az időszak minden
         jegyzőkönyve megvan és a részletes jelentésben ellenőrizve (pipálva) van.
