@@ -82,36 +82,42 @@ export const validateSzepPayments = (cashRegisterSzep, terminalSzep) => {
 // the two together cover the gap.
 const EUR_EXACT_TOLERANCE = 0.5; // Ft – decimal rounding only
 
-// Készpénzes kerekítés: a pénztárgép az ÁFA-kulcsokon a pontos összeget viszi,
-// a fiókba viszont 5 Ft-ra kerekítve érkezik a készpénz. Egy zárás alatt – és
-// pláne egy egész időszak összesítésében – ez néhány forintot mindig elmozdít,
-// anélkül hogy bárki elütött volna bármit. Ezért a fizetési módok ellenőrzése
-// 10 Ft-ot tűr.
+// IDŐSZAKI összesítés tűréshatára. Zárásonként minden pontosan kijön, egy
+// hónap összeadásakor viszont nem: a készpénz 5 Ft-ra kerekítve érkezik a
+// fiókba, miközben az ÁFA-kulcsok a pontos összeget viszik, így húsz-egynéhány
+// zárás után néhány forint mindig elcsúszik. Ugyanez rontja el az EUR elütés
+// összevetését is: naponta pontos, összeadva például 6326 Ft eltérés áll
+// szemben 6328 Ft EUR elütéssel.
 //
-// A kártya–terminál összevetés ezzel szemben marad a szigorúbb 5 Ft-on
-// (REGISTER_TOLERANCE): ott nincs kerekítés, a kártyás összeg mindkét oldalon
-// pontos, tehát ott egy néhány forintos eltérés valódi jel.
-export const PAYMENT_BREAKDOWN_TOLERANCE = 10; // Ft
+// Ezért CSAK az időszakra összegzett jelentések (összes egység pénztárgép –
+// egyszerű és könyvelés, valamint ezek Excel exportja) adják át ezt a
+// tűréshatárt. A napi rögzítés, a részletes jelentés és a jegyzőkönyv jelölés
+// zárásonként dolgozik, ott marad a szigorú 5 Ft / pontos EUR egyezés.
+export const PERIOD_TOLERANCE = 10; // Ft
 
+// `tolerance`    – a forintos összevetéseké (alap: zárás szintű 5 Ft)
+// `eurTolerance` – az EUR elütés összevetéséé (alap: pontos egyezés)
 export const validatePaymentBreakdown = ({
   vatTotal, cash, card, szep, hufDiscrepancy = 0, eurDiscrepancy = 0,
+  tolerance = REGISTER_TOLERANCE,
+  eurTolerance = EUR_EXACT_TOLERANCE,
 }) => {
   const paid = (cash || 0) + (card || 0) + (szep || 0);
   const difference = (vatTotal || 0) - paid;
   const gap = Math.abs(difference);
   const elutes = Math.abs(hufDiscrepancy || 0);
   const eur = Math.abs(eurDiscrepancy || 0);
-  const rawOk = gap <= PAYMENT_BREAKDOWN_TOLERANCE;
+  const rawOk = gap <= tolerance;
   // Sign-agnostic: the elütés amount is recorded as a positive figure whichever
   // side it inflated.
   const explainedByDiscrepancy =
-    !rawOk && elutes > 0 && Math.abs(gap - elutes) <= PAYMENT_BREAKDOWN_TOLERANCE;
+    !rawOk && elutes > 0 && Math.abs(gap - elutes) <= tolerance;
   const explainedByEur =
     !rawOk &&
     !explainedByDiscrepancy &&
     eur > 0 &&
-    (Math.abs(gap - eur) <= EUR_EXACT_TOLERANCE ||
-      (elutes > 0 && Math.abs(gap - (elutes + eur)) <= PAYMENT_BREAKDOWN_TOLERANCE));
+    (Math.abs(gap - eur) <= eurTolerance ||
+      (elutes > 0 && Math.abs(gap - (elutes + eur)) <= Math.max(tolerance, eurTolerance)));
 
   return {
     paid,

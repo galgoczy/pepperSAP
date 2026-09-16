@@ -7,7 +7,7 @@ import { Modal, Button } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatDate, formatCurrency } from '../../lib/utils';
 import { fetchHouseCashSeries, fetchCentralHouseCashSeries } from '../../lib/houseCashSeries';
-import { isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown } from '../../lib/validations';
+import { isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown, PERIOD_TOLERANCE } from '../../lib/validations';
 import { buildClosureChecks, computeRegisterProtocolMarks, sortClosuresForDisplay, summarizeProtocolChecks } from '../../lib/registerChecks';
 import { fetchCumulativeCheckSet } from '../../hooks/useCumulativeChecks';
 import { fetchProtocolCheckSet } from '../../hooks/useProtocolChecks';
@@ -1322,6 +1322,8 @@ async function fetchCashRegisterAllUnitsSimpleExport(startDate, endDate) {
         const check = validatePaymentBreakdown({
           vatTotal: turnover, cash: reg.cash, card: reg.card, szep: reg.szep,
           hufDiscrepancy: reg.huf, eurDiscrepancy: reg.eur,
+          // Időszaki összesítés: ugyanaz a tűréshatár, mint a képernyőn.
+          tolerance: PERIOD_TOLERANCE, eurTolerance: PERIOD_TOLERANCE,
         });
         const paid = check.paid;
         const paymentGap = check.applicable && !check.isValid;
@@ -1448,6 +1450,8 @@ async function fetchCashRegisterAccountingExport(startDate, endDate) {
       const check = validatePaymentBreakdown({
         vatTotal: total, cash: reg.cash, card: reg.card, szep: reg.szep,
         hufDiscrepancy: reg.huf, eurDiscrepancy: reg.eur,
+        // Időszaki összesítés: ugyanaz a tűréshatár, mint a képernyőn.
+        tolerance: PERIOD_TOLERANCE, eurTolerance: PERIOD_TOLERANCE,
       });
       const paymentGap = check.applicable && !check.isValid;
       // Ugyanaz a címke, mint a képernyőn: zárójelben az egység; több egységnél

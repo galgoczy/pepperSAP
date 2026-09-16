@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, LoadingSpinner, Badge } from '../common';
 import { supabase } from '../../lib/supabase';
 import { formatCurrency, formatDate } from '../../lib/utils';
-import { REGISTER_TOLERANCE, PAYMENT_BREAKDOWN_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown, validateCardPayments, methodCardAdjustmentOf, pooledTerminalFor } from '../../lib/validations';
+import { REGISTER_TOLERANCE, PERIOD_TOLERANCE, hasDocumentedDiscrepancy, isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown, validateCardPayments, methodCardAdjustmentOf, pooledTerminalFor } from '../../lib/validations';
 import { buildClosureChecks, computeRegisterProtocolMarks, sortClosuresForDisplay, summarizeProtocolChecks } from '../../lib/registerChecks';
 import { useAuth } from '../../hooks/useAuth';
 import { useCumulativeChecks } from '../../hooks/useCumulativeChecks';
@@ -2256,6 +2256,10 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
   // Időszaki check: the VAT buckets (borravaló nélkül) must add up to what the
   // payment methods (KP + kártya + SZÉP) add up to over the period.
   // A recorded forint elütés (jegyzőkönyv) of the same size explains the gap.
+  // Egy egész időszak összeadásakor a napi készpénz-kerekítések néhány
+  // forintot elmozdítanak, ezért itt (és csak itt) enged a PERIOD_TOLERANCE —
+  // az EUR elütés összevetésében is, különben a napi pontos egyezés összegezve
+  // elromlik (lásd validations.js).
   const paymentGapOf = (r) => {
     const turnover = (r.vat_0 || 0) + (r.vat_5 || 0) + (r.vat_18 || 0) + (r.vat_27 || 0);
     const check = validatePaymentBreakdown({
@@ -2265,6 +2269,8 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
       szep: r.szep,
       hufDiscrepancy: r.huf,
       eurDiscrepancy: r.eur,
+      tolerance: PERIOD_TOLERANCE,
+      eurTolerance: PERIOD_TOLERANCE,
     });
     return { turnover, paid: check.paid, diff: check.difference, gap: check.applicable && !check.isValid, r };
   };
@@ -2299,7 +2305,9 @@ function CashRegisterAllUnitsSimpleReport({ data, totals, startDate, endDate }) 
         {' '}Az összegek forintban (az EUR elütés kivételével).
         {' '}Az <span className="font-semibold">Időszaki</span> piros, ha az ÁFA-kulcsok
         összege nem egyezik a KP + kártya + SZÉP összegével (fölé állva látszik a részletezés).
-        {' '}A készpénz 5 Ft-os kerekítése miatt {PAYMENT_BREAKDOWN_TOLERANCE} Ft-ig nem jelöljük.
+        {' '}Ez időszaki összesítés, ezért a napi készpénz-kerekítések miatt{' '}
+        {PERIOD_TOLERANCE} Ft-ig nem jelöljük – a rögzített Ft és EUR elütéssel való
+        összevetésben is. A napi rögzítés ettől függetlenül szigorú marad.
         {' '}A <span className="font-semibold">göngyölt</span> mellett pipálható, hogy ellenőrizve
         van – a pipa minden adminnak látszik.
         {' '}A <span className="font-semibold">Jkv.</span> zöld pipa: az időszak minden
@@ -2493,7 +2501,8 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
   const [savingCheck, setSavingCheck] = useState(null);
 
   // Ugyanaz az ellenőrzés, mint az egyszerű nézetben: az ÁFA-kulcsok összegének
-  // ki kell adnia a KP + kártya + SZÉP összegét, a rögzített Ft elütést beszámítva.
+  // ki kell adnia a KP + kártya + SZÉP összegét, a rögzített Ft elütést beszámítva,
+  // időszaki tűréshatárral (a napi kerekítések összeadódnak).
   const paymentGapOf = (r) => {
     const check = validatePaymentBreakdown({
       vatTotal: r.total,
@@ -2502,6 +2511,8 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
       szep: r.szep,
       hufDiscrepancy: r.huf,
       eurDiscrepancy: r.eur,
+      tolerance: PERIOD_TOLERANCE,
+      eurTolerance: PERIOD_TOLERANCE,
     });
     return { paid: check.paid, diff: check.difference, gap: check.applicable && !check.isValid, r };
   };
@@ -2566,8 +2577,9 @@ function CashRegisterAccountingReport({ data, totals, startDate, endDate }) {
         „N egység” jelzés (fölé állva látszik, hol dolgozott).
         {' '}Az összegek forintban (az EUR elütés kivételével).
         {' '}Az <span className="font-semibold">Időszaki</span> piros, ha az ÁFA-kulcsok összege nem
-        egyezik a KP + kártya + SZÉP összegével. A készpénz 5 Ft-os kerekítése miatt{' '}
-        {PAYMENT_BREAKDOWN_TOLERANCE} Ft-ig nem jelöljük.
+        egyezik a KP + kártya + SZÉP összegével. Ez időszaki összesítés, ezért a napi
+        készpénz-kerekítések miatt {PERIOD_TOLERANCE} Ft-ig nem jelöljük – a rögzített Ft és
+        EUR elütéssel való összevetésben is. A napi rögzítés szigorú marad.
         {' '}A <span className="font-semibold">göngyölt</span> mellett pipálható, hogy ellenőrizve van.
         {' '}A <span className="font-semibold">Jkv.</span> zöld pipa: az időszak minden
         jegyzőkönyve megvan és a részletes jelentésben ellenőrizve (pipálva) van.
