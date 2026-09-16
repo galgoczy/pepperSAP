@@ -28,7 +28,7 @@ import { Card, Button, Modal } from '../components/common';
 import { supabase } from '../lib/supabase';
 import { formatDate, cn } from '../lib/utils';
 import toast from 'react-hot-toast';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx-js-style';
 
 // Campaign types
 const CAMPAIGN_TYPES = [

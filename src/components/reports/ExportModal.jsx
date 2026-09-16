@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Download, FileSpreadsheet, FileText, FileDown } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Modal, Button } from '../common';
@@ -11,9 +10,16 @@ import { isBlankClosure, hufDiscrepancyOf, validatePaymentBreakdown, PERIOD_TOLE
 import { buildClosureChecks, computeRegisterProtocolMarks, sortClosuresForDisplay, summarizeProtocolChecks } from '../../lib/registerChecks';
 import { fetchCumulativeCheckSet } from '../../hooks/useCumulativeChecks';
 import { fetchProtocolCheckSet } from '../../hooks/useProtocolChecks';
+import { loadXLSX, applySheetFormatting, appendGeneratedStamp, generatedAtText } from '../../lib/xlsxStyle';
 import { useAuth } from '../../hooks/useAuth';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import toast from 'react-hot-toast';
+
+// A táblázatkezelő könyvtárat csak az első exportnál töltjük le (loadXLSX),
+// hogy a Jelentések oldal megnyitása ne húzza be a teljes SheetJS-t. A
+// handleExport minden ág előtt megvárja, ezért az itteni segédfüggvények
+// nyugodtan használhatják a modul szintű XLSX-et.
+let XLSX = null;
 
 // Report type labels
 const reportTypeLabels = {
@@ -64,6 +70,8 @@ export default function ExportModal({ isOpen, onClose, startDate, endDate, unitI
     setLoading(true);
 
     try {
+      // Az exportban minden ág ezt használja, ezért itt, egy helyen várjuk meg.
+      XLSX = await loadXLSX();
       let data = [];
       let headers = [];
       let filename = '';
@@ -2145,6 +2153,10 @@ async function exportCombined(sections, filename, format) {
       const aoa = [sec.headers];
       sec.data.forEach((r) => aoa.push(sec.headers.map((h) => (r[h] ?? ''))));
       const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = sec.headers.map((h) => ({ wch: Math.max(h.length + 2, 15) }));
+      ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+      applySheetFormatting(ws, sec.headers, sec.data.map((r) => r._rowType || 'data'));
+      appendGeneratedStamp(ws);
       XLSX.utils.book_append_sheet(wb, ws, sec.name.substring(0, 31));
     });
     XLSX.writeFile(wb, `${filename}.xlsx`);
@@ -2171,6 +2183,7 @@ async function exportCombined(sections, filename, format) {
         styles: { fontSize: 7 },
         headStyles: { fillColor: [211, 47, 47] },
       });
+      drawGeneratedStamp(doc);
     });
     doc.save(`${filename}.pdf`);
     return;
@@ -2203,9 +2216,6 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
 
   const ws = XLSX.utils.json_to_sheet(cleanData);
 
-  // Get the range
-  const range = XLSX.utils.decode_range(ws['!ref']);
-
   // Set column widths
   const colWidths = headers.map((key) => ({
     wch: Math.max(key.length + 2, 15),
@@ -2216,91 +2226,9 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
   // SheetJS builds ignore the property, in which case View > Freeze Panes does it).
   ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
 
-  // Style header row
-  for (let col = range.s.c; col <= range.e.c; col++) {
-    const headerCell = XLSX.utils.encode_cell({ r: 0, c: col });
-    if (ws[headerCell]) {
-      ws[headerCell].s = {
-        fill: { fgColor: { rgb: 'D32F2F' } },
-        font: { bold: true, color: { rgb: 'FFFFFF' } },
-        alignment: { horizontal: 'center' },
-      };
-    }
-  }
-
-  // For cash_register, cash_register_all_detailed, full_monthly_all and monthly_table, style rows based on _rowType
-  if (reportType === 'cash_register' || reportType === 'cash_register_all_detailed' || reportType === 'full_monthly_all' || reportType === 'monthly_table') {
-    for (let row = 1; row <= range.e.r; row++) {
-      const rowData = data[row - 1];
-      if (rowData && rowData._rowType) {
-        let cellStyle = null;
-
-        if (rowData._rowType === 'unitHeader') {
-          // Unit header: bold, dark red background with white text
-          cellStyle = {
-            font: { bold: true, color: { rgb: 'FFFFFF' } },
-            fill: { fgColor: { rgb: 'D32F2F' } },
-          };
-        } else if (rowData._rowType === 'registerHeader') {
-          // Register header: bold, dark blue background with white text
-          cellStyle = {
-            font: { bold: true, color: { rgb: 'FFFFFF' } },
-            fill: { fgColor: { rgb: '3B82F6' } },
-          };
-        } else if (rowData._rowType === 'sectionHeader' || rowData._rowType === 'grandTotalHeader') {
-          // Section header: bold, dark red background with white text
-          cellStyle = {
-            font: { bold: true, color: { rgb: 'FFFFFF' } },
-            fill: { fgColor: { rgb: 'D32F2F' } },
-          };
-        } else if (rowData._rowType === 'eventsHeader' || rowData._rowType === 'eventsListColumns') {
-          // Events headers: bold, dark gray background with white text
-          cellStyle = {
-            font: { bold: true, color: { rgb: 'FFFFFF' } },
-            fill: { fgColor: { rgb: '4B5563' } },
-          };
-        } else if (rowData._rowType === 'eventsListHeader') {
-          // Events list header: bold, medium gray background
-          cellStyle = {
-            font: { bold: true },
-            fill: { fgColor: { rgb: 'D1D5DB' } },
-          };
-        } else if (rowData._rowType === 'subtotal' || rowData._rowType === 'eventsSubtotal') {
-          // Subtotal: bold, gray background
-          cellStyle = {
-            font: { bold: true },
-            fill: { fgColor: { rgb: 'E5E7EB' } },
-          };
-        } else if (rowData._rowType === 'unitTotal') {
-          // Unit total: bold, light red background
-          cellStyle = {
-            font: { bold: true },
-            fill: { fgColor: { rgb: 'FECACA' } },
-          };
-        } else if (rowData._rowType === 'grandTotalRow') {
-          // Grand total row: regular, light gray background
-          cellStyle = {
-            fill: { fgColor: { rgb: 'F3F4F6' } },
-          };
-        } else if (rowData._rowType === 'grandTotal') {
-          // Grand total: bold, dark red background with white text
-          cellStyle = {
-            font: { bold: true, color: { rgb: 'FFFFFF' } },
-            fill: { fgColor: { rgb: 'B91C1C' } },
-          };
-        }
-
-        if (cellStyle) {
-          for (let col = range.s.c; col <= range.e.c; col++) {
-            const cell = XLSX.utils.encode_cell({ r: row, c: col });
-            if (ws[cell]) {
-              ws[cell].s = cellStyle;
-            }
-          }
-        }
-      }
-    }
-  }
+  // A fejléc, a keret, a sávozás és a szakasz-/összesítő sorok háttere (_rowType
+  // alapján) a közös applySheetFormatting dolga – lentebb, a sor végén fut le,
+  // hogy a képernyő, az Excel és a PDF ugyanazokat a színeket használja.
 
   // Add totals row (skip for cash_register_all_detailed, full_monthly_all, and monthly_table since they have their own grandTotal rows)
   if (reportType !== 'cash_register_all_detailed' && reportType !== 'full_monthly_all' && reportType !== 'monthly_table') {
@@ -2343,6 +2271,10 @@ function exportToExcel(data, headers, totalsRow, filename, reportType) {
     }
   }
 
+  // Keret, sávozás, jelzőszínek, majd a legalján a készítés időbélyege.
+  applySheetFormatting(ws, headers, data.map((r) => r._rowType || 'data'));
+  appendGeneratedStamp(ws);
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Riport');
   XLSX.writeFile(wb, `${filename}.xlsx`);
@@ -2356,6 +2288,16 @@ function sanitizeForPdf(text) {
     .replace(/Ő/g, 'Ö')
     .replace(/ű/g, 'ü')
     .replace(/Ű/g, 'Ü');
+}
+
+// "Készült: ..." közvetlenül a táblázat alá, pár milliméterrel lejjebb. Ha ott
+// már nem férne el, nem erőltetjük: az oldal alján futó szöveg úgyis viszi.
+function drawGeneratedStamp(doc) {
+  const y = (doc.lastAutoTable?.finalY ?? 0) + 10;
+  if (y > doc.internal.pageSize.height - 14) return;
+  doc.setFontSize(8);
+  doc.setTextColor(120);
+  doc.text(sanitizeForPdf(generatedAtText()), 14, y);
 }
 
 async function exportToPdf(data, headers, totalsRow, filename, reportType, startDate, endDate, unitName = '', selectedYearMonth = '') {
@@ -2519,6 +2461,9 @@ async function exportToPdf(data, headers, totalsRow, filename, reportType, start
     },
     margin: { top: 48 },
   });
+
+  // Időbélyeg a táblázat alatt (az oldal alján lévő futó szöveg mellett).
+  drawGeneratedStamp(doc);
 
   // Footer with generation date
   const pageCount = doc.internal.getNumberOfPages();

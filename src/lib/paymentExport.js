@@ -8,7 +8,7 @@
 // oszlopokban, és a sor háttérszíneként — ugyanazzal a színnel, amit a
 // Beérkezett számlák lista is használ (fizetett > szkennelt > beérkezett).
 
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx-js-style';
 import { PAYMENT_METHODS, formatDate } from './utils';
 import { defaultVatRate, vatAmountOf, VAT_RATE_CUSTOM } from './expenseVat';
 import { PAYMENT_KIND_META } from '../hooks/usePaymentItems';

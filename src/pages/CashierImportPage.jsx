@@ -17,7 +17,7 @@ import { Card, Button, Modal } from '../components/common';
 import { supabase } from '../lib/supabase';
 import { formatCurrency, cn } from '../lib/utils';
 import toast from 'react-hot-toast';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx-js-style';
 
 // Sheet names to skip (not unit data)
 const SKIP_SHEETS = ['2026 éves', '202602', '202601', 'ne használd'];

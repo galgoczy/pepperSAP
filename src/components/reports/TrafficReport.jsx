@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Download, FileSpreadsheet, ChevronLeft, ChevronRight } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../../lib/supabase';
 import { fetchHouseCashSeries, openingForDate } from '../../lib/houseCashSeries';
 import { Card, Button, LoadingSpinner } from '../common';
 import { formatCurrency } from '../../lib/utils';
+import { loadXLSX, applySheetFormatting, appendGeneratedStamp, generatedAtText } from '../../lib/xlsxStyle';
 
 const MONTH_NAMES = [
   'Január', 'Február', 'Március', 'Április', 'Május', 'Június',
@@ -198,7 +198,9 @@ export default function TrafficReport({ unitId, unitName = '', yearMonth: ymProp
 
   const fileBase = `forgalmi_jelentes_${(unitName || 'egyseg').toLowerCase().replace(/\s+/g, '_')}_${ym}`;
 
-  const handleExcel = () => {
+  const handleExcel = async () => {
+    // A SheetJS-t csak itt, a letöltéskor húzzuk be (lásd lib/xlsxStyle.js).
+    const XLSX = await loadXLSX();
     const aoa = [headers];
     rows.forEach((r) => aoa.push(rowValues(r)));
     aoa.push([
@@ -209,6 +211,13 @@ export default function TrafficReport({ unitId, unitName = '', yearMonth: ymProp
     ]);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws['!cols'] = headers.map((h, i) => ({ wch: i === 0 ? 12 : (h === 'Megjegyzések' ? 50 : 14) }));
+    ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+    // Ugyanaz a formázás, mint a többi letölthető jelentésnél: piros fejléc,
+    // sávozott sorok, keret, és a legalján a készítés időbélyege. Az utolsó sor
+    // az "Összesen", azt az összesítő stílus jelöli.
+    const rowTypes = rows.map(() => 'data').concat('subtotal');
+    applySheetFormatting(ws, headers, rowTypes);
+    appendGeneratedStamp(ws);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Forgalmi jelentés');
     XLSX.writeFile(wb, `${fileBase}.xlsx`);
@@ -271,6 +280,14 @@ export default function TrafficReport({ unitId, unitName = '', yearMonth: ymProp
       })(),
       margin: { left: 8, right: 8 },
     });
+
+    // Időbélyeg a táblázat alatt, ugyanúgy, mint a jelentések exportjában.
+    const stampY = (doc.lastAutoTable?.finalY ?? 0) + 8;
+    if (stampY <= doc.internal.pageSize.getHeight() - 8) {
+      doc.setFontSize(8);
+      doc.setTextColor(120);
+      doc.text(sanitizeForPdf(generatedAtText()), 8, stampY);
+    }
 
     doc.save(`${fileBase}.pdf`);
   };
