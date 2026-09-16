@@ -36,12 +36,12 @@ const EMAIL_ROLE_MAP = {
   'ttk@pepperhouse.hu': { role: 'unit', unit_name: 'TTK Kantin' },
   // Accountant (read-only)
   'konyveles@pepperhouse.hu': { role: 'accountant', unit_name: null },
-  // Külső könyvelő (read-only, CSAK a könyvelési pénztárgép jelentés).
-  // A profilt az admin hozza létre az adatbázisban (lásd a
-  // 20260916_external_accountant_role.sql migrációt); ez a sor csak akkor
-  // számít, ha a profil még nem létezik. Nem @pepperhouse.hu cím is lehet –
-  // az ilyen felhasználó email + jelszóval lép be, nem Microsofttal.
-  // 'konyvelo@kulsocegneve.hu': { role: 'ext_accountant', unit_name: null },
+  // Külső könyvelő (read-only, CSAK a könyvelési pénztárgép jelentés) ide NEM
+  // kerül: a privilegizált szerepköröket (admin, accountant, ext_accountant) a
+  // user_profiles őr-triggere nem engedi önkiszolgálóan létrehozni, ezért az
+  // ilyen profilt az adminnak kell felvennie az adatbázisban – lásd a
+  // 20260916_external_accountant_role.sql migráció végét. A külső könyvelőnek
+  // nem kell @pepperhouse.hu cím: email + jelszóval lép be, nem Microsofttal.
 };
 
 // Az a két szerepkör, amelyik csak olvas. A külső könyvelő mindenben úgy
