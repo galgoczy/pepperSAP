@@ -1,11 +1,20 @@
 import { useState, useEffect } from 'react';
-import { Save, Trash2 } from 'lucide-react';
+import { Save, Trash2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useExpenses } from '../../hooks/useExpenses';
 import { useUnits } from '../../hooks/useSupabase';
 import { Button, Input, Select, DatePicker, ConfirmModal } from '../common';
 import { Textarea } from '../common/Input';
-import { getToday } from '../../lib/utils';
+import { getToday, formatCurrency } from '../../lib/utils';
+import {
+  VAT_RATE_OPTIONS,
+  VAT_RATE_CUSTOM,
+  defaultVatRate,
+  vatAmountOf,
+} from '../../lib/expenseVat';
+
+const rateLabel = (rate) =>
+  rate === VAT_RATE_CUSTOM ? 'Egyedi (ÁFA forintban)' : `${rate}%`;
 
 export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDelete }) {
   const { isAdmin, unitId: userUnitId } = useAuth();
@@ -13,6 +22,9 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
   const { createExpense, updateExpense, deleteExpense } = useExpenses();
   const [loading, setLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  // Ha a kategória váltása miatt magától változott az ÁFA kulcs, azt látványosan
+  // kiírjuk – nehogy észrevétlenül rossz kulccsal mentsen valaki.
+  const [vatNotice, setVatNotice] = useState(null);
   const [formData, setFormData] = useState({
     unit_id: unitId || userUnitId || '',
     supplier_name: '',
@@ -25,11 +37,16 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
     payment_deadline: '',
     fulfillment_date: '',
     is_official: true,
+    is_employee_invoice: false,
+    vat_rate: defaultVatRate({ isOfficial: true, isEmployeeInvoice: false }),
+    vat_amount: '',
     notes: '',
   });
 
   useEffect(() => {
     if (expense) {
+      const isOfficial = expense.is_official ?? true;
+      const isEmployeeInvoice = expense.is_employee_invoice ?? false;
       setFormData({
         unit_id: expense.unit_id || unitId || userUnitId || '',
         supplier_name: expense.supplier_name || '',
@@ -41,9 +58,15 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
         invoice_date: expense.invoice_date || getToday(),
         payment_deadline: expense.payment_deadline || '',
         fulfillment_date: expense.fulfillment_date || '',
-        is_official: expense.is_official ?? true,
+        is_official: isOfficial,
+        is_employee_invoice: isEmployeeInvoice,
+        // A migráció előtt rögzített számláknál a megállapodás szerinti kulcs:
+        // hivatalosnál 27%, nem hivatalosnál 0%.
+        vat_rate: expense.vat_rate || defaultVatRate({ isOfficial, isEmployeeInvoice }),
+        vat_amount: expense.vat_amount ?? '',
         notes: expense.notes || '',
       });
+      setVatNotice(null);
     }
   }, [expense, unitId, userUnitId]);
 
@@ -51,15 +74,83 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  // A hivatalos/nem hivatalos váltás átállítja az ÁFA kulcsot az új kategória
+  // alapértelmezésére, és erről szólunk is. Dolgozói számlánál a kulcs mindig
+  // 27% marad, azt a kategória nem írja felül.
+  const handleOfficialChange = (checked) => {
+    const nextRate = defaultVatRate({
+      isOfficial: checked,
+      isEmployeeInvoice: formData.is_employee_invoice,
+    });
+    if (!formData.is_employee_invoice && formData.vat_rate !== nextRate) {
+      setVatNotice({
+        from: formData.vat_rate,
+        to: nextRate,
+        reason: checked ? 'a számla hivatalos lett' : 'a számla nem hivatalos lett',
+      });
+      setFormData((prev) => ({
+        ...prev,
+        is_official: checked,
+        vat_rate: nextRate,
+        vat_amount: '',
+      }));
+      return;
+    }
+    setVatNotice(null);
+    setFormData((prev) => ({ ...prev, is_official: checked }));
+  };
+
+  const handleEmployeeChange = (checked) => {
+    const nextRate = defaultVatRate({
+      isOfficial: formData.is_official,
+      isEmployeeInvoice: checked,
+    });
+    if (checked && formData.vat_rate !== nextRate) {
+      setVatNotice({
+        from: formData.vat_rate,
+        to: nextRate,
+        reason: 'dolgozói számla lett',
+      });
+      setFormData((prev) => ({
+        ...prev,
+        is_employee_invoice: checked,
+        vat_rate: nextRate,
+        vat_amount: '',
+      }));
+      return;
+    }
+    setVatNotice(null);
+    setFormData((prev) => ({ ...prev, is_employee_invoice: checked }));
+  };
+
+  // Kézi választás: ez a felhasználó döntése, a figyelmeztetés eltűnhet.
+  const handleVatRateChange = (value) => {
+    setVatNotice(null);
+    setFormData((prev) => ({
+      ...prev,
+      vat_rate: value,
+      vat_amount: value === VAT_RATE_CUSTOM ? prev.vat_amount : '',
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
+      // Az ÁFA összeg csak egyedi kulcsnál értelmes; egyébként NULL-t mentünk,
+      // hogy egy korábban beírt érték ne maradjon ott félrevezetően.
+      const payload = {
+        ...formData,
+        vat_amount:
+          formData.vat_rate === VAT_RATE_CUSTOM
+            ? (formData.vat_amount === '' ? null : formData.vat_amount)
+            : null,
+      };
       if (expense) {
-        await updateExpense(expense.id, formData);
+        await updateExpense(expense.id, payload);
       } else {
-        await createExpense(formData);
+        await createExpense(payload);
       }
       onSuccess?.();
     } catch (error) {
@@ -84,7 +175,13 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
     }
   };
 
-  const restaurantUnits = units.filter((u) => u.type === 'restaurant');
+  // Admins can book a cost on ANY unit — the restaurants, the events unit
+  // (Rendezvény) and the central one (Központ) too — so the selector is not
+  // limited to type === 'restaurant'. Restaurants are listed first.
+  const selectableUnits = [...units].sort((a, b) => {
+    const rank = (u) => (u.type === 'restaurant' ? 0 : 1);
+    return rank(a) - rank(b) || (a.name || '').localeCompare(b.name || '', 'hu');
+  });
 
   const paymentMethodOptions = [
     { value: 'cash', label: 'Készpénz' },
@@ -94,6 +191,10 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
     { value: 'clearing', label: 'Elszámoló' },
   ];
 
+  const grossAmount = parseFloat(formData.amount) || 0;
+  const vatAmount = vatAmountOf(formData);
+  const showVatPreview = grossAmount > 0 || vatAmount > 0;
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Unit selector for admin */}
@@ -102,7 +203,7 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
           label="Egység"
           value={formData.unit_id}
           onChange={(e) => handleChange('unit_id', e.target.value)}
-          options={restaurantUnits.map((u) => ({ value: u.id, label: u.name }))}
+          options={selectableUnits.map((u) => ({ value: u.id, label: u.name }))}
           required
         />
       )}
@@ -144,6 +245,102 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
         </div>
       </div>
 
+      {/* Kategória és ÁFA – közvetlenül az összeg után, mert ez dönti el, melyik
+          pénztárcát terheli a számla és mekkora összeggel. */}
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-3">
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              id="is_official"
+              checked={formData.is_official}
+              onChange={(e) => handleOfficialChange(e.target.checked)}
+              className="h-4 w-4 mt-0.5 text-pepper-red rounded border-gray-300 focus:ring-pepper-red"
+            />
+            <span className="text-sm text-gray-700">
+              Hivatalos kifizetés (számlával)
+              <span className="block text-xs text-gray-500">
+                Készpénznél a Házipénztárt terheli. Kikapcsolva a Tartalékot.
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              id="is_employee_invoice"
+              checked={formData.is_employee_invoice}
+              onChange={(e) => handleEmployeeChange(e.target.checked)}
+              className="h-4 w-4 mt-0.5 text-pepper-red rounded border-gray-300 focus:ring-pepper-red"
+            />
+            <span className="text-sm text-gray-700">
+              Dolgozói számla
+              <span className="block text-xs text-gray-500">
+                A teljes összeg a Központ készpénzéből megy, az egység tartalékát csak az ÁFA fele
+                terheli.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <Select
+            label="ÁFA kulcs"
+            value={formData.vat_rate}
+            onChange={(e) => handleVatRateChange(e.target.value)}
+            options={VAT_RATE_OPTIONS}
+          />
+          {formData.vat_rate === VAT_RATE_CUSTOM && (
+            <Input
+              label="A számla ÁFA tartalma"
+              type="number"
+              step="0.01"
+              value={formData.vat_amount}
+              onChange={(e) => handleChange('vat_amount', e.target.value)}
+              suffix="Ft"
+              required
+              placeholder="Írd be a számláról"
+            />
+          )}
+        </div>
+
+        {vatNotice && (
+          <div className="rounded-lg border-2 border-amber-500 bg-amber-50 p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="text-sm text-amber-900">
+                <p className="font-semibold">
+                  Az ÁFA kulcs megváltozott: {rateLabel(vatNotice.from)} → {rateLabel(vatNotice.to)}
+                </p>
+                <p className="mt-1 text-xs">
+                  Azért, mert {vatNotice.reason}. Ha nem ez a helyes, állítsd át kézzel az ÁFA kulcsot.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showVatPreview && (
+          <div className="text-xs text-gray-600">
+            {formData.vat_rate === VAT_RATE_CUSTOM ? (
+              <>ÁFA tartalom (kézzel megadva): <span className="font-semibold">{formatCurrency(vatAmount, formData.currency)}</span></>
+            ) : (
+              <>
+                ÁFA tartalom a bruttó összegből:{' '}
+                <span className="font-semibold">{formatCurrency(vatAmount, formData.currency)}</span>
+              </>
+            )}
+            {formData.is_employee_invoice && (
+              <span className="block mt-1 text-gray-800">
+                Központ készpénze: <span className="font-semibold">−{formatCurrency(grossAmount, formData.currency)}</span>
+                {' · '}
+                Egység tartaléka: <span className="font-semibold">−{formatCurrency(vatAmount / 2, formData.currency)}</span>
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
       <Input
         label="Tétel megnevezése"
         value={formData.item_description}
@@ -178,19 +375,6 @@ export default function ExpenseForm({ expense, unitId, onSuccess, onCancel, onDe
           value={formData.fulfillment_date}
           onChange={(e) => handleChange('fulfillment_date', e.target.value)}
         />
-      </div>
-
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="is_official"
-          checked={formData.is_official}
-          onChange={(e) => handleChange('is_official', e.target.checked)}
-          className="h-4 w-4 text-pepper-red rounded border-gray-300 focus:ring-pepper-red"
-        />
-        <label htmlFor="is_official" className="text-sm text-gray-700">
-          Hivatalos kifizetés (számlával)
-        </label>
       </div>
 
       <Textarea

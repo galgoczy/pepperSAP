@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { formatDate } from '../lib/utils';
+import { formatDate, getDisplayName } from '../lib/utils';
 
 const MESSAGE_TYPES = {
   text: { icon: MessageSquare, label: 'Üzenet' },
@@ -45,6 +45,10 @@ export default function WorkspacePage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [subscription, setSubscription] = useState(null);
+  // channelId -> number of unread messages
+  const [unreadCounts, setUnreadCounts] = useState({});
+  // Timestamp of the user's previous visit, used to draw the "new messages" divider
+  const [unreadSince, setUnreadSince] = useState(null);
 
   // Message input state
   const [messageType, setMessageType] = useState('text');
@@ -79,21 +83,33 @@ export default function WorkspacePage() {
 
   // Fetch users for mentions and assignees
   const fetchUsers = useCallback(async () => {
+    // NOTE: user_profiles has no email column (email lives on auth.users), so
+    // selecting it would error out the whole query and leave every author as
+    // "Ismeretlen". Only request columns that exist.
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('id, full_name, email, role');
+      .select('id, full_name, role');
 
+    const usersMap = {};
     if (error) {
       console.error('Felhasználók betöltési hiba:', error);
     } else if (data) {
       console.log('Felhasználók betöltve:', data.length);
-      const usersMap = {};
       data.forEach(u => {
         usersMap[u.id] = u;
       });
-      setUsers(usersMap);
     }
-  }, []);
+    // Always include the current user so their own messages resolve to a name
+    // even if user_profiles is unavailable (RLS) or has no row for them.
+    if (user?.id && !usersMap[user.id]) {
+      usersMap[user.id] = {
+        id: user.id,
+        full_name: profile?.full_name || '',
+        email: profile?.email || user.email || '',
+      };
+    }
+    setUsers(usersMap);
+  }, [user, profile]);
 
   // Fetch messages for selected channel
   const fetchMessages = useCallback(async () => {
@@ -113,6 +129,41 @@ export default function WorkspacePage() {
     setLoading(false);
   }, [selectedChannel]);
 
+  // Compute unread message counts for every channel the user can see
+  const fetchUnreadCounts = useCallback(async (channelList) => {
+    if (!user || !channelList?.length) return;
+
+    const { data: subs } = await supabase
+      .from('workspace_subscriptions')
+      .select('channel_id, last_read_at')
+      .eq('user_id', user.id);
+
+    const lastReadByChannel = {};
+    (subs || []).forEach((s) => {
+      lastReadByChannel[s.channel_id] = s.last_read_at;
+    });
+
+    const entries = await Promise.all(
+      channelList.map(async (ch) => {
+        let query = supabase
+          .from('workspace_messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('channel_id', ch.id)
+          .neq('author_id', user.id);
+
+        const lastRead = lastReadByChannel[ch.id];
+        if (lastRead) {
+          query = query.gt('created_at', lastRead);
+        }
+
+        const { count } = await query;
+        return [ch.id, count || 0];
+      })
+    );
+
+    setUnreadCounts(Object.fromEntries(entries));
+  }, [user]);
+
   // Fetch user's subscription for current channel
   const fetchSubscription = useCallback(async () => {
     if (!selectedChannel || !user) return;
@@ -122,17 +173,34 @@ export default function WorkspacePage() {
       .select('*')
       .eq('channel_id', selectedChannel.id)
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
-    setSubscription(data);
+    // Remember where the user left off so we can mark the first unseen message.
+    setUnreadSince(data?.last_read_at || null);
 
-    // Update last_read_at
+    // Advance last_read_at to now. If there is no subscription row yet, create
+    // one — otherwise opening the channel would never clear its unread badge.
+    const nowIso = new Date().toISOString();
     if (data) {
+      setSubscription(data);
       await supabase
         .from('workspace_subscriptions')
-        .update({ last_read_at: new Date().toISOString() })
+        .update({ last_read_at: nowIso })
         .eq('id', data.id);
+    } else {
+      const { data: created } = await supabase
+        .from('workspace_subscriptions')
+        .upsert(
+          { channel_id: selectedChannel.id, user_id: user.id, last_read_at: nowIso },
+          { onConflict: 'channel_id,user_id' }
+        )
+        .select()
+        .single();
+      setSubscription(created || null);
     }
+
+    // Clear the unread badge for this channel once it has been opened.
+    setUnreadCounts((prev) => ({ ...prev, [selectedChannel.id]: 0 }));
   }, [selectedChannel, user]);
 
   // Toggle email notifications
@@ -226,6 +294,13 @@ export default function WorkspacePage() {
     fetchUsers();
   }, [fetchChannels, fetchUsers]);
 
+  // Recompute unread badges whenever the channel list changes
+  useEffect(() => {
+    if (channels.length > 0) {
+      fetchUnreadCounts(channels);
+    }
+  }, [channels, fetchUnreadCounts]);
+
   // Load messages when channel changes
   useEffect(() => {
     if (selectedChannel) {
@@ -245,14 +320,26 @@ export default function WorkspacePage() {
       if (selectedChannel) {
         fetchMessages();
       }
+      if (channels.length > 0) {
+        fetchUnreadCounts(channels);
+      }
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [selectedChannel, fetchMessages]);
+  }, [selectedChannel, fetchMessages, channels, fetchUnreadCounts]);
 
   const getUserName = (userId) => {
-    return users[userId]?.full_name || users[userId]?.email || 'Ismeretlen';
+    return getDisplayName(users[userId]);
   };
+
+  // First message the current user has not seen yet (drives the divider position)
+  const firstUnreadMessageId = unreadSince
+    ? messages.find(
+        (m) =>
+          m.author_id !== user.id &&
+          new Date(m.created_at) > new Date(unreadSince)
+      )?.id
+    : null;
 
   const getChannelIcon = (channel) => {
     if (channel.channel_type === 'leadership') return '👑';
@@ -285,20 +372,34 @@ export default function WorkspacePage() {
             </h2>
           </div>
           <div className="flex-1 overflow-y-auto p-2">
-            {channels.map((channel) => (
-              <button
-                key={channel.id}
-                onClick={() => setSelectedChannel(channel)}
-                className={`w-full text-left px-3 py-2 rounded-lg mb-1 flex items-center gap-2 transition-colors ${
-                  selectedChannel?.id === channel.id
-                    ? 'bg-pepper-red text-white'
-                    : 'hover:bg-gray-100 text-gray-700'
-                }`}
-              >
-                <span>{getChannelIcon(channel)}</span>
-                <span className="truncate">{channel.name}</span>
-              </button>
-            ))}
+            {channels.map((channel) => {
+              const isSelected = selectedChannel?.id === channel.id;
+              const unread = unreadCounts[channel.id] || 0;
+              const hasUnread = unread > 0 && !isSelected;
+              return (
+                <button
+                  key={channel.id}
+                  onClick={() => setSelectedChannel(channel)}
+                  className={`w-full text-left px-3 py-2 rounded-lg mb-1 flex items-center gap-2 transition-colors ${
+                    isSelected
+                      ? 'bg-pepper-red text-white'
+                      : hasUnread
+                        ? 'hover:bg-gray-100 text-gray-900'
+                        : 'hover:bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  <span>{getChannelIcon(channel)}</span>
+                  <span className={`truncate flex-1 ${hasUnread ? 'font-bold' : ''}`}>
+                    {channel.name}
+                  </span>
+                  {hasUnread && (
+                    <span className="ml-auto inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-pepper-red text-white text-xs font-semibold">
+                      {unread > 99 ? '99+' : unread}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -357,15 +458,28 @@ export default function WorkspacePage() {
                     <p className="text-sm mt-1">Írj elsőként!</p>
                   </div>
                 ) : (
-                  messages.map((message) => (
-                    <MessageItem
-                      key={message.id}
-                      message={message}
-                      users={users}
-                      currentUserId={user.id}
-                      onToggleTask={() => toggleTaskCompletion(message)}
-                    />
-                  ))
+                  messages.map((message) => {
+                    const isFirstUnread = message.id === firstUnreadMessageId;
+                    return (
+                      <div key={message.id}>
+                        {isFirstUnread && (
+                          <div className="flex items-center gap-2 my-3" aria-label="Új üzenetek">
+                            <div className="flex-1 border-t-2 border-dashed border-pepper-red" />
+                            <span className="text-xs font-semibold text-pepper-red uppercase tracking-wide">
+                              Új üzenetek
+                            </span>
+                            <div className="flex-1 border-t-2 border-dashed border-pepper-red" />
+                          </div>
+                        )}
+                        <MessageItem
+                          message={message}
+                          users={users}
+                          currentUserId={user.id}
+                          onToggleTask={() => toggleTaskCompletion(message)}
+                        />
+                      </div>
+                    );
+                  })
                 )}
                 <div ref={messagesEndRef} />
               </div>
@@ -422,7 +536,7 @@ export default function WorkspacePage() {
                         <option value="">Felelős (opcionális)</option>
                         {Object.values(users).map((u) => (
                           <option key={u.id} value={u.id}>
-                            {u.full_name || u.email}
+                            {getDisplayName(u)}
                           </option>
                         ))}
                       </select>
@@ -486,9 +600,9 @@ export default function WorkspacePage() {
 // Message item component
 function MessageItem({ message, users, currentUserId, onToggleTask }) {
   const isOwnMessage = message.author_id === currentUserId;
-  const userName = users[message.author_id]?.full_name || users[message.author_id]?.email || 'Ismeretlen';
+  const userName = getDisplayName(users[message.author_id]);
   const assigneeName = message.task_assignee_id
-    ? users[message.task_assignee_id]?.full_name || 'Valaki'
+    ? getDisplayName(users[message.task_assignee_id])
     : null;
 
   const formatTime = (dateStr) => {
@@ -593,7 +707,7 @@ function MessageItem({ message, users, currentUserId, onToggleTask }) {
             <p className="text-xs text-green-600 mt-2">
               Kész: {formatDate(message.task_completed_at)}
               {message.task_completed_by && users[message.task_completed_by] && (
-                <> - {users[message.task_completed_by].full_name}</>
+                <> - {getDisplayName(users[message.task_completed_by])}</>
               )}
             </p>
           )}

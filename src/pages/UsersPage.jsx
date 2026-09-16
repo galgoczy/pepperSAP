@@ -24,7 +24,12 @@ const roleLabels = {
   admin: 'Adminisztrátor',
   unit: 'Éttermi egység',
   events: 'Rendezvény egység',
+  accountant: 'Könyvelő',
+  ext_accountant: 'Külső könyvelő',
 };
+
+// Ezekhez a szerepkörökhöz nem tartozik egység (mindent látnak / semmit nem írnak).
+const UNITLESS_ROLES = ['admin', 'accountant', 'ext_accountant'];
 
 export default function UsersPage() {
   const { users, loading, updateUser, deleteUser } = useUsers();
@@ -51,7 +56,12 @@ export default function UsersPage() {
     setFormLoading(true);
 
     try {
-      await updateUser(editingUser.id, formData);
+      await updateUser(editingUser.id, {
+        ...formData,
+        // Az üres string nem érvényes UUID – az egység nélküli szerepköröknél
+        // (admin, könyvelő, külső könyvelő) NULL-t kell küldeni.
+        unit_id: UNITLESS_ROLES.includes(formData.role) ? null : formData.unit_id || null,
+      });
       toast.success('Felhasználó sikeresen frissítve!');
       setIsFormOpen(false);
     } catch {
@@ -217,10 +227,12 @@ export default function UsersPage() {
               { value: 'admin', label: 'Adminisztrátor' },
               { value: 'unit', label: 'Éttermi egység' },
               { value: 'events', label: 'Rendezvény egység' },
+              { value: 'accountant', label: 'Könyvelő (csak olvas)' },
+              { value: 'ext_accountant', label: 'Külső könyvelő (csak a könyvelési pénztárgép jelentés)' },
             ]}
           />
 
-          {formData.role !== 'admin' && (
+          {!UNITLESS_ROLES.includes(formData.role) && (
             <Select
               label="Hozzárendelt egység"
               value={formData.unit_id}

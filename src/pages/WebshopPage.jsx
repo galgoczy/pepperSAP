@@ -20,7 +20,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { formatCurrency, formatDate } from '../lib/utils';
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx-js-style';
 
 export default function WebshopPage() {
   const { profile, isAdmin, isEvents, isUnit, unitId } = useAuth();

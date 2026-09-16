@@ -1,0 +1,185 @@
+// The checks a cash-register closure is marked against in every report, kept in
+// one place so the admin (all units) and the unit's own report never disagree.
+//
+//  - terminal/card: |pénztárgép kártya − terminál| over tolerance. The terminal
+//    is the true figure; handled by a "rossz fizetési mód" elütés covering it
+//    (or, on old rows, a free-text terminal reason).
+//  - fizetési módok: the ÁFA buckets must equal KP + kártya + SZÉP; handled by
+//    a "téves összeg" elütés with a reason.
+//  - göngyölt: the Z-report cumulative must be the previous one plus this
+//    closure's turnover; handled by any recorded elütés.
+
+import {
+  REGISTER_TOLERANCE,
+  validateCardPayments,
+  validatePaymentBreakdown,
+  hasDocumentedDiscrepancy,
+  hufDiscrepancyOf,
+  eurDiscrepancyOf,
+  methodCardAdjustmentOf,
+  pooledTerminalFor,
+} from './validations';
+import { listDiscrepancies } from './discrepancies';
+
+export const CUMULATIVE_TOLERANCE = 1; // Ft
+
+const n = (v) => parseFloat(v) || 0;
+
+// Everything a report row needs from one raw cash_register_revenue row for the
+// checks above. Amount fields keep the names the reports already use.
+// `dayClosures`: a nap összes zárása (minden gépé) – ebből dől el az összevont
+// terminál-ellenőrzés (több zárás, egy terminál érték; lásd pooledTerminalCheck).
+export function buildClosureChecks(cr, dayClosures = null) {
+  const pooled = pooledTerminalFor(cr, dayClosures);
+  const terminalPooled = !!(pooled.applies && pooled.isValid);
+  const vat_0 = n(cr.vat_0_percent);
+  const vat_5 = n(cr.vat_5_percent);
+  const vat_18 = n(cr.vat_18_percent);
+  const vat_27 = n(cr.vat_27_percent);
+  const cash = n(cr.cash_payment);
+  const card = n(cr.card_payment);
+  const szep = n(cr.szep_card_payment);
+  const terminal_card = n(cr.terminal_card);
+  const turnover = vat_0 + vat_5 + vat_18 + vat_27;
+
+  const breakdown = validatePaymentBreakdown({
+    vatTotal: turnover,
+    cash,
+    card,
+    szep,
+    hufDiscrepancy: hufDiscrepancyOf(cr),
+    eurDiscrepancy: eurDiscrepancyOf(cr),
+  });
+
+  return {
+    turnover,
+    szep,
+    paid: breakdown.paid,
+    paymentDiff: breakdown.difference,
+    paymentGap: breakdown.applicable && !breakdown.isValid,
+    discrepancy: card - terminal_card,
+    terminalExplained:
+      terminalPooled ||
+      validateCardPayments(card, terminal_card, methodCardAdjustmentOf(cr)).explainedByDiscrepancy,
+    // A nap több zárásának kártya összege egyezik az egy terminál értékkel.
+    terminalPooled,
+    terminalNote: (cr.terminal_discrepancy_note || '').trim(),
+    discrepancyDocumented: hasDocumentedDiscrepancy(cr),
+    discrepancyCount: listDiscrepancies(cr).length,
+    // Recorded elütés, for the reports' own "Elütés" column.
+    hufDiscrepancy: hufDiscrepancyOf(cr),
+    eurDiscrepancy: eurDiscrepancyOf(cr),
+    cumulative: n(cr.cumulative_revenue),
+    closureSeq: cr.closure_sequence ?? cr.closure_number ?? null,
+  };
+}
+
+// Egy gép időszaki jegyzőkönyv-állapota az egyszerű / könyvelési jelentés
+// "Jkv." oszlopához. `days`: a gép zárásai a computeRegisterProtocolMarks
+// után (protocolMark + crId), `checkedSet`: a bepipált zárások
+// cash_register_revenue id-i. Akkor "minden rendben", ha egy jegyzőkönyv sem
+// hiányzik ÉS minden meglévő jegyzőkönyv ellenőrizve (pipálva) van. Ha az
+// időszakban nem volt eltérés, nincs mit pipálni – az is rendben.
+export function summarizeProtocolChecks(days, checkedSet) {
+  const has = (id) => !!id && !!checkedSet && (checkedSet instanceof Set ? checkedSet.has(id) : !!checkedSet[id]);
+  let needed = 0;
+  let missing = 0;
+  let unticked = 0;
+  (days || []).forEach((d) => {
+    if (d.protocolMark === 'missing') {
+      needed += 1;
+      missing += 1;
+    } else if (d.protocolMark === 'ok') {
+      needed += 1;
+      if (!has(d.crId)) unticked += 1;
+    }
+  });
+  return { needed, missing, unticked, allGood: missing === 0 && unticked === 0 };
+}
+
+// Egy napon ugyanazon a gépen több zárás is lehet. A lekérdezés a beágyazott
+// zárásokat nem rendezetten adja vissza (a PostgREST nem garantál sorrendet a
+// beágyazott listán), ezért a megjelenítés előtt itt tesszük sorba: dátum, majd
+// a Z-jelentés zárás-sorszáma szerint. Ez az egyetlen olyan sorrend, ami a
+// göngyölt lánccal is egyezik.
+export function sortClosuresForDisplay(days) {
+  return (days || []).sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    const av = a.closureSeq ?? a.closureNumber ?? 0;
+    const bv = b.closureSeq ?? b.closureNumber ?? 0;
+    if (av !== bv) return av - bv;
+    return (a.closureNumber ?? 0) - (b.closureNumber ?? 0);
+  });
+}
+
+// Marks each closure (day row) of ONE register: whether a discrepancy exists and
+// whether the matching jegyzőkönyv is there. Sets day.protocolMark to 'ok'
+// (discrepancy, everything documented), 'missing' (something is not) or null (no
+// discrepancy), plus day.protocolReasons explaining the mark on hover.
+export function computeRegisterProtocolMarks(days) {
+  // Evaluate the cumulative chain in the order the closures were recorded.
+  const ordered = [...days].sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return (a.closureSeq ?? 0) - (b.closureSeq ?? 0);
+  });
+  let prevCumulative = null;
+  ordered.forEach((day) => {
+    // Ha a gépen aznap több zárás van egyetlen terminál értékkel, és a zárások
+    // kártya összege (a rögzített elütésekkel együtt) kiadja a terminált, akkor
+    // ezen a gépen aznap NINCS kártya-terminál eltérés. A zárásonkénti
+    // különbség ilyenkor önmagában semmit nem jelent, ezért jegyzőkönyvet sem
+    // kérünk rá – sem hiányzót, sem pipálandót.
+    const termDisc = !day.terminalPooled && Math.abs(day.discrepancy) > REGISTER_TOLERANCE;
+    const termHandled = !!day.terminalExplained || (day.terminalNote || '').length > 0;
+
+    const payDisc = !!day.paymentGap;
+    const payHandled = !!day.discrepancyDocumented;
+
+    // Göngyölt: this closure's cumulative must be the previous one's plus this
+    // closure's turnover. The pieces are kept on the day so the cell can explain
+    // itself on hover instead of only feeding the Jkv. mark.
+    let cumDisc = false;
+    day.cumulativeMismatch = false;
+    if (prevCumulative != null && prevCumulative > 0 && day.cumulative > 0) {
+      const expected = prevCumulative + day.turnover;
+      cumDisc = Math.abs(day.cumulative - expected) > CUMULATIVE_TOLERANCE;
+      if (cumDisc) {
+        day.cumulativeMismatch = true;
+        day.expectedCumulative = expected;
+        day.expectedCumulativeBase = prevCumulative;
+      }
+    }
+    const cumHandled = day.discrepancyCount > 0;
+    if (day.cumulative > 0) prevCumulative = day.cumulative;
+
+    const reasons = [];
+    if (termDisc) {
+      reasons.push(
+        termHandled
+          ? 'Kártya-terminál eltérés – rendezve'
+          : 'Kártya-terminál eltérés – hiányzik a „rossz fizetési mód” elütés'
+      );
+    }
+    if (payDisc) {
+      reasons.push(
+        payHandled
+          ? 'Fizetési mód eltérés – rendezve'
+          : 'Fizetési mód eltérés – hiányzik a „téves összeg” elütés indoklással'
+      );
+    }
+    if (cumDisc) {
+      reasons.push(
+        cumHandled ? 'Göngyölt eltérés – rendezve' : 'Göngyölt eltérés – nincs rögzített elütés'
+      );
+    }
+    day.protocolReasons = reasons;
+
+    if (!termDisc && !cumDisc && !payDisc) {
+      day.protocolMark = null;
+    } else {
+      const allHandled =
+        (!termDisc || termHandled) && (!cumDisc || cumHandled) && (!payDisc || payHandled);
+      day.protocolMark = allHandled ? 'ok' : 'missing';
+    }
+  });
+}
