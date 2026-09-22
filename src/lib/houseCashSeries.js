@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { TERMINAL_TIP_WITHDRAW_RATE } from './utils';
 import { netCashDiscrepancy } from './discrepancies';
 import { employeeInvoiceReserveCost } from './expenseVat';
+import { LIVE_TRANSFER_STATUSES } from './transferStatus';
 
 // Computes a unit's daily house-cash series (Pénztár zseb + Tartalék) live from
 // raw data, from zero through full history. This is the single source of truth
@@ -107,7 +108,7 @@ export async function fetchHouseCashSeries(unitId, endDate) {
     supabase
       .from('cash_transfers')
       .select('amount, transfer_type, transfer_date, source_unit_id, destination_unit_id, status')
-      .eq('status', 'approved')
+      .in('status', LIVE_TRANSFER_STATUSES)
       .or(`source_unit_id.eq.${unitId},destination_unit_id.eq.${unitId}`),
     supabase
       .from('opening_balance_revisions')
@@ -298,7 +299,7 @@ export async function fetchCentralHouseCashSeries(endDate) {
         .from('cash_transfers')
         .select('amount, transfer_type, transfer_date, source_type, source_unit_id')
         .eq('destination_type', 'central')
-        .eq('status', 'approved'),
+        .in('status', LIVE_TRANSFER_STATUSES),
       'transfer_date'
     ),
     dateFilter(
@@ -306,7 +307,7 @@ export async function fetchCentralHouseCashSeries(endDate) {
         .from('cash_transfers')
         .select('amount, transfer_type, transfer_date, destination_unit_id')
         .eq('source_type', 'central')
-        .eq('status', 'approved'),
+        .in('status', LIVE_TRANSFER_STATUSES),
       'transfer_date'
     ),
     dateFilter(

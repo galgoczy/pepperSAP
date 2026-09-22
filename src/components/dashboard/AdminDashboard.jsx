@@ -34,10 +34,11 @@ function AnimatedCurrency({ value }) {
 // GROSS cash-register revenue, reduced by 18.5% (i.e. 81.5% of it) —
 // gross * 0.20 * 0.815. Gross = the 5/18/27% VAT buckets summed as-is; the 0%
 // bucket is EXCLUDED (typically göngyöleg — only food & drink counts).
-// Only Knorr 105 for now.
+// A kártya az itt felsorolt egységeket számolja, ugyanazzal a képlettel, és a
+// számuk összegét mutatja; a bontás egérrel fölé állva látszik.
 const RSF_GROSS_SHARE = 0.20;     // 20% of the gross revenue
 const RSF_RETAINED_RATE = 0.815;  // reduced by 18.5% -> 81.5% retained
-const RSF_UNITS = ['Knorr 105'];
+const RSF_UNITS = ['Knorr 105', 'TTK Kantin'];
 const RSF_MONTH_NAMES = [
   'Január', 'Február', 'Március', 'Április', 'Május', 'Június',
   'Július', 'Augusztus', 'Szeptember', 'Október', 'November', 'December',
@@ -65,45 +66,75 @@ function monthLabel(ym) {
 // Card shown on the admin dashboard next to the "missing data" block.
 function ReverseServiceFeeCard() {
   const [ym, setYm] = useState(currentYearMonth());
-  const [value, setValue] = useState(null);
+  // Egységenkénti bontás: { name, gross, fee, missing }. A kártyán az összeg
+  // látszik, a bontás a tooltipben.
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const current = currentYearMonth();
-  // Single unit for now; the name is shown at the bottom.
-  const unitName = RSF_UNITS[0];
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
       try {
-        const { data: unit } = await supabase
-          .from('units').select('id').eq('name', unitName).maybeSingle();
-        if (!unit?.id) { if (!cancelled) setValue(0); return; }
-        const { start, end } = monthRange(ym);
-        const { data } = await supabase
-          .from('daily_revenue')
-          .select('cash_register_revenue(vat_5_percent, vat_18_percent, vat_27_percent)')
-          .eq('unit_id', unit.id)
-          .gte('date', start)
-          .lte('date', end);
-        let gross = 0;
-        (data || []).forEach((dr) => (dr.cash_register_revenue || []).forEach((cr) => {
-          // 0% (göngyöleg) intentionally excluded — only food & drink counts.
-          gross += (parseFloat(cr.vat_5_percent) || 0)
-            + (parseFloat(cr.vat_18_percent) || 0)
-            + (parseFloat(cr.vat_27_percent) || 0);
-        }));
-        if (!cancelled) setValue(gross * RSF_GROSS_SHARE * RSF_RETAINED_RATE);
+        const { data: units } = await supabase
+          .from('units').select('id, name').in('name', RSF_UNITS);
+        const idByName = new Map((units || []).map((u) => [u.name, u.id]));
+        const ids = Array.from(idByName.values());
+
+        const grossByUnit = new Map();
+        if (ids.length > 0) {
+          const { start, end } = monthRange(ym);
+          const { data } = await supabase
+            .from('daily_revenue')
+            .select('unit_id, cash_register_revenue(vat_5_percent, vat_18_percent, vat_27_percent)')
+            .in('unit_id', ids)
+            .gte('date', start)
+            .lte('date', end);
+          (data || []).forEach((dr) => (dr.cash_register_revenue || []).forEach((cr) => {
+            // 0% (göngyöleg) intentionally excluded — only food & drink counts.
+            const gross = (parseFloat(cr.vat_5_percent) || 0)
+              + (parseFloat(cr.vat_18_percent) || 0)
+              + (parseFloat(cr.vat_27_percent) || 0);
+            grossByUnit.set(dr.unit_id, (grossByUnit.get(dr.unit_id) || 0) + gross);
+          }));
+        }
+
+        // A sorrend az RSF_UNITS sorrendje, nem a lekérdezésé. Ha egy egység
+        // nincs meg a units táblában (elírt név), azt jelezzük, nem nyeljük el.
+        const next = RSF_UNITS.map((name) => {
+          const id = idByName.get(name);
+          if (!id) return { name, gross: 0, fee: 0, missing: true };
+          const gross = grossByUnit.get(id) || 0;
+          return { name, gross, fee: gross * RSF_GROSS_SHARE * RSF_RETAINED_RATE, missing: false };
+        });
+        if (!cancelled) setRows(next);
       } catch (e) {
         console.error('Error loading reverse service fee:', e);
-        if (!cancelled) setValue(0);
+        if (!cancelled) setRows([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [ym, unitName]);
+  }, [ym]);
+
+  const value = rows.reduce((sum, r) => sum + r.fee, 0);
+  const unitLabel = (rows.length ? rows.map((r) => r.name) : RSF_UNITS).join(' + ');
+  const detail = [
+    `${monthLabel(ym)} – fordított szervízdíj egységenként:`,
+    ...(rows.length
+      ? rows.map((r) =>
+          r.missing
+            ? `${r.name}: nincs ilyen nevű egység`
+            : `${r.name}: ${formatCurrency(r.fee)}   (bruttó ${formatCurrency(r.gross)})`
+        )
+      : ['(nincs adat)']),
+    `Összesen: ${formatCurrency(value)}`,
+    '',
+    'Számítás: bruttó (5 + 18 + 27% ÁFA, göngyöleg nélkül) × 20% × 81,5%',
+  ].join('\n');
 
   const atCurrent = ym >= current;
 
@@ -141,10 +172,14 @@ function ReverseServiceFeeCard() {
         </div>
       </div>
       <p className="text-xs text-indigo-600 mt-1">{monthLabel(ym)}</p>
-      <p className="text-2xl font-bold text-indigo-900 mt-1 break-words">
-        {loading ? '…' : <AnimatedCurrency value={value} />}
-      </p>
-      <p className="text-xs text-indigo-400 mt-1">({unitName})</p>
+      {/* Az összeg és az egységek listája együtt a tooltip felülete: fölé
+          állva az egységenkénti bontás és a képlet látszik. */}
+      <div className={loading ? '' : 'cursor-help'} title={loading ? undefined : detail}>
+        <p className="text-2xl font-bold text-indigo-900 mt-1 break-words">
+          {loading ? '…' : <AnimatedCurrency value={value} />}
+        </p>
+        <p className="text-xs text-indigo-400 mt-1">({unitLabel})</p>
+      </div>
     </Card>
   );
 }

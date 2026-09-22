@@ -47,7 +47,10 @@ BEGIN
   WHERE t.transfer_date = DATE '2026-08-31'
     AND t.destination_type = 'central'
     AND u.name = 'KTI'
-    AND t.status = 'modified'
+    -- A státusz lehet 'modified' (eredeti állapot) vagy már 'approved' is, ha
+    -- előbb futott a 20260922_transfer_modified_status_fix migráció – az
+    -- azonosításhoz az összegpáros a döntő, így a két script sorrendje mindegy.
+    AND t.status IN ('modified', 'approved')
     AND t.amount = 80000
     AND t.original_amount = 180000;
 
@@ -66,7 +69,10 @@ BEGIN
   WHERE t.transfer_date = DATE '2026-08-31'
     AND t.destination_type = 'central'
     AND u.name = 'KTI'
-    AND t.status = 'modified'
+    -- A státusz lehet 'modified' (eredeti állapot) vagy már 'approved' is, ha
+    -- előbb futott a 20260922_transfer_modified_status_fix migráció – az
+    -- azonosításhoz az összegpáros a döntő, így a két script sorrendje mindegy.
+    AND t.status IN ('modified', 'approved')
     AND t.amount = 80000
     AND t.original_amount = 180000;
 

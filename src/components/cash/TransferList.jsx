@@ -15,6 +15,11 @@ const STATUS_BADGES = {
   cancelled: { variant: 'error', label: 'Törölve', icon: XCircle },
 };
 
+// Jóváhagyáskor megváltoztatott összeg: az eredetit az original_amount őrzi.
+// (A 'modified' állapotot már nem írjuk, de a régi sorokon még előfordul.)
+const isModified = (t) =>
+  t.original_amount != null && Number(t.original_amount) !== Number(t.amount);
+
 export default function TransferList({
   transfers,
   loading,
@@ -141,7 +146,11 @@ export default function TransferList({
       <Card>
         <div className="space-y-3">
           {transfers.map((transfer) => {
-            const status = STATUS_BADGES[transfer.status];
+            // A "Módosítva" jelzést az adja, hogy az átküldés jóváhagyáskor
+            // más összeggel ment át (van eltérő original_amount) – nem külön
+            // állapot. (A régi sorokon még a 'modified' állapot áll; azokat a
+            // STATUS_BADGES változatlanul kezeli.)
+            const status = isModified(transfer) ? STATUS_BADGES.modified : STATUS_BADGES[transfer.status];
             const StatusIcon = status.icon;
 
             return (
@@ -175,8 +184,11 @@ export default function TransferList({
                     <p className="text-lg font-bold text-gray-900">
                       {formatCurrency(transfer.amount)}
                     </p>
-                    {transfer.original_amount && transfer.original_amount !== transfer.amount && (
-                      <p className="text-xs text-gray-500 line-through">
+                    {isModified(transfer) && (
+                      <p
+                        className="text-xs text-gray-500 line-through"
+                        title="Az eredetileg küldött összeg (jóváhagyáskor módosították)"
+                      >
                         {formatCurrency(transfer.original_amount)}
                       </p>
                     )}

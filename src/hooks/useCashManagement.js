@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { fetchHouseCashSeries } from '../lib/houseCashSeries';
+import { LIVE_TRANSFER_STATUSES } from '../lib/transferStatus';
 
 /**
  * Hook for calculating running balances for a unit
@@ -71,13 +72,13 @@ export function useCentralBalance() {
           .from('cash_transfers')
           .select('amount, transfer_type')
           .eq('destination_type', 'central')
-          .eq('status', 'approved'),
+          .in('status', LIVE_TRANSFER_STATUSES),
         // Transfers OUT of central to a unit (approved) — reduce central balance
         supabase
           .from('cash_transfers')
           .select('amount, transfer_type')
           .eq('source_type', 'central')
-          .eq('status', 'approved'),
+          .in('status', LIVE_TRANSFER_STATUSES),
         // Central payments
         supabase
           .from('central_payments')
@@ -273,7 +274,12 @@ export function useTransfers(unitId, direction = 'all') {
       const update = {
         amount,
         original_amount: current.original_amount || current.amount,
-        status: 'modified',
+        // A módosítás EGYBEN jóváhagyás is, ezért 'approved'. Korábban itt
+        // 'modified' állt, amit viszont az egyenlegszámítások (egység
+        // házipénztár, Központ) nem vesznek figyelembe – az így jóváhagyott
+        // átküldés egyik oldalon sem mozgatott pénzt. A "Módosítva" jelzést
+        // nem az állapot adja, hanem az, hogy van eltérő original_amount.
+        status: 'approved',
         approved_by: (await supabase.auth.getUser()).data.user?.id,
         approved_at: new Date().toISOString(),
       };
@@ -770,7 +776,7 @@ export function useCashHistory(limit = 20) {
             destination_unit:units!cash_transfers_destination_unit_id_fkey(name),
             notes
           `)
-          .in('status', ['approved', 'modified'])
+          .in('status', LIVE_TRANSFER_STATUSES)
           .or('destination_type.eq.central,source_type.eq.central')
           .order('transfer_date', { ascending: false })
           .limit(limit),
