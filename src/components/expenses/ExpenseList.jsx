@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Receipt, Filter, ChevronUp, ChevronDown, Search, X, FileSpreadsheet } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { usePaymentItems, PAYMENT_KIND_META } from '../../hooks/usePaymentItems';
+import { usePaymentItems, PAYMENT_KIND_META, listKindOf } from '../../hooks/usePaymentItems';
 import { exportPaymentsToExcel, itemSource, effectiveDate } from '../../lib/paymentExport';
 import {
   Table,
@@ -23,8 +23,15 @@ import { formatCurrency, formatDate, PAYMENT_METHODS, getFirstDayOfMonth, getLas
 // lib/paymentExport.js-ben él, mert az exportnak és a listának ugyanazt kell
 // látnia. (itemSource, effectiveDate – importálva fentebb.)
 
+// Egy kifizetés kiadás, ezért mínusszal, pirosan jelenik meg. A negatív
+// összegű tétel (jóváírás, visszatérítés) pénzt hoz – azt pluszjellel,
+// zölden mutatjuk, nem "--" formában.
+const signedAmount = (amount, currency) =>
+  (amount < 0 ? '+' : '-') + formatCurrency(Math.abs(amount || 0), currency);
+const amountClass = (amount) => (amount < 0 ? 'text-green-600' : 'text-red-600');
+
 const SORTABLE = {
-  kind: (i) => PAYMENT_KIND_META[i.kind]?.label || '',
+  kind: (i) => PAYMENT_KIND_META[listKindOf(i)]?.label || '',
   name: (i) => (i.name || '').toLowerCase(),
   description: (i) => (i.description || '').toLowerCase(),
   unit: (i) => (i.units?.name || '').toLowerCase(),
@@ -76,7 +83,8 @@ export default function ExpenseList({
 
   // Filter payment items
   const filteredItems = items.filter((item) => {
-    if (kindFilter && item.kind !== kindFilter) {
+    // "Számla" = csak a hivatalos számlák, "Egyéb" = a nem hivatalosak.
+    if (kindFilter && listKindOf(item) !== kindFilter) {
       return false;
     }
     // 'cash_card' is a combined option: cash and card payments together.
@@ -137,6 +145,21 @@ export default function ExpenseList({
     (sum, item) => sum + (item.amount || 0),
     0
   );
+
+  // Ha nincs egy egységre szűkítve (összes egység), a lista alatt egységenkénti
+  // bontás: ugyanazok a szűrők (időszak, fajta, fizetési mód, típus, keresés),
+  // a felül látható összesen egységekre szétszedve.
+  const unitBreakdown = unitId
+    ? []
+    : Object.values(
+        filteredItems.reduce((acc, item) => {
+          const name = item.units?.name || 'Egység nélkül';
+          if (!acc[name]) acc[name] = { name, amount: 0, count: 0 };
+          acc[name].amount += item.amount || 0;
+          acc[name].count += 1;
+          return acc;
+        }, {})
+      ).sort((a, b) => b.amount - a.amount);
 
   // Export: pontosan a képernyőn lévő (szűrt + rendezett) lista megy Excelbe.
   const handleExport = () => {
@@ -248,6 +271,7 @@ export default function ExpenseList({
               options={[
                 { value: '', label: 'Minden fajta' },
                 { value: 'expense', label: PAYMENT_KIND_META.expense.label },
+                { value: 'other', label: PAYMENT_KIND_META.other.label },
                 { value: 'efo', label: PAYMENT_KIND_META.efo.label },
                 { value: 'wage', label: PAYMENT_KIND_META.wage.label },
                 { value: 'central', label: PAYMENT_KIND_META.central.label },
@@ -325,7 +349,7 @@ export default function ExpenseList({
           </TableHead>
           <TableBody>
             {sortedItems.map((item) => {
-              const kindMeta = PAYMENT_KIND_META[item.kind];
+              const kindMeta = PAYMENT_KIND_META[listKindOf(item)];
               return (
                 <TableRow
                   key={item.id}
@@ -373,14 +397,47 @@ export default function ExpenseList({
                       <span className="text-gray-400">-</span>
                     )}
                   </TableCell>
-                  <TableCell align="right" className="font-semibold text-red-600">
-                    -{formatCurrency(item.amount, item.currency)}
+                  <TableCell align="right" className={`font-semibold ${amountClass(item.amount)}`}>
+                    {signedAmount(item.amount, item.currency)}
                   </TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
+      )}
+
+      {/* Egységenkénti bontás – csak ha több egység van a listában. */}
+      {unitBreakdown.length > 1 && (
+        <div className="rounded-lg border border-gray-200">
+          <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700">
+            Egységenként
+            <span className="ml-2 font-normal text-gray-500">
+              ({formatDate(startDate)} – {formatDate(endDate)}
+              {kindFilter ? `, ${PAYMENT_KIND_META[kindFilter]?.label}` : ''})
+            </span>
+          </div>
+          <table className="min-w-full text-sm">
+            <tbody className="divide-y divide-gray-100">
+              {unitBreakdown.map((u) => (
+                <tr key={u.name}>
+                  <td className="px-4 py-2 text-gray-900">{u.name}</td>
+                  <td className="px-4 py-2 text-right text-gray-500">{u.count} tétel</td>
+                  <td className={`px-4 py-2 text-right font-semibold ${amountClass(u.amount)}`}>
+                    {signedAmount(u.amount)}
+                  </td>
+                </tr>
+              ))}
+              <tr className="bg-gray-50">
+                <td className="px-4 py-2 font-semibold text-gray-900">Összesen</td>
+                <td className="px-4 py-2 text-right text-gray-500">{filteredItems.length} tétel</td>
+                <td className={`px-4 py-2 text-right font-bold ${amountClass(totalAmount)}`}>
+                  {signedAmount(totalAmount)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

@@ -11,7 +11,7 @@
 import XLSX from 'xlsx-js-style';
 import { PAYMENT_METHODS, formatDate } from './utils';
 import { defaultVatRate, vatAmountOf, VAT_RATE_CUSTOM } from './expenseVat';
-import { PAYMENT_KIND_META } from '../hooks/usePaymentItems';
+import { PAYMENT_KIND_META, listKindOf } from '../hooks/usePaymentItems';
 import { INVOICE_STATES, furthestState, statusLabel } from './invoiceStatus';
 
 // Melyik "zsebből" megy a kifizetés:
@@ -150,7 +150,8 @@ function paymentRow(item, dateBasis) {
   const paidApplies = item.payment_method === 'transfer';
 
   return {
-    'Fajta': PAYMENT_KIND_META[item.kind]?.label || item.kind || '',
+    // Ugyanaz a bontás, mint a listában: hivatalos = Számla, nem hivatalos = Egyéb.
+    'Fajta': PAYMENT_KIND_META[listKindOf(item)]?.label || item.kind || '',
     'Név': item.name || '',
     'Bizonylat': item.reference || '',
     'Tétel': item.description || '',

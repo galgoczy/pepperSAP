@@ -5,10 +5,19 @@ import { supabase } from '../lib/supabase';
 // "kifizetések" lists. Variants map to the common <Badge> component.
 export const PAYMENT_KIND_META = {
   expense: { label: 'Számla', variant: 'default' },
+  // Nem hivatalos (számla nélküli) egységkiadás. Az adatbázisban ez is
+  // 'expense', csak a Számlák menü listája választja külön – lásd listKindOf.
+  other: { label: 'Egyéb', variant: 'secondary' },
   efo: { label: 'EFO', variant: 'info' },
   wage: { label: 'Heti bér', variant: 'primary' },
   central: { label: 'Központ', variant: 'warning' },
 };
+
+// A Számlák menü listájában a "Számla" fajta csak a hivatalos kifizetéseket
+// jelenti; a nem hivatalosak "Egyéb" néven külön fajta. Máshol (napi
+// jelentés, rögzítés) az item.kind marad, ott nincs ilyen bontás.
+export const listKindOf = (item) =>
+  item.kind === 'expense' && item.is_official === false ? 'other' : item.kind;
 
 // Central (Központ) costs live in their own table and have no unit; they are
 // shown as their own kind so the Központ's costs appear alongside the units'.
