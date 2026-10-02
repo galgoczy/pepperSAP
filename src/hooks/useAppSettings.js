@@ -4,7 +4,36 @@ const SETTINGS_KEY = 'pepper_app_settings';
 
 const DEFAULT_SETTINGS = {
   showReserve: true,
+  // Which unit to pre-select when opening the daily entry / reports (admins):
+  // 'default'  - the app default (first unit / "all" for reports)
+  // 'remember' - the unit last opened
+  // 'specific' - a fixed unit (defaultUnitId)
+  defaultUnitMode: 'remember',
+  defaultUnitId: '',
+  // Updated automatically as the user switches units (for 'remember' mode)
+  lastUnitId: '',
+  // Admin Házipénztár "Áttekintés": whether the all-units section is expanded
+  // (collapsed by default; the admin's choice is remembered in this browser).
+  allUnitsOpen: false,
+  // Unit dashboard (desktop only): show the traffic report at the very top.
+  dashboardTrafficReport: false,
+  // Daily entry "Minden adat": show the month calendar above the form.
+  dailyCalendarOpen: true,
 };
+
+// Resolve which unit should be pre-selected, given the settings and the list
+// of selectable restaurant units. `fallback` is the app default for the page
+// (e.g. the first unit, or 'all' on the reports page).
+export function resolveDefaultUnit(settings, restaurantUnits, fallback) {
+  const isValid = (id) => id && restaurantUnits?.some((u) => u.id === id);
+  if (settings?.defaultUnitMode === 'specific' && isValid(settings.defaultUnitId)) {
+    return settings.defaultUnitId;
+  }
+  if (settings?.defaultUnitMode === 'remember' && isValid(settings.lastUnitId)) {
+    return settings.lastUnitId;
+  }
+  return fallback;
+}
 
 export function useAppSettings() {
   const [settings, setSettings] = useState(() => {

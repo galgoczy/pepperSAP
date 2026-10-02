@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import Button from './Button';
@@ -42,7 +43,11 @@ export default function Modal({
     full: 'max-w-full mx-4',
   };
 
-  return (
+  // Render through a portal on document.body so the modal (and any <form> it
+  // contains) is never nested inside a parent page <form>. Nested forms are
+  // dropped by the browser, which made a modal's submit button submit the
+  // surrounding page form instead of the modal's own handler.
+  return createPortal(
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Overlay */}
       <div
@@ -83,7 +88,8 @@ export default function Modal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

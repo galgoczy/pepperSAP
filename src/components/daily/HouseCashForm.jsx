@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Save, Wallet, Banknote, ArrowRight, TrendingUp, Calculator } from 'lucide-react';
 import { useHouseCash } from '../../hooks/useDailyRevenue';
+import { useActiveCashRegisters } from '../../hooks/useCashRegisterRevenue';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import { Card, Button, Input, LoadingSpinner } from '../common';
 import OpeningBalanceRevision from './OpeningBalanceRevision';
 import { formatCurrency } from '../../lib/utils';
@@ -8,8 +10,19 @@ import { formatCurrency } from '../../lib/utils';
 const DEFAULT_CHANGE_AMOUNT = 30000;
 
 export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
-  const { houseCash, previousDayClosing, calculatedData, loading, saveHouseCash } = useHouseCash(unitId, date);
+  const { houseCash, previousDayClosing, previousDayReserveClosing, calculatedData, loading, saveHouseCash } = useHouseCash(unitId, date);
+  const { cashRegisters } = useActiveCashRegisters(unitId, date);
+  const { settings } = useAppSettings();
+  const showReserve = settings.showReserve;
   const [saving, setSaving] = useState(false);
+
+  // Default change amount = sum of the unit's registers' configured defaults,
+  // falling back to the constant when none are set.
+  const registersChangeDefault = cashRegisters.reduce(
+    (sum, r) => sum + (parseFloat(r.default_change_amount) || 0),
+    0
+  );
+  const defaultChangeAmount = registersChangeDefault > 0 ? registersChangeDefault : DEFAULT_CHANGE_AMOUNT;
   const [formData, setFormData] = useState({
     change_amount: DEFAULT_CHANGE_AMOUNT,
     official_other_income: '',
@@ -18,15 +31,22 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
 
   // Opening balance from previous day's closing
   const openingBalance = previousDayClosing || 0;
+  // Reserve opening from previous day's reserve closing
+  const reserveOpening = previousDayReserveClosing || 0;
 
   // Auto-calculated values from hook (with defaults to prevent NaN)
   const {
-    cashInvoiceExpenses = 0,      // Készpénzes számlák (auto from expenses)
-    nonInvoiceExpenses = 0,       // Nem számlás kifizetések (auto from expenses)
+    officialExpenses: cashInvoiceExpenses = 0,   // Készpénzes (számlás) kifizetések - csak megjelenítéshez
+    officialCashExpenses = 0,     // Hivatalos KÉSZPÉNZES kifizetések (a zsebet mozgatják)
+    nonOfficialExpenses: nonInvoiceExpenses = 0,  // Nem számlás kifizetések
     totalCashRegisterCash = 0,    // Napi forgalom (auto from cash registers)
     totalCashRegisterRevenue = 0, // Pénztárgép összes bevétel
     softwareRevenue = 0,          // Szoftver bevétel
-    wageTypePayments = 0,         // Bér jellegű kifizetések (EFO + wage)
+    totalDiscrepancies = 0,       // HUF elütések
+    wageTypePayments = 0,         // Bér jellegű kifizetések hivatalos része (EFO + wage)
+    wageTypeExtra = 0,            // Bér jellegű kifizetések nem hivatalos része
+    cashTransfersToday = 0,       // Napi nettó készpénz átküldés
+    reserveTransfersToday = 0,    // Napi nettó tartalék átküldés
   } = calculatedData || {};
 
   // Software vs cash register difference (calculated)
@@ -35,33 +55,36 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
   useEffect(() => {
     if (houseCash) {
       setFormData({
-        change_amount: houseCash.change_amount ?? DEFAULT_CHANGE_AMOUNT,
+        change_amount: houseCash.change_amount ?? defaultChangeAmount,
         official_other_income: houseCash.official_other_income || '',
         other_extra_income: houseCash.other_extra_income || '',
       });
     } else {
       setFormData({
-        change_amount: DEFAULT_CHANGE_AMOUNT,
+        change_amount: defaultChangeAmount,
         official_other_income: '',
         other_extra_income: '',
       });
     }
-  }, [houseCash, date]);
+  }, [houseCash, date, defaultChangeAmount]);
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Calculate daily movement (income - expenses) for Pénztár zseb
-  // Income: napi forgalom (auto) + egyéb hivatalos bevétel
+  // Pénztár zseb napi mozgás (egységes képlet, megegyezik a sorozat-számítással):
+  // (pénztárgép kp - elütések + egyéb hivatalos kp bevétel)
+  //   - (hivatalos KÉSZPÉNZES kifizetések + hivatalos EFO/bér) +/- készpénz átküldés
   const dailyIncome =
-    totalCashRegisterCash +
-    (parseFloat(formData.official_other_income) || 0);
+    totalCashRegisterCash -
+    totalDiscrepancies +
+    (parseFloat(formData.official_other_income) || 0) +
+    (cashTransfersToday > 0 ? cashTransfersToday : 0);
 
-  // Expenses: készpénzes számlák (auto) + bér jellegű kifizetések (auto)
   const dailyExpenses =
-    cashInvoiceExpenses +
-    wageTypePayments;
+    officialCashExpenses +
+    wageTypePayments +
+    (cashTransfersToday < 0 ? -cashTransfersToday : 0);
 
   const dailyMovement = dailyIncome - dailyExpenses;
 
@@ -71,16 +94,24 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
   // Napi záró pénztár = nyitó + napi egyenleg
   const dailyClosingCash = openingBalance + dailyMovement;
 
-  // Tartalék (separate tracking)
+  // Tartalék napi forgalom (daily reserve movement)
   // other_difference is now auto-calculated (softwareCashRegisterDiff)
   // other_expenses is now auto-calculated (nonInvoiceExpenses)
-  const otherTotal =
+  // Also subtract the non-official (extra) part of EFO + wage payments.
+  const reserveMovement =
     softwareCashRegisterDiff +
     (parseFloat(formData.other_extra_income) || 0) -
-    nonInvoiceExpenses;
+    nonInvoiceExpenses -
+    wageTypeExtra +
+    reserveTransfersToday;
 
-  // For saving: official_total is the closing balance
+  // Tartalék záró = tartalék nyitó + napi tartalék forgalom
+  const reserveClosing = reserveOpening + reserveMovement;
+
+  // For saving: official_total is the closing balance; other_total is the
+  // reserve closing balance (so it becomes the next day's reserve opening).
   const officialTotal = closingBalance;
+  const otherTotal = reserveClosing;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -165,7 +196,8 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
           helper="Állandó váltópénz a kasszában - nem része a napi forgalomnak"
         />
         <p className="text-xs text-gray-500 mt-2">
-          Alapértelmezett: {formatCurrency(DEFAULT_CHANGE_AMOUNT)}
+          Alapértelmezett: {formatCurrency(defaultChangeAmount)}
+          {registersChangeDefault > 0 && ' (pénztárgépek beállításaiból)'}
         </p>
       </Card>
 
@@ -198,14 +230,14 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
             suffix="Ft"
           />
 
-          {/* Auto-calculated: Készpénzes számlák */}
+          {/* Auto-calculated: Készpénzes hivatalos kifizetések */}
           <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
             <div className="flex items-center gap-2 mb-1">
               <Calculator className="h-4 w-4 text-red-600" />
-              <span className="text-sm font-medium text-red-700">Készpénzes számlák (-)</span>
+              <span className="text-sm font-medium text-red-700">Kifizetések (-)</span>
             </div>
-            <p className="text-xl font-bold text-red-800">{formatCurrency(cashInvoiceExpenses)}</p>
-            <p className="text-xs text-red-600 mt-1">Számlás kifizetésekből (automatikus)</p>
+            <p className="text-xl font-bold text-red-800">{formatCurrency(officialCashExpenses)}</p>
+            <p className="text-xs text-red-600 mt-1">Készpénzes hivatalos kifizetésekből (automatikus)</p>
           </div>
 
           {/* Auto-calculated: Bér jellegű kifizetések */}
@@ -250,7 +282,34 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
         </div>
       </Card>
 
-      {/* Other pocket */}
+      {/* Closing Balance - Running total (placed under Pénztár zseb, above Tartalék) */}
+      <Card className="bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200">
+        <div className="space-y-4">
+          {/* Running balance calculation */}
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+            <span>{formatCurrency(openingBalance)}</span>
+            <ArrowRight className="h-4 w-4" />
+            <span className={dailyMovement >= 0 ? 'text-green-600' : 'text-red-600'}>
+              {dailyMovement >= 0 ? '+' : ''}{formatCurrency(dailyMovement)}
+            </span>
+            <ArrowRight className="h-4 w-4" />
+            <span className="font-bold">{formatCurrency(closingBalance)}</span>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-emerald-200">
+            <div>
+              <p className="text-lg font-semibold text-emerald-700">Záró egyenleg</p>
+              <p className="text-xs text-emerald-600">Ez lesz a következő nap nyitója</p>
+            </div>
+            <span className="text-3xl font-bold text-emerald-800">
+              {formatCurrency(closingBalance)}
+            </span>
+          </div>
+        </div>
+      </Card>
+
+      {/* Other pocket (hidden when reserve display is disabled) */}
+      {showReserve && (
       <Card
         title={
           <div className="flex items-center gap-2">
@@ -294,45 +353,51 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
             <p className="text-xl font-bold text-red-800">{formatCurrency(nonInvoiceExpenses)}</p>
             <p className="text-xs text-red-600 mt-1">Kifizetésekből (automatikus)</p>
           </div>
+
+          {/* Auto-calculated: Bér jellegű kifizetések (nem hivatalos rész) */}
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-center gap-2 mb-1">
+              <Calculator className="h-4 w-4 text-red-600" />
+              <span className="text-sm font-medium text-red-700">Bér jellegű kifizetések, nem hivatalos (-)</span>
+            </div>
+            <p className="text-xl font-bold text-red-800">{formatCurrency(wageTypeExtra)}</p>
+            <p className="text-xs text-red-600 mt-1">EFO + heti bér tartalék része (automatikus)</p>
+          </div>
         </div>
 
-        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
           <div className="flex justify-between items-center">
             <span className="font-medium text-blue-700">
-              Tartalék összesen:
+              Tartalék összesen (napi forgalom):
             </span>
             <span className="text-xl font-bold text-blue-800">
-              {formatCurrency(otherTotal)}
+              {formatCurrency(reserveMovement)}
             </span>
           </div>
+          <div className="flex justify-between items-center text-sm border-t border-blue-200 pt-2">
+            <span className="text-blue-600">Tartalék nyitó:</span>
+            <span className="font-medium text-blue-700">{formatCurrency(reserveOpening)}</span>
+          </div>
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-blue-600">Tartalék forgalom:</span>
+            <span className="font-medium text-blue-700">
+              {reserveMovement >= 0 ? '+' : ''}{formatCurrency(reserveMovement)}
+            </span>
+          </div>
+          <div className="flex justify-between items-center border-t border-blue-200 pt-2">
+            <span className="font-semibold text-blue-700">Tartalék záró:</span>
+            <span className="text-lg font-bold text-blue-900">{formatCurrency(reserveClosing)}</span>
+          </div>
+          <OpeningBalanceRevision
+            unitId={unitId}
+            date={date}
+            currentBalance={reserveOpening}
+            pocket="reserve"
+            onRevisionApproved={() => window.location.reload()}
+          />
         </div>
       </Card>
-
-      {/* Closing Balance - Running total */}
-      <Card className="bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200">
-        <div className="space-y-4">
-          {/* Running balance calculation */}
-          <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
-            <span>{formatCurrency(openingBalance)}</span>
-            <ArrowRight className="h-4 w-4" />
-            <span className={dailyMovement >= 0 ? 'text-green-600' : 'text-red-600'}>
-              {dailyMovement >= 0 ? '+' : ''}{formatCurrency(dailyMovement)}
-            </span>
-            <ArrowRight className="h-4 w-4" />
-            <span className="font-bold">{formatCurrency(closingBalance)}</span>
-          </div>
-
-          <div className="flex items-center justify-between pt-2 border-t border-emerald-200">
-            <div>
-              <p className="text-lg font-semibold text-emerald-700">Záró egyenleg</p>
-              <p className="text-xs text-emerald-600">Ez lesz a következő nap nyitója</p>
-            </div>
-            <span className="text-3xl font-bold text-emerald-800">
-              {formatCurrency(closingBalance)}
-            </span>
-          </div>
-        </div>
-      </Card>
+      )}
 
       {/* Grand total with váltópénz */}
       <Card className="bg-gradient-to-br from-gray-50 to-gray-100">
@@ -341,10 +406,12 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
             <span>Záró egyenleg:</span>
             <span>{formatCurrency(closingBalance)}</span>
           </div>
-          <div className="flex justify-between items-center text-sm text-gray-600">
-            <span>Tartalék:</span>
-            <span>{formatCurrency(otherTotal)}</span>
-          </div>
+          {showReserve && (
+            <div className="flex justify-between items-center text-sm text-gray-600">
+              <span>Tartalék:</span>
+              <span>{formatCurrency(otherTotal)}</span>
+            </div>
+          )}
           <div className="flex justify-between items-center text-sm text-gray-600">
             <span>Váltópénz (a kasszában):</span>
             <span>{formatCurrency(parseFloat(formData.change_amount) || 0)}</span>
@@ -354,7 +421,7 @@ export default function HouseCashForm({ date, unitId, onSaveSuccess }) {
               Kassza teljes készpénz:
             </span>
             <span className="text-2xl font-bold text-gray-900">
-              {formatCurrency(closingBalance + otherTotal + (parseFloat(formData.change_amount) || 0))}
+              {formatCurrency(closingBalance + (showReserve ? otherTotal : 0) + (parseFloat(formData.change_amount) || 0))}
             </span>
           </div>
         </div>

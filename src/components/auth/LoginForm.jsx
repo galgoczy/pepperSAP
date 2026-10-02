@@ -32,7 +32,7 @@ const clearAllStoredData = async () => {
   for (const dbName of knownDatabases) {
     try {
       indexedDB.deleteDatabase(dbName);
-    } catch (e) {
+    } catch {
       // Ignore
     }
   }
@@ -44,7 +44,7 @@ const clearAllStoredData = async () => {
       for (const db of dbs) {
         if (db.name) indexedDB.deleteDatabase(db.name);
       }
-    } catch (e) {
+    } catch {
       // Ignore
     }
   }
@@ -66,7 +66,7 @@ const TEST_ACCOUNTS = [
     role: 'Étterem',
     icon: Store,
     color: 'bg-blue-600 hover:bg-blue-700',
-    disabled: false,
+    disabled: true,
   },
   {
     email: 'rendezveny@pepperhouse.hu',
@@ -74,7 +74,7 @@ const TEST_ACCOUNTS = [
     role: 'Events',
     icon: PartyPopper,
     color: 'bg-purple-600 hover:bg-purple-700',
-    disabled: false,
+    disabled: true,
   },
 ];
 
@@ -109,34 +109,6 @@ export default function LoginForm() {
       console.error('Login error:', err);
       setError('Váratlan hiba történt');
       setLoading(false);
-    }
-  };
-
-  const handleTestAdminLogin = async () => {
-    setError('');
-    setLoading(true);
-    setLoadingAccount('test-admin');
-
-    try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: 'admin@test.local',
-        password: 'TestAdmin123!',
-      });
-
-      if (signInError) {
-        console.error('Test admin login error:', signInError);
-        setError('Teszt admin bejelentkezés sikertelen');
-        setLoading(false);
-        setLoadingAccount(null);
-        return;
-      }
-
-      // Success - the auth state change will handle redirect
-    } catch (err) {
-      console.error('Login error:', err);
-      setError('Váratlan hiba történt');
-      setLoading(false);
-      setLoadingAccount(null);
     }
   };
 
@@ -182,7 +154,7 @@ export default function LoginForm() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-neutral-light px-4">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-lg">
         {/* Logo */}
         <div className="text-center mb-8">
           <img
@@ -222,7 +194,7 @@ export default function LoginForm() {
                   <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
                   <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
                 </svg>
-                Bejelentkezés Microsoft 365-tel
+                <span className="whitespace-nowrap">Bejelentkezés Microsoft 365-tel</span>
               </>
             )}
           </Button>
@@ -233,26 +205,18 @@ export default function LoginForm() {
             </p>
           </div>
 
-          {/* Test Admin Quick Login */}
+          {/* Test Admin Quick Login - disabled */}
           <div className="mt-6 pt-6 border-t">
             <button
               type="button"
-              onClick={handleTestAdminLogin}
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled
+              aria-disabled="true"
+              title="A teszt admin belépés ki van kapcsolva"
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-300 text-gray-500 font-medium rounded-lg cursor-not-allowed"
             >
-              {loadingAccount === 'test-admin' ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <>
-                  <UserCog className="h-5 w-5" />
-                  TESZT ADMIN belépés
-                </>
-              )}
+              <UserCog className="h-5 w-5" />
+              TESZT ADMIN belépés
             </button>
-            <p className="text-xs text-gray-400 text-center mt-2">
-              admin@test.local / TestAdmin123!
-            </p>
           </div>
 
           {/* Email/Password Login Toggle */}
@@ -276,7 +240,7 @@ export default function LoginForm() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper-red focus:border-transparent"
-                    placeholder="admin@test.local"
+                    placeholder="nev@pepperhouse.hu"
                     required
                   />
                 </div>

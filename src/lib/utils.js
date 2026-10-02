@@ -20,6 +20,19 @@ export const formatDate = (date) => {
   });
 };
 
+const HU_WEEKDAYS = ['vasárnap', 'hétfő', 'kedd', 'szerda', 'csütörtök', 'péntek', 'szombat'];
+
+// "2026.08.11. (kedd)" — people spot a wrong weekday far more reliably than a
+// wrong digit, so the day name is shown wherever the entry date is confirmed.
+// Parsed from the local date components so there is no timezone drift.
+export const formatDateWithWeekday = (date) => {
+  if (!date) return '-';
+  const [y, m, d] = String(date).split('-').map(Number);
+  if (!y || !m || !d) return formatDate(date);
+  const dt = new Date(y, m - 1, d);
+  return `${formatDate(date)} (${HU_WEEKDAYS[dt.getDay()]})`;
+};
+
 // Format datetime to Hungarian locale
 export const formatDateTime = (date) => {
   if (!date) return '-';
@@ -38,26 +51,85 @@ export const calculateTotal = (items, field = 'amount') => {
   return items.reduce((sum, item) => sum + (parseFloat(item[field]) || 0), 0);
 };
 
+// Display name for a user: full_name if set, otherwise the local part of the
+// email (e.g. "rsr@pepperhouse.hu" -> "rsr"), falling back to "Ismeretlen".
+export const getDisplayName = (profile) => {
+  if (!profile) return 'Ismeretlen';
+  if (profile.full_name && profile.full_name.trim()) return profile.full_name.trim();
+  if (profile.email) return profile.email.split('@')[0];
+  return 'Ismeretlen';
+};
+
 // Combine class names (clsx alternative)
 export const cn = (...classes) => {
   return classes.filter(Boolean).join(' ');
 };
 
+// Format a Date to YYYY-MM-DD using LOCAL components (not UTC). Using
+// toISOString() here would shift the date back a day in timezones ahead of UTC
+// (e.g. Hungary), which broke the report month ranges.
+const toLocalYmd = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 // Get today's date in YYYY-MM-DD format
 export const getToday = () => {
-  return new Date().toISOString().split('T')[0];
+  return toLocalYmd(new Date());
+};
+
+// A mai nap hónapja "YYYY-MM" alakban.
+export const currentYearMonth = () => getToday().slice(0, 7);
+
+// Add (or subtract) days to a YYYY-MM-DD date string, returning YYYY-MM-DD
+export const addDays = (ymd, days) => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + days);
+  return toLocalYmd(date);
+};
+
+// Hónap szintű léptetés és címkézés (a Számlák menü hónapváltójához).
+const HU_MONTHS = [
+  'január', 'február', 'március', 'április', 'május', 'június',
+  'július', 'augusztus', 'szeptember', 'október', 'november', 'december',
+];
+
+// "2026-08" -> "2026. augusztus"
+export const formatYearMonth = (ym) => {
+  const [y, m] = String(ym || '').split('-').map(Number);
+  if (!y || !m || m < 1 || m > 12) return '';
+  return `${y}. ${HU_MONTHS[m - 1]}`;
+};
+
+// "2026-08" -> { start: '2026-08-01', end: '2026-08-31' }
+export const monthRange = (ym) => {
+  const [y, m] = String(ym || '').split('-').map(Number);
+  if (!y || !m) return { start: '', end: '' };
+  const last = new Date(y, m, 0).getDate();
+  return { start: `${ym}-01`, end: `${ym}-${String(last).padStart(2, '0')}` };
+};
+
+// shiftYearMonth('2026-01', -1) -> '2025-12'
+export const shiftYearMonth = (ym, delta) => {
+  const [y, m] = String(ym || '').split('-').map(Number);
+  if (!y || !m) return ym;
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
 // Get first day of current month
 export const getFirstDayOfMonth = () => {
   const date = new Date();
-  return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
+  return toLocalYmd(new Date(date.getFullYear(), date.getMonth(), 1));
 };
 
 // Get last day of current month
 export const getLastDayOfMonth = () => {
   const date = new Date();
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split('T')[0];
+  return toLocalYmd(new Date(date.getFullYear(), date.getMonth() + 1, 0));
 };
 
 // Payment method labels
@@ -102,4 +174,24 @@ export const debounce = (func, wait) => {
     clearTimeout(timeout);
     timeout = setTimeout(later, wait);
   };
+};
+
+// Share of a withdrawn bankkártya (terminal) tip that is booked as a reserve
+// (tartalék) cost at day end.
+export const TERMINAL_TIP_WITHDRAW_RATE = 0.6;
+
+// Ékezet- és kisbetű-független szöveges keresés a listákhoz ("metro" megtalálja
+// a „METRO Kft.”-t, "matrai" a „Mátrai”-t). Több szó esetén mindegyiknek
+// szerepelnie kell valamelyik mezőben.
+export const normalizeForSearch = (value) =>
+  String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+export const matchesSearch = (query, ...fields) => {
+  const terms = normalizeForSearch(query).trim().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = fields.map(normalizeForSearch).join(' ');
+  return terms.every((t) => haystack.includes(t));
 };

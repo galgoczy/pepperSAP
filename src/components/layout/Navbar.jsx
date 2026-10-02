@@ -16,6 +16,7 @@ export default function Navbar({ onMenuClick, isSidebarOpen }) {
     setViewMode,
     resetViewMode,
     actualRole,
+    isExtAccountant,
   } = useAuth();
   const navigate = useNavigate();
 
@@ -52,7 +53,8 @@ export default function Navbar({ onMenuClick, isSidebarOpen }) {
             )}
           </button>
 
-          <Link to="/" className="flex items-center">
+          {/* A külső könyvelőnek a főoldal nem elérhető – a logó a jelentésre visz. */}
+          <Link to={isExtAccountant ? '/reports' : '/'} className="flex items-center">
             <img
               src="https://pepperhouse.hu/wp-content/uploads/2022/03/cropped-pepper_logo2.png"
               alt="Pepper House"
@@ -103,6 +105,8 @@ export default function Navbar({ onMenuClick, isSidebarOpen }) {
                       {actualRole === 'admin' && 'Adminisztrátor'}
                       {actualRole === 'unit' && 'Éttermi egység'}
                       {actualRole === 'events' && 'Rendezvény egység'}
+                      {actualRole === 'accountant' && 'Könyvelő'}
+                      {actualRole === 'ext_accountant' && 'Külső könyvelő'}
                     </p>
                     {viewAsRole && (
                       <div className="mt-2 px-2 py-1 bg-amber-100 text-amber-800 text-xs rounded-full inline-flex items-center gap-1">
@@ -187,14 +191,16 @@ export default function Navbar({ onMenuClick, isSidebarOpen }) {
                   )}
 
                   <div className="py-1">
-                    <Link
-                      to="/settings"
-                      onClick={() => setIsProfileOpen(false)}
-                      className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                    >
-                      <Settings className="h-4 w-4" />
-                      Beállítások
-                    </Link>
+                    {!isExtAccountant && (
+                      <Link
+                        to="/settings"
+                        onClick={() => setIsProfileOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        <Settings className="h-4 w-4" />
+                        Beállítások
+                      </Link>
+                    )}
                     <button
                       onClick={handleSignOut}
                       className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"

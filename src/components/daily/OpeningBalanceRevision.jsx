@@ -4,14 +4,18 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { Button, Input, Textarea, Modal } from '../common';
 import { formatCurrency } from '../../lib/utils';
+import { approveOpeningBalanceRevision, rejectOpeningBalanceRevision, revokeOpeningBalanceRevision } from '../../lib/openingBalanceRevisions';
 import toast from 'react-hot-toast';
 
-export default function OpeningBalanceRevision({ unitId, date, currentBalance, onRevisionApproved }) {
+export default function OpeningBalanceRevision({ unitId, date, currentBalance, onRevisionApproved, pocket = 'official' }) {
   const { isAdmin, user } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [pendingRevision, setPendingRevision] = useState(null);
+  const [approvedRevision, setApprovedRevision] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  const pocketLabel = pocket === 'reserve' ? 'Tartalék nyitó' : 'Nyitó egyenleg';
 
   const [formData, setFormData] = useState({
     proposed_opening_balance: '',
@@ -25,22 +29,38 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
     }
 
     try {
-      const { data, error } = await supabase
-        .from('opening_balance_revisions')
-        .select('*')
-        .eq('unit_id', unitId)
-        .eq('target_date', date)
-        .eq('status', 'pending')
-        .maybeSingle();
+      const [pendingRes, approvedRes] = await Promise.all([
+        supabase
+          .from('opening_balance_revisions')
+          .select('*, units (name)')
+          .eq('unit_id', unitId)
+          .eq('target_date', date)
+          .eq('pocket', pocket)
+          .eq('status', 'pending')
+          .maybeSingle(),
+        // Most recent approved revision for this day/pocket — drives the
+        // "módosítva X összegről" note and the revert option.
+        supabase
+          .from('opening_balance_revisions')
+          .select('*')
+          .eq('unit_id', unitId)
+          .eq('target_date', date)
+          .eq('pocket', pocket)
+          .eq('status', 'approved')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
 
-      if (error && error.code !== 'PGRST116') throw error;
-      setPendingRevision(data);
+      if (pendingRes.error && pendingRes.error.code !== 'PGRST116') throw pendingRes.error;
+      setPendingRevision(pendingRes.data);
+      setApprovedRevision(approvedRes.data || null);
     } catch (error) {
       console.error('Error fetching revision:', error);
     } finally {
       setLoading(false);
     }
-  }, [unitId, date]);
+  }, [unitId, date, pocket]);
 
   useEffect(() => {
     fetchPendingRevision();
@@ -66,6 +86,7 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
         .insert([{
           unit_id: unitId,
           target_date: date,
+          pocket,
           current_opening_balance: currentBalance || 0,
           proposed_opening_balance: parseFloat(formData.proposed_opening_balance),
           reason: formData.reason.trim(),
@@ -91,38 +112,12 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('opening_balance_revisions')
-        .update({
-          status: action,
-          reviewed_by: user?.id,
-          reviewed_at: new Date().toISOString(),
-        })
-        .eq('id', pendingRevision.id);
-
-      if (error) throw error;
-
       if (action === 'approved') {
-        // Update the house_cash record for the previous day to set new closing balance
-        const previousDay = new Date(date);
-        previousDay.setDate(previousDay.getDate() - 1);
-        const previousDayStr = previousDay.toISOString().split('T')[0];
-
-        const { error: updateError } = await supabase
-          .from('house_cash')
-          .update({
-            official_total: pendingRevision.proposed_opening_balance,
-          })
-          .eq('unit_id', unitId)
-          .eq('date', previousDayStr);
-
-        if (updateError) {
-          console.error('Error updating house_cash:', updateError);
-        }
-
+        await approveOpeningBalanceRevision(pendingRevision, user?.id);
         toast.success('Módosítás jóváhagyva!');
         onRevisionApproved?.();
       } else {
+        await rejectOpeningBalanceRevision(pendingRevision, user?.id);
         toast.success('Módosítás elutasítva');
       }
 
@@ -135,17 +130,66 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
     }
   };
 
+  // Fully revoke an approved revision (admin only): removes the anchor so the
+  // balance recomputes from history again, instead of pinning a fixed value.
+  const handleRevoke = async () => {
+    if (!approvedRevision) return;
+    if (!window.confirm(
+      `Biztosan visszavonod ezt a jóváhagyott ${pocketLabel.toLowerCase()} revíziót? `
+      + 'Ezután az egyenleg ismét automatikusan, a történetből számolódik.'
+    )) return;
+    setSaving(true);
+    try {
+      await revokeOpeningBalanceRevision(approvedRevision, user?.id);
+      toast.success('Revízió visszavonva – az egyenleg újraszámolódik.');
+      onRevisionApproved?.();
+      fetchPendingRevision();
+    } catch (error) {
+      console.error('Error revoking revision:', error);
+      toast.error('Hiba a revízió visszavonásakor');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) return null;
+
+  // "Módosítva X összegről" note for an approved revision currently in effect,
+  // with a revert option (revert also requires approval).
+  const approvedNote = approvedRevision ? (
+    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg flex flex-wrap items-center justify-between gap-2">
+      <p className="text-xs text-blue-700">
+        Módosítva <span className="font-semibold">{formatCurrency(approvedRevision.current_opening_balance)}</span> összegről
+        {' '}(jóváhagyott)
+      </p>
+      {!pendingRevision && isAdmin && (
+        <button
+          type="button"
+          onClick={handleRevoke}
+          disabled={saving}
+          className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50"
+          title="A revízió teljes visszavonása – az egyenleg ismét a történetből számolódik"
+        >
+          Revízió visszavonása
+        </button>
+      )}
+    </div>
+  ) : null;
 
   // Show pending revision status
   if (pendingRevision) {
     return (
-      <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+      <>
+        {approvedNote}
+        <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
         <div className="flex items-start gap-2">
           <Clock className="h-5 w-5 text-yellow-600 mt-0.5" />
           <div className="flex-1">
             <p className="text-sm font-medium text-yellow-800">
-              Módosítási kérelem függőben
+              {pocketLabel} módosítási kérelem függőben
+              {pendingRevision.units?.name && (
+                <span className="font-normal"> — {pendingRevision.units.name} pénztára</span>
+              )}
             </p>
             <p className="text-xs text-yellow-700 mt-1">
               Javasolt érték: {formatCurrency(pendingRevision.proposed_opening_balance)}
@@ -179,34 +223,43 @@ export default function OpeningBalanceRevision({ unitId, date, currentBalance, o
             )}
           </div>
         </div>
-      </div>
+        </div>
+      </>
     );
   }
 
   return (
     <>
+      {approvedNote}
       <button
+        type="button"
         onClick={() => setShowModal(true)}
         className="mt-2 text-xs text-amber-600 hover:text-amber-700 flex items-center gap-1"
       >
         <Edit3 className="h-3 w-3" />
-        Nyitó egyenleg módosítása
+        {pocketLabel} módosítása
       </button>
 
       <Modal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title="Nyitó egyenleg módosítása"
+        title={`${pocketLabel} módosítása`}
         size="md"
       >
         <form onSubmit={handleSubmitRequest} className="space-y-4">
+          {pocket === 'reserve' && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+              Ez a <span className="font-medium">tartalék</span> nyitó értékét módosítja (nem a Pénztár zsebet).
+            </div>
+          )}
+
           <div className="p-3 bg-gray-50 rounded-lg">
-            <p className="text-sm text-gray-600">Jelenlegi nyitó egyenleg:</p>
+            <p className="text-sm text-gray-600">Jelenlegi {pocketLabel.toLowerCase()}:</p>
             <p className="text-lg font-bold text-gray-900">{formatCurrency(currentBalance || 0)}</p>
           </div>
 
           <Input
-            label="Javasolt nyitó egyenleg"
+            label={`Javasolt ${pocketLabel.toLowerCase()}`}
             type="number"
             step="1"
             value={formData.proposed_opening_balance}

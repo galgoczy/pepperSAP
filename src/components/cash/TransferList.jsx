@@ -1,7 +1,12 @@
 import { useState } from 'react';
-import { Check, Edit2, ArrowRight, Clock, CheckCircle, XCircle } from 'lucide-react';
-import { Card, Button, Badge, Modal, Input } from '../common';
-import { formatCurrency, formatDate } from '../../lib/utils';
+import { Check, Edit2, ArrowRight, Clock, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import { Card, Button, Badge, Modal, Input, Select } from '../common';
+import { formatCurrency, formatDate, getToday } from '../../lib/utils';
+
+const TYPE_OPTIONS = [
+  { value: 'cash', label: 'Készpénz' },
+  { value: 'reserve', label: 'Tartalék' },
+];
 
 const STATUS_BADGES = {
   pending: { variant: 'warning', label: 'Függőben', icon: Clock },
@@ -10,17 +15,32 @@ const STATUS_BADGES = {
   cancelled: { variant: 'error', label: 'Törölve', icon: XCircle },
 };
 
+// Jóváhagyáskor megváltoztatott összeg: az eredetit az original_amount őrzi.
+// (A 'modified' állapotot már nem írjuk, de a régi sorokon még előfordul.)
+const isModified = (t) =>
+  t.original_amount != null && Number(t.original_amount) !== Number(t.amount);
+
 export default function TransferList({
   transfers,
   loading,
   onApprove,
   onModify,
+  onEdit,
+  onDelete,
   currentUnitId,
+  currentUserId,
   isAdmin,
   showActions = true,
 }) {
   const [modifyModal, setModifyModal] = useState(null);
   const [newAmount, setNewAmount] = useState('');
+  const [modifyDate, setModifyDate] = useState('');
+  const [modifyType, setModifyType] = useState('cash');
+  const [editModal, setEditModal] = useState(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editType, setEditType] = useState('cash');
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   if (loading) {
     return (
@@ -45,17 +65,24 @@ export default function TransferList({
   const handleModifyClick = (transfer) => {
     setModifyModal(transfer);
     setNewAmount(transfer.amount.toString());
+    setModifyDate(transfer.transfer_date || getToday());
+    setModifyType(transfer.transfer_type || 'cash');
   };
 
   const handleModifySubmit = () => {
     if (modifyModal && newAmount) {
-      onModify(modifyModal.id, parseFloat(newAmount));
+      onModify(modifyModal.id, {
+        amount: parseFloat(newAmount),
+        transfer_date: modifyDate,
+        transfer_type: modifyType,
+      });
       setModifyModal(null);
       setNewAmount('');
     }
   };
 
   const getSourceName = (transfer) => {
+    if (transfer.source_type === 'bank') return 'Bank';
     if (transfer.source_type === 'central') return 'Központ';
     return transfer.source_unit?.name || 'Ismeretlen';
   };
@@ -63,6 +90,32 @@ export default function TransferList({
   const getDestinationName = (transfer) => {
     if (transfer.destination_type === 'central') return 'Központ';
     return transfer.destination_unit?.name || 'Ismeretlen';
+  };
+
+  const handleEditClick = (transfer) => {
+    setEditModal(transfer);
+    setEditAmount(transfer.amount.toString());
+    setEditDate(transfer.transfer_date || getToday());
+    setEditType(transfer.transfer_type || 'cash');
+  };
+
+  const handleEditSubmit = () => {
+    if (editModal && editAmount) {
+      onEdit(editModal.id, {
+        amount: parseFloat(editAmount),
+        transfer_date: editDate,
+        transfer_type: editType,
+      });
+      setEditModal(null);
+      setEditAmount('');
+    }
+  };
+
+  const handleDeleteConfirm = () => {
+    if (deleteConfirm) {
+      onDelete(deleteConfirm.id);
+      setDeleteConfirm(null);
+    }
   };
 
   const canApprove = (transfer) => {
@@ -73,12 +126,31 @@ export default function TransferList({
     return transfer.destination_unit_id === currentUnitId;
   };
 
+  // A still-pending transfer can be edited/deleted before approval by an admin,
+  // by the person who initiated it, OR by a user of the unit that sent it
+  // (so the originating unit can always manage its own outgoing transfer, even
+  // if initiated_by is missing/old or a different colleague created it).
+  const canManageOwn = (transfer) => {
+    if (!showActions) return false;
+    if (transfer.status !== 'pending') return false;
+    if (!onEdit && !onDelete) return false;
+    if (isAdmin) return true;
+    if (currentUserId && transfer.initiated_by === currentUserId) return true;
+    // The sending unit owns its outgoing transfer while it is pending.
+    if (currentUnitId && transfer.source_unit_id === currentUnitId) return true;
+    return false;
+  };
+
   return (
     <>
       <Card>
         <div className="space-y-3">
           {transfers.map((transfer) => {
-            const status = STATUS_BADGES[transfer.status];
+            // A "Módosítva" jelzést az adja, hogy az átküldés jóváhagyáskor
+            // más összeggel ment át (van eltérő original_amount) – nem külön
+            // állapot. (A régi sorokon még a 'modified' állapot áll; azokat a
+            // STATUS_BADGES változatlanul kezeli.)
+            const status = isModified(transfer) ? STATUS_BADGES.modified : STATUS_BADGES[transfer.status];
             const StatusIcon = status.icon;
 
             return (
@@ -112,8 +184,11 @@ export default function TransferList({
                     <p className="text-lg font-bold text-gray-900">
                       {formatCurrency(transfer.amount)}
                     </p>
-                    {transfer.original_amount && transfer.original_amount !== transfer.amount && (
-                      <p className="text-xs text-gray-500 line-through">
+                    {isModified(transfer) && (
+                      <p
+                        className="text-xs text-gray-500 line-through"
+                        title="Az eredetileg küldött összeg (jóváhagyáskor módosították)"
+                      >
                         {formatCurrency(transfer.original_amount)}
                       </p>
                     )}
@@ -129,23 +204,47 @@ export default function TransferList({
                 </div>
 
                 {/* Actions */}
-                {canApprove(transfer) && (
-                  <div className="mt-3 flex gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => onApprove(transfer.id)}
-                    >
-                      <Check className="h-4 w-4" />
-                      Jóváhagyás
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => handleModifyClick(transfer)}
-                    >
-                      <Edit2 className="h-4 w-4" />
-                      Módosítás
-                    </Button>
+                {(canApprove(transfer) || canManageOwn(transfer)) && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {canApprove(transfer) && (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => onApprove(transfer.id)}
+                        >
+                          <Check className="h-4 w-4" />
+                          Jóváhagyás
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => handleModifyClick(transfer)}
+                        >
+                          <Edit2 className="h-4 w-4" />
+                          Módosítás
+                        </Button>
+                      </>
+                    )}
+                    {canManageOwn(transfer) && onEdit && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleEditClick(transfer)}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                        Szerkesztés
+                      </Button>
+                    )}
+                    {canManageOwn(transfer) && onDelete && (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => setDeleteConfirm(transfer)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Törlés
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>
@@ -158,7 +257,7 @@ export default function TransferList({
       <Modal
         isOpen={!!modifyModal}
         onClose={() => setModifyModal(null)}
-        title="Összeg módosítása"
+        title="Átküldés módosítása"
         size="sm"
       >
         <div className="space-y-4">
@@ -175,12 +274,93 @@ export default function TransferList({
             suffix="Ft"
             required
           />
+          <Input
+            label="Dátum"
+            type="date"
+            value={modifyDate}
+            onChange={(e) => setModifyDate(e.target.value)}
+            required
+          />
+          <Select
+            label="Típus"
+            value={modifyType}
+            onChange={(e) => setModifyType(e.target.value)}
+            options={TYPE_OPTIONS}
+          />
           <div className="flex justify-end gap-3 pt-4">
             <Button variant="secondary" onClick={() => setModifyModal(null)}>
               Mégse
             </Button>
             <Button onClick={handleModifySubmit}>
               Mentés és jóváhagyás
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit (pending, before approval) Modal */}
+      <Modal
+        isOpen={!!editModal}
+        onClose={() => setEditModal(null)}
+        title="Átküldés szerkesztése"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Jóváhagyás előtt módosíthatod az összeget, a dátumot és a típust. Az átküldés továbbra is függőben marad.
+          </p>
+          <Input
+            label="Összeg"
+            type="number"
+            step="1"
+            min="0"
+            value={editAmount}
+            onChange={(e) => setEditAmount(e.target.value)}
+            suffix="Ft"
+            required
+          />
+          <Input
+            label="Dátum"
+            type="date"
+            value={editDate}
+            onChange={(e) => setEditDate(e.target.value)}
+            required
+          />
+          <Select
+            label="Típus"
+            value={editType}
+            onChange={(e) => setEditType(e.target.value)}
+            options={TYPE_OPTIONS}
+          />
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="secondary" onClick={() => setEditModal(null)}>
+              Mégse
+            </Button>
+            <Button onClick={handleEditSubmit}>
+              Mentés
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete (pending, before approval) confirmation */}
+      <Modal
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        title="Átküldés törlése"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Biztosan törlöd ezt a függőben lévő átküldést
+            {deleteConfirm && <> (<strong>{formatCurrency(deleteConfirm.amount)}</strong>)</>}? Ez a művelet nem vonható vissza.
+          </p>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="secondary" onClick={() => setDeleteConfirm(null)}>
+              Mégse
+            </Button>
+            <Button variant="danger" onClick={handleDeleteConfirm}>
+              Törlés
             </Button>
           </div>
         </div>

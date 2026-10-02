@@ -7,6 +7,7 @@ import {
   CalendarDays,
   Receipt,
   PartyPopper,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Target,
@@ -27,6 +28,160 @@ import { MiniTrendChart } from '../charts/RevenueTrendChart';
 function AnimatedCurrency({ value }) {
   const animatedValue = useAnimatedNumber(value || 0, 1200);
   return formatCurrency(animatedValue);
+}
+
+// "Fordított szervízdíj" (reverse service fee) for a month: 20% of the unit's
+// GROSS cash-register revenue, reduced by 18.5% (i.e. 81.5% of it) —
+// gross * 0.20 * 0.815. Gross = the 5/18/27% VAT buckets summed as-is; the 0%
+// bucket is EXCLUDED (typically göngyöleg — only food & drink counts).
+// A kártya az itt felsorolt egységeket számolja, ugyanazzal a képlettel, és a
+// számuk összegét mutatja; a bontás egérrel fölé állva látszik.
+const RSF_GROSS_SHARE = 0.20;     // 20% of the gross revenue
+const RSF_RETAINED_RATE = 0.815;  // reduced by 18.5% -> 81.5% retained
+const RSF_UNITS = ['Knorr 105', 'TTK Kantin'];
+const RSF_MONTH_NAMES = [
+  'Január', 'Február', 'Március', 'Április', 'Május', 'Június',
+  'Július', 'Augusztus', 'Szeptember', 'Október', 'November', 'December',
+];
+
+function currentYearMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+function shiftYearMonth(ym, delta) {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function monthRange(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return { start: `${ym}-01`, end: `${ym}-${String(last).padStart(2, '0')}` };
+}
+function monthLabel(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${y}. ${RSF_MONTH_NAMES[m - 1]}`;
+}
+
+// Card shown on the admin dashboard next to the "missing data" block.
+function ReverseServiceFeeCard() {
+  const [ym, setYm] = useState(currentYearMonth());
+  // Egységenkénti bontás: { name, gross, fee, missing }. A kártyán az összeg
+  // látszik, a bontás a tooltipben.
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const current = currentYearMonth();
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const { data: units } = await supabase
+          .from('units').select('id, name').in('name', RSF_UNITS);
+        const idByName = new Map((units || []).map((u) => [u.name, u.id]));
+        const ids = Array.from(idByName.values());
+
+        const grossByUnit = new Map();
+        if (ids.length > 0) {
+          const { start, end } = monthRange(ym);
+          const { data } = await supabase
+            .from('daily_revenue')
+            .select('unit_id, cash_register_revenue(vat_5_percent, vat_18_percent, vat_27_percent)')
+            .in('unit_id', ids)
+            .gte('date', start)
+            .lte('date', end);
+          (data || []).forEach((dr) => (dr.cash_register_revenue || []).forEach((cr) => {
+            // 0% (göngyöleg) intentionally excluded — only food & drink counts.
+            const gross = (parseFloat(cr.vat_5_percent) || 0)
+              + (parseFloat(cr.vat_18_percent) || 0)
+              + (parseFloat(cr.vat_27_percent) || 0);
+            grossByUnit.set(dr.unit_id, (grossByUnit.get(dr.unit_id) || 0) + gross);
+          }));
+        }
+
+        // A sorrend az RSF_UNITS sorrendje, nem a lekérdezésé. Ha egy egység
+        // nincs meg a units táblában (elírt név), azt jelezzük, nem nyeljük el.
+        const next = RSF_UNITS.map((name) => {
+          const id = idByName.get(name);
+          if (!id) return { name, gross: 0, fee: 0, missing: true };
+          const gross = grossByUnit.get(id) || 0;
+          return { name, gross, fee: gross * RSF_GROSS_SHARE * RSF_RETAINED_RATE, missing: false };
+        });
+        if (!cancelled) setRows(next);
+      } catch (e) {
+        console.error('Error loading reverse service fee:', e);
+        if (!cancelled) setRows([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [ym]);
+
+  const value = rows.reduce((sum, r) => sum + r.fee, 0);
+  const unitLabel = (rows.length ? rows.map((r) => r.name) : RSF_UNITS).join(' + ');
+  const detail = [
+    `${monthLabel(ym)} – fordított szervízdíj egységenként:`,
+    ...(rows.length
+      ? rows.map((r) =>
+          r.missing
+            ? `${r.name}: nincs ilyen nevű egység`
+            : `${r.name}: ${formatCurrency(r.fee)}   (bruttó ${formatCurrency(r.gross)})`
+        )
+      : ['(nincs adat)']),
+    `Összesen: ${formatCurrency(value)}`,
+    '',
+    'Számítás: bruttó (5 + 18 + 27% ÁFA, göngyöleg nélkül) × 20% × 81,5%',
+  ].join('\n');
+
+  const atCurrent = ym >= current;
+
+  return (
+    <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm text-indigo-700 font-medium">Fordított szervízdíj a hónapban</p>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setYm((p) => shiftYearMonth(p, -1))}
+            title="Előző hónap"
+            className="p-1 rounded text-indigo-500 hover:bg-indigo-200/60"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setYm(current)}
+            disabled={ym === current}
+            title="Aktuális hónap"
+            className="p-1.5 rounded text-indigo-500 hover:bg-indigo-200/60 disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            <span className="block h-2 w-2 rounded-full bg-current" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setYm((p) => shiftYearMonth(p, 1))}
+            disabled={atCurrent}
+            title="Következő hónap"
+            className="p-1 rounded text-indigo-500 hover:bg-indigo-200/60 disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+      <p className="text-xs text-indigo-600 mt-1">{monthLabel(ym)}</p>
+      {/* Az összeg és az egységek listája együtt a tooltip felülete: fölé
+          állva az egységenkénti bontás és a képlet látszik. */}
+      <div className={loading ? '' : 'cursor-help'} title={loading ? undefined : detail}>
+        <p className="text-2xl font-bold text-indigo-900 mt-1 break-words">
+          {loading ? '…' : <AnimatedCurrency value={value} />}
+        </p>
+        <p className="text-xs text-indigo-400 mt-1">({unitLabel})</p>
+      </div>
+    </Card>
+  );
 }
 
 // Color options for marking
@@ -680,26 +835,31 @@ export default function AdminDashboard() {
       })()}
 
       {/* Warnings */}
-      {stats.missingData.length > 0 && (
-        <Card className="border-yellow-200 bg-yellow-50">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
-            <div>
-              <h3 className="font-medium text-yellow-800">Hiányzó előző napi adatok</h3>
-              <p className="text-sm text-yellow-700 mt-1">
-                Az alábbi egységeknél még nem rögzítettek előző napi forgalmi adatokat:
-              </p>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {stats.missingData.map((unit) => (
-                  <Badge key={unit.id} variant="warning">
-                    {unit.name}
-                  </Badge>
-                ))}
+      {/* Reverse service fee (new) next to the missing-data block; on mobile the
+          fee card stacks above the missing-data block. */}
+      <div className="grid gap-6 md:grid-cols-2 items-start">
+        <ReverseServiceFeeCard />
+        {stats.missingData.length > 0 && (
+          <Card className="border-yellow-200 bg-yellow-50">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
+              <div>
+                <h3 className="font-medium text-yellow-800">Hiányzó előző napi adatok</h3>
+                <p className="text-sm text-yellow-700 mt-1">
+                  Az alábbi egységeknél még nem rögzítettek előző napi forgalmi adatokat:
+                </p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {stats.missingData.map((unit) => (
+                    <Badge key={unit.id} variant="warning">
+                      {unit.name}
+                    </Badge>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        </Card>
-      )}
+          </Card>
+        )}
+      </div>
 
       {/* Unit revenues */}
       <div className="grid gap-6 lg:grid-cols-2">

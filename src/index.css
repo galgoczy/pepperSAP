@@ -44,6 +44,19 @@ body {
   background: #9E9E9E;
 }
 
+/* Hide the up/down spin buttons on number inputs across the app. Stepping the
+   value one-by-one with those buttons (or the scroll wheel) caused accidental
+   off-by-0.01 errors (e.g. 19.99 instead of 20); values should only be typed. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* Print styles */
 @media print {
   .no-print {

@@ -34,6 +34,17 @@ const Input = forwardRef(
           <input
             ref={ref}
             type={type}
+            // For number inputs, blur on wheel so scrolling over a focused field
+            // can't accidentally change the value (a common source of off-by-one
+            // errors). Combined with the hidden spin buttons, values are typed.
+            onWheel={
+              type === 'number'
+                ? (e) => {
+                    e.currentTarget.blur();
+                    props.onWheel?.(e);
+                  }
+                : props.onWheel
+            }
             className={cn(
               'w-full px-4 py-2.5 border rounded-lg transition-colors',
               'focus:ring-2 focus:ring-pepper-red focus:border-transparent',
