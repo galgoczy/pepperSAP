@@ -149,6 +149,10 @@ export async function fetchHouseCashSeries(unitId, endDate) {
         otherCashIncome: 0,
         reserveDiff: 0,
         otherReserveIncome: 0,
+        // A különbség két tagja külön is (a bontásban így ellenőrizhető):
+        //   reserveDiff = softwareRevenue - registerRevenue
+        softwareRevenue: 0,
+        registerRevenue: 0,
       });
     }
     return byDate.get(d);
@@ -165,6 +169,8 @@ export async function fetchHouseCashSeries(unitId, endDate) {
     // numbers kept separately, because cashRevenue/reserveRevenue merge them.
     row.registerCash += cash;
     row.reserveDiff += (parseFloat(rev.total_revenue) || 0) - revenue;
+    row.softwareRevenue += parseFloat(rev.total_revenue) || 0;
+    row.registerRevenue += revenue;
     if (tipReserveCost) {
       row.reserveExpenses += tipReserveCost;
       row.reservePaymentItems.push({ label: 'Bankkártyás borravaló kivét (60%)', amount: tipReserveCost });

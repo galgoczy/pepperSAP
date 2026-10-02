@@ -7,11 +7,14 @@ import { useUnitBalanceBreakdown } from '../../hooks/useUnitBalanceBreakdown';
 import { paymentMethodLabel } from '../../lib/cashPockets';
 
 const TYPE_STYLE = {
-  income: 'text-green-700',
-  expense: 'text-red-600',
   transfer: 'text-amber-700',
   revision: 'text-blue-700',
 };
+// Bevétel és kiadás színe az előjelet követi: ami növeli az egyenleget zöld,
+// ami csökkenti piros. (Korábban minden bevétel-sor zöld volt, a negatív
+// szoftver−pénztárgép különbség is – az félrevezető.)
+const amountClass = (item) =>
+  TYPE_STYLE[item.type] || (item.amount >= 0 ? 'text-green-700' : 'text-red-600');
 
 const KIND_LABEL = { expense: 'Számla', efo: 'EFO', wage: 'Heti bér' };
 
@@ -84,6 +87,51 @@ function SourceDetails({ item, onOpenDay }) {
   );
 }
 
+// Egy napi összesítő sor (pénztárgép forgalom, különbség, elütés, egyéb
+// bevétel) részletei: mire épül, és a nap megnyitása, ahol ellenőrizhető.
+const DAY_TEXT = {
+  registerCash: 'A nap pénztárgép-zárásainak készpénzes forgalma (Z-jelentés KP sora, gépenként összeadva).',
+  otherIncome: 'A napi rögzítésben külön megadott egyéb bevétel.',
+  discrepancy: 'A nap rögzített elütései: a „téves összeg” nincs a fiókban, a „rossz fizetési mód” iránytól függően visz ki vagy hoz be készpénzt.',
+};
+
+function DayDetails({ item, onOpenDay }) {
+  const day = item.day;
+  return (
+    <div className="mx-2 mb-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs">
+      {day.kind === 'reserveDiff' ? (
+        <>
+          <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1">
+            <dt className="text-gray-500">Szoftver (Novo) forgalom</dt>
+            <dd className="text-gray-900 text-right">{formatCurrency(day.software)}</dd>
+            <dt className="text-gray-500">Pénztárgép forgalom (ÁFA-kulcsok)</dt>
+            <dd className="text-gray-900 text-right">− {formatCurrency(day.register)}</dd>
+            <dt className="font-semibold text-gray-700">Különbség → Tartalék</dt>
+            <dd className={`font-semibold text-right ${item.amount >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+              {item.amount >= 0 ? '+' : ''}{formatCurrency(item.amount)}
+            </dd>
+          </dl>
+          <p className="mt-2 text-gray-600">
+            Ami a szoftverben megvan, de a pénztárgépen nem, az a Tartalékba kerül. Ha a pénztárgép
+            mutat többet, a különbség negatív, és csökkenti a Tartalékot. Nagy eltérésnél érdemes
+            megnézni, rögzítve van-e minden zárás, és jó-e a szoftver forgalom.
+          </p>
+        </>
+      ) : (
+        <p className="text-gray-600">{DAY_TEXT[day.kind]}</p>
+      )}
+      <button
+        type="button"
+        onClick={() => onOpenDay(item.date)}
+        className="mt-2 inline-flex items-center gap-1 font-medium text-pepper-red hover:underline"
+      >
+        <ExternalLink className="h-3 w-3" />
+        Megnyitás a napi rögzítésben ({formatDate(item.date)})
+      </button>
+    </div>
+  );
+}
+
 // Drill-down for a unit's cash or reserve balance: shows the daily closings,
 // transfers and revisions that make it up. A kifizetés tételek kattinthatók:
 // kinyílnak a részletek, és onnan a rögzítés napjára lehet ugrani.
@@ -108,7 +156,7 @@ export default function BalanceBreakdownModal({ isOpen, onClose, unitId, pocket,
       ) : (
         <div className="space-y-1 max-h-[60vh] overflow-y-auto">
           {items.map((item, idx) => {
-            const clickable = !!item.source;
+            const clickable = !!item.source || !!item.day;
             const isOpenRow = clickable && openIdx === idx;
             return (
               <div key={idx} className="border-b border-gray-100 last:border-0">
@@ -146,11 +194,13 @@ export default function BalanceBreakdownModal({ isOpen, onClose, unitId, pocket,
                       <p className="text-xs text-gray-400">{item.date ? formatDate(item.date) : ''}</p>
                     </div>
                   </div>
-                  <span className={`font-semibold whitespace-nowrap ${TYPE_STYLE[item.type] || 'text-gray-700'}`}>
+                  <span className={`font-semibold whitespace-nowrap ${amountClass(item)}`}>
                     {item.amount >= 0 ? '+' : ''}{formatCurrency(item.amount)}
                   </span>
                 </div>
-                {isOpenRow && <SourceDetails item={item} onOpenDay={openDay} />}
+                {isOpenRow && (item.source
+                  ? <SourceDetails item={item} onOpenDay={openDay} />
+                  : <DayDetails item={item} onOpenDay={openDay} />)}
               </div>
             );
           })}

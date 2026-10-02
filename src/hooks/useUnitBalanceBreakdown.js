@@ -44,11 +44,15 @@ export function useUnitBalanceBreakdown(unitId, pocket /* 'cash' | 'reserve' */)
               list.push({ date: d, label: 'Revízió (nyitó korrekció)', amount: adj, type: 'revision' });
             }
           }
-          if (row.cashRevenue) {
-            list.push({ date: d, label: 'Napi készpénz bevétel', amount: row.cashRevenue, type: 'income' });
+          // A napi sorok a nap rögzítésére mutatnak (day), így ellenőrizhetők.
+          if (row.registerCash) {
+            list.push({ date: d, label: 'Pénztárgép készpénz forgalom', amount: row.registerCash, type: 'income', day: { kind: 'registerCash' } });
+          }
+          if (row.otherCashIncome) {
+            list.push({ date: d, label: 'Egyéb hivatalos készpénz bevétel', amount: row.otherCashIncome, type: 'income', day: { kind: 'otherIncome' } });
           }
           if (row.cashDiscrepancies) {
-            list.push({ date: d, label: 'Elütések', amount: -row.cashDiscrepancies, type: 'expense' });
+            list.push({ date: d, label: 'Elütések', amount: -row.cashDiscrepancies, type: 'expense', day: { kind: 'discrepancy' } });
           }
           // A forrás (számla / EFO / bér rekord) a kattintható részletekhez kell.
           (row.cashPaymentItems || []).forEach((it) => {
@@ -70,8 +74,20 @@ export function useUnitBalanceBreakdown(unitId, pocket /* 'cash' | 'reserve' */)
               list.push({ date: d, label: 'Revízió (tartalék nyitó korrekció)', amount: adj, type: 'revision' });
             }
           }
-          if (row.reserveRevenue) {
-            list.push({ date: d, label: 'Tartalék bevétel (szoftver-pénztárgép különbség + extra)', amount: row.reserveRevenue, type: 'income' });
+          // A tartalék bevétele két külön dolog, ezért két sor: a szoftver és a
+          // pénztárgép forgalmának különbsége (lehet negatív is), és a napi
+          // rögzítésben megadott egyéb (extra) bevétel.
+          if (row.reserveDiff) {
+            list.push({
+              date: d,
+              label: 'Szoftver − pénztárgép különbség',
+              amount: row.reserveDiff,
+              type: 'income',
+              day: { kind: 'reserveDiff', software: row.softwareRevenue, register: row.registerRevenue },
+            });
+          }
+          if (row.otherReserveIncome) {
+            list.push({ date: d, label: 'Egyéb tartalék bevétel (extra)', amount: row.otherReserveIncome, type: 'income', day: { kind: 'otherIncome' } });
           }
           (row.reservePaymentItems || []).forEach((it) => {
             list.push({ date: d, label: it.label, amount: -(parseFloat(it.amount) || 0), type: 'expense', source: it.source || null, pocket: 'reserve' });
