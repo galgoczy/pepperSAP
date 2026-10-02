@@ -33,6 +33,15 @@ export function itemSource(item) {
   return 'house';
 }
 
+// Készpénzben fizetett-e a tétel – a Számlák lista "Fiz. módja: Készpénz"
+// szűrője ezt használja. Ide tartozik minden készpénzes költség: hivatalos és
+// nem hivatalos számla, EFO, heti bér. A nem hivatalos kiadás akkor is
+// készpénz (tartalék), ha egy régi soron nincs kitöltve a fizetési mód.
+export function isCashPaid(item) {
+  if (item.payment_method === 'cash') return true;
+  return !item.payment_method && (item.kind === 'wage' || item.is_official === false);
+}
+
 export const SOURCE_LABELS = {
   bank: 'Bankszámla',
   house: 'Házipénztár',

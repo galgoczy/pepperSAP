@@ -107,7 +107,9 @@ function normalizeWage(p) {
     description: p.notes || '',
     amount: parseFloat(p.total_amount) || 0,
     currency: 'HUF',
-    payment_method: null,
+    // A heti bért mindig készpénzben fizetjük a házipénztárból (hivatalos
+    // rész) és a tartalékból (extra rész) – külön fizetési mód mező nincs rá.
+    payment_method: 'cash',
     is_official: null,
     date: p.payment_date,
     created_at: p.created_at,

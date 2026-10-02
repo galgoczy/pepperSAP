@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Receipt, Filter, ChevronUp, ChevronDown, Search, X, FileSpreadsheet } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { usePaymentItems, PAYMENT_KIND_META, listKindOf } from '../../hooks/usePaymentItems';
-import { exportPaymentsToExcel, itemSource, effectiveDate } from '../../lib/paymentExport';
+import { exportPaymentsToExcel, itemSource, effectiveDate, isCashPaid } from '../../lib/paymentExport';
 import {
   Table,
   TableHead,
@@ -88,8 +88,12 @@ export default function ExpenseList({
       return false;
     }
     // 'cash_card' is a combined option: cash and card payments together.
+    // A "Készpénz" minden készpénzes költséget mutat (hivatalos, nem hivatalos,
+    // EFO, heti bér); hogy ezen belül melyiket, azt a Ktg fajtája szűri.
     if (paymentFilter === 'cash_card') {
-      if (item.payment_method !== 'cash' && item.payment_method !== 'card') return false;
+      if (!isCashPaid(item) && item.payment_method !== 'card') return false;
+    } else if (paymentFilter === 'cash') {
+      if (!isCashPaid(item)) return false;
     } else if (paymentFilter && item.payment_method !== paymentFilter) {
       return false;
     }
