@@ -6,6 +6,7 @@ import { useAppSettings } from '../../hooks/useAppSettings';
 import { useAuth } from '../../hooks/useAuth';
 import { fetchHouseCashSeries, fetchCentralHouseCashSeries } from '../../lib/houseCashSeries';
 import { formatCurrency, formatDate } from '../../lib/utils';
+import { houseCashPeriodSummary } from '../../lib/houseCashSummary';
 
 function sanitizeForPdf(text) {
   if (typeof text !== 'string') return text;
@@ -159,7 +160,66 @@ function PocketTable({ rows, pocket }) {
   );
 }
 
-function UnitSection({ unitName, cashRows, reserveRows, showReserve }) {
+// Időszaki összesítés a riport alján: a két zseb együtt – mi növelte (+), mi
+// csökkentette (−), és az eredmény; alatta a nyitó → záró levezetés.
+function PeriodSummary({ rows, showReserve, startDate, endDate }) {
+  if (!rows || rows.length === 0) return null;
+  const s = houseCashPeriodSummary(rows, { includeReserve: showReserve });
+  const Line = ({ label, amount, sign }) => (
+    <div className="flex justify-between gap-3 py-0.5">
+      <span className="text-gray-600">{label}</span>
+      <span className={`whitespace-nowrap ${sign === '+' ? 'text-green-700' : 'text-red-600'}`}>
+        {sign}{formatCurrency(amount)}
+      </span>
+    </div>
+  );
+  return (
+    <div className="rounded-lg border-2 border-gray-300 bg-gray-50 p-4">
+      <h4 className="font-semibold text-gray-900">
+        Időszaki összesítés – {showReserve ? 'pénztár zseb + tartalék' : 'pénztár zseb'}
+      </h4>
+      <p className="mb-3 text-xs text-gray-500">{formatDate(startDate)} – {formatDate(endDate)}</p>
+      <div className="grid gap-4 text-sm sm:grid-cols-2">
+        <div>
+          <p className="mb-1 font-medium text-green-800">Növelte (+)</p>
+          {s.plus.length ? s.plus.map((i) => <Line key={i.label} {...i} sign="+" />) : <p className="text-gray-400">–</p>}
+          <div className="mt-1 flex justify-between border-t border-gray-300 pt-1 font-semibold">
+            <span>+ Összesen</span><span className="text-green-700">+{formatCurrency(s.plusTotal)}</span>
+          </div>
+        </div>
+        <div>
+          <p className="mb-1 font-medium text-red-800">Csökkentette (−)</p>
+          {s.minus.length ? s.minus.map((i) => <Line key={i.label} {...i} sign="−" />) : <p className="text-gray-400">–</p>}
+          <div className="mt-1 flex justify-between border-t border-gray-300 pt-1 font-semibold">
+            <span>− Összesen</span><span className="text-red-600">−{formatCurrency(s.minusTotal)}</span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 space-y-1 border-t-2 border-gray-300 pt-3 text-sm">
+        <div className="flex justify-between text-base font-bold">
+          <span>Eredmény (+ − −)</span>
+          <span className={s.result >= 0 ? 'text-green-700' : 'text-red-600'}>
+            {s.result >= 0 ? '+' : '−'}{formatCurrency(Math.abs(s.result))}
+          </span>
+        </div>
+        <div className="flex justify-between text-gray-600">
+          <span>Nyitó egyenleg (időszak eleje)</span><span>{formatCurrency(s.opening)}</span>
+        </div>
+        {s.revision !== 0 && (
+          <div className="flex justify-between text-blue-700" title="Az időszakban jóváhagyott nyitó-egyenleg revízió hatása">
+            <span>Revízió (nyitó korrekció)</span>
+            <span>{s.revision >= 0 ? '+' : '−'}{formatCurrency(Math.abs(s.revision))}</span>
+          </div>
+        )}
+        <div className="flex justify-between font-semibold">
+          <span>Záró egyenleg (utolsó nap)</span><span>{formatCurrency(s.closing)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UnitSection({ unitName, cashRows, reserveRows, showReserve, startDate, endDate }) {
   return (
     <div className="space-y-6">
       {unitName && <h3 className="text-lg font-bold text-gray-900">{unitName}</h3>}
@@ -173,6 +233,8 @@ function UnitSection({ unitName, cashRows, reserveRows, showReserve }) {
           <PocketTable rows={reserveRows} pocket="reserve" />
         </div>
       )}
+      {/* cashRows és reserveRows ugyanazok a napi sorok (mindkét zseb adatával). */}
+      <PeriodSummary rows={cashRows} showReserve={showReserve} startDate={startDate} endDate={endDate} />
     </div>
   );
 }
@@ -316,6 +378,38 @@ export default function HouseCashReport({ unitId, units, startDate, endDate }) {
 
       renderPocket('Pénztár zseb', sec.cashRows, 'cash');
       if (showReserve) renderPocket('Tartalék', sec.reserveRows, 'reserve');
+
+      // Időszaki összesítés: ugyanaz, mint a képernyőn.
+      if (sec.cashRows.length) {
+        const sm = houseCashPeriodSummary(sec.cashRows, { includeReserve: showReserve });
+        const need = 30 + (sm.plus.length + sm.minus.length) * 4;
+        if (y + need > 280) { doc.addPage(); drawHeader(); y = 36; }
+        doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+        doc.text(sanitizeForPdf(`Időszaki összesítés - ${showReserve ? 'pénztár zseb + tartalék' : 'pénztár zseb'}`), 15, y);
+        y += 6;
+        doc.setFontSize(8);
+        // A PDF alapbetűtípusa nem ismeri a matematikai mínuszt (−) és a
+        // gondolatjelet (–); ezek helyett sima kötőjel megy.
+        const plain = (t) => sanitizeForPdf(t).replace(/[−–]/g, '-');
+        const line = (label, txt, bold = false) => {
+          doc.setFont('helvetica', bold ? 'bold' : 'normal');
+          doc.text(plain(label), 18, y);
+          doc.text(txt, rightMargin, y, { align: 'right' });
+          y += 4;
+        };
+        doc.setFont('helvetica', 'bold'); doc.text(sanitizeForPdf('Növelte (+)'), 15, y); y += 4;
+        sm.plus.forEach((i) => line(i.label, '+' + pdfHuf(i.amount)));
+        line('+ Összesen', '+' + pdfHuf(sm.plusTotal), true);
+        y += 1;
+        doc.setFont('helvetica', 'bold'); doc.text(sanitizeForPdf('Csökkentette (-)'), 15, y); y += 4;
+        sm.minus.forEach((i) => line(i.label, '-' + pdfHuf(i.amount)));
+        line('- Összesen', '-' + pdfHuf(sm.minusTotal), true);
+        doc.line(15, y - 1, rightMargin, y - 1); y += 3;
+        line('Eredmény (+ - -)', (sm.result >= 0 ? '+' : '-') + pdfHuf(Math.abs(sm.result)), true);
+        line('Nyitó egyenleg (időszak eleje)', pdfHuf(sm.opening));
+        if (sm.revision !== 0) line('Revízió (nyitó korrekció)', (sm.revision >= 0 ? '+' : '-') + pdfHuf(Math.abs(sm.revision)));
+        line('Záró egyenleg (utolsó nap)', pdfHuf(sm.closing), true);
+      }
     });
 
     const total = doc.getNumberOfPages();
@@ -350,6 +444,8 @@ export default function HouseCashReport({ unitId, units, startDate, endDate }) {
               cashRows={sec.cashRows}
               reserveRows={sec.reserveRows}
               showReserve={showReserve}
+              startDate={startDate}
+              endDate={endDate}
             />
           </Card>
         ))
