@@ -3,6 +3,7 @@ import { TERMINAL_TIP_WITHDRAW_RATE } from './utils';
 import { netCashDiscrepancy } from './discrepancies';
 import { employeeInvoiceReserveCost } from './expenseVat';
 import { LIVE_TRANSFER_STATUSES } from './transferStatus';
+import { expenseCashPocket, efoOfficialMovesCash } from './cashPockets';
 
 // Computes a unit's daily house-cash series (Pénztár zseb + Tartalék) live from
 // raw data, from zero through full history. This is the single source of truth
@@ -13,10 +14,13 @@ import { LIVE_TRANSFER_STATUSES } from './transferStatus';
 //   cash    = (register cash - HUF discrepancies + official other income)
 //             (discrepancies = "téves összeg" elütés taken out of the drawer,
 //              corrected by "rossz fizetési mód" elütés moving cash in/out)
-//             - (cash-paid official expenses + official EFO/wage)
+//             - (cash-paid official expenses + official EFO/wage;
+//                EFO paid by transfer excluded)
 //             +/- approved cash transfers
 //   reserve = (software revenue - register revenue + other extra income)
-//             - (non-official expenses + non-official EFO/wage)
+//             - (CASH-paid non-official expenses + non-official EFO/wage)
+//   Card / MOL card / transfer / clearing payments move no house cash at all,
+//   official or not (see cashPockets.js).
 //             +/- approved reserve transfers
 //
 // Dolgozói számla a kivétel: annak a TELJES összegét a Központ készpénze állja
@@ -27,8 +31,9 @@ import { LIVE_TRANSFER_STATUSES } from './transferStatus';
 // Ha az még nem futott le, a bővített lekérdezés hibára futna, és ezzel MINDEN
 // kiadás kiesne a házipénztárból – a napi rögzítés nyitó egyenlege is elromlana.
 // Ezért ilyenkor a régi oszlopokkal kérdezünk újra.
+// Az id és a részletek a Házipénztár bontás kattintható tételeihez kellenek.
 const EXPENSE_BASE_COLS =
-  'invoice_date, supplier_name, item_description, amount, is_official, payment_method';
+  'id, invoice_date, supplier_name, invoice_number, item_description, amount, is_official, payment_method, notes';
 const EXPENSE_VAT_COLS = `${EXPENSE_BASE_COLS}, vat_rate, vat_amount, is_employee_invoice`;
 
 async function fetchUnitExpenses(unitId, endDate) {
@@ -94,14 +99,14 @@ export async function fetchHouseCashSeries(unitId, endDate) {
     dateFilter(
       supabase
         .from('efo_payments')
-        .select('payment_date, employee_name, official_amount, extra_amount, payment_method')
+        .select('id, payment_date, employee_name, official_amount, extra_amount, payment_method, notes')
         .eq('unit_id', unitId),
       'payment_date'
     ),
     dateFilter(
       supabase
         .from('wage_payments')
-        .select('payment_date, worker_name, official_amount, extra_amount')
+        .select('id, payment_date, worker_name, official_amount, extra_amount, notes')
         .eq('unit_id', unitId),
       'payment_date'
     ),
@@ -183,22 +188,26 @@ export async function fetchHouseCashSeries(unitId, endDate) {
     const label = e.supplier_name + (e.item_description ? ` - ${e.item_description}` : '');
     // Dolgozói számla: az egység készpénzét NEM terheli (a teljes összeget a
     // Központ állja), a tartalékát viszont a számla ÁFA tartalmának fele igen.
+    const source = { kind: 'expense', date: e.invoice_date, record: e };
     if (e.is_employee_invoice) {
       const half = employeeInvoiceReserveCost(e);
       if (half > 0) {
         row.reserveExpenses += half;
-        row.reservePaymentItems.push({ label: `${label} (dolgozói számla – ÁFA fele)`, amount: half });
+        row.reservePaymentItems.push({ label: `${label} (dolgozói számla – ÁFA fele)`, amount: half, source });
       }
       return;
     }
-    if (e.is_official && e.payment_method === 'cash') {
+    // Csak a készpénzzel fizetett számla mozgatja a házipénztárat: hivatalos a
+    // Készpénz zsebet, nem hivatalos a Tartalékot. Kártyás/átutalásos fizetés
+    // – akár nem hivatalos is – a bankszámlát terheli (lásd cashPockets.js).
+    const pocket = expenseCashPocket(e);
+    if (pocket === 'cash') {
       row.cashExpenses += amount;
-      row.cashPaymentItems.push({ label, amount });
-    } else if (!e.is_official) {
+      row.cashPaymentItems.push({ label, amount, source });
+    } else if (pocket === 'reserve') {
       row.reserveExpenses += amount;
-      row.reservePaymentItems.push({ label, amount });
+      row.reservePaymentItems.push({ label, amount, source });
     }
-    // official non-cash expenses (e.g. transfer) don't move physical cash
   });
 
   // EFO payments
@@ -206,13 +215,15 @@ export async function fetchHouseCashSeries(unitId, endDate) {
     const official = parseFloat(p.official_amount) || 0;
     const extra = parseFloat(p.extra_amount) || 0;
     const row = ensure(p.payment_date);
-    if (official > 0) {
+    const source = { kind: 'efo', date: p.payment_date, record: p };
+    // Átutalással fizetett EFO hivatalos része a bankszámláról megy.
+    if (official > 0 && efoOfficialMovesCash(p)) {
       row.cashExpenses += official;
-      row.cashPaymentItems.push({ label: `EFO - ${p.employee_name}`, amount: official });
+      row.cashPaymentItems.push({ label: `EFO - ${p.employee_name}`, amount: official, source });
     }
     if (extra > 0) {
       row.reserveExpenses += extra;
-      row.reservePaymentItems.push({ label: `EFO (tartalék) - ${p.employee_name}`, amount: extra });
+      row.reservePaymentItems.push({ label: `EFO (tartalék) - ${p.employee_name}`, amount: extra, source });
     }
   });
 
@@ -221,13 +232,14 @@ export async function fetchHouseCashSeries(unitId, endDate) {
     const official = parseFloat(p.official_amount) || 0;
     const extra = parseFloat(p.extra_amount) || 0;
     const row = ensure(p.payment_date);
+    const source = { kind: 'wage', date: p.payment_date, record: p };
     if (official > 0) {
       row.cashExpenses += official;
-      row.cashPaymentItems.push({ label: `Heti bér - ${p.worker_name}`, amount: official });
+      row.cashPaymentItems.push({ label: `Heti bér - ${p.worker_name}`, amount: official, source });
     }
     if (extra > 0) {
       row.reserveExpenses += extra;
-      row.reservePaymentItems.push({ label: `Heti bér (tartalék) - ${p.worker_name}`, amount: extra });
+      row.reservePaymentItems.push({ label: `Heti bér (tartalék) - ${p.worker_name}`, amount: extra, source });
     }
   });
 

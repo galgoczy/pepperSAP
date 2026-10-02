@@ -21,6 +21,7 @@ import { supabase } from '../lib/supabase';
 import { REGISTER_TOLERANCE, validatePaymentBreakdown, validateCardPayments, hasDocumentedDiscrepancy, hufDiscrepancyOf, eurDiscrepancyOf, methodCardAdjustmentOf, pooledTerminalFor } from '../lib/validations';
 import { netCashDiscrepancy, isMethodDiscrepancy, describeDiscrepancy } from '../lib/discrepancies';
 import { employeeInvoiceReserveCost } from '../lib/expenseVat';
+import { expenseCashPocket } from '../lib/cashPockets';
 import { CalendarDays, Printer, Plus, Receipt, Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, FileText, Users, Banknote, ShieldAlert } from 'lucide-react';
 
 // Shift a YYYY-MM-DD date string by whole days, using local date components so
@@ -230,12 +231,14 @@ export default function DailyEntryPage() {
       const officialExpenses = unitExpenses
         .filter(e => e.is_official === true)
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      // Ugyanaz a zseb-szabály, mint a mérlegben (lib/cashPockets.js): a
+      // kártyás / átutalásos fizetés – nem hivatalos is – nem a házipénztárból megy.
       const nonOfficialExpenses = unitExpenses
-        .filter(e => e.is_official === false)
+        .filter(e => expenseCashPocket(e) === 'reserve')
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0) + employeeInvoiceReserve;
       // Cash-only official expenses (for the Pénztár zárás on the cash report)
       const officialCashExpenses = unitExpenses
-        .filter(e => e.is_official === true && e.payment_method === 'cash')
+        .filter(e => expenseCashPocket(e) === 'cash')
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
 
       // Fetch cash register data with register info if revenue exists

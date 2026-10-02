@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { fetchHouseCashSeries, openingForDate } from '../lib/houseCashSeries';
 import { TERMINAL_TIP_WITHDRAW_RATE } from '../lib/utils';
 import { employeeInvoiceReserveCost } from '../lib/expenseVat';
+import { expenseCashPocket, efoOfficialMovesCash } from '../lib/cashPockets';
 import toast from 'react-hot-toast';
 
 export function useDailyRevenue(unitId, date) {
@@ -321,7 +322,7 @@ export function useHouseCash(unitId, date) {
           .maybeSingle(),
         supabase
           .from('efo_payments')
-          .select('official_amount, extra_amount')
+          .select('official_amount, extra_amount, payment_method')
           .eq('unit_id', unitId)
           .eq('payment_date', date),
         supabase
@@ -351,14 +352,16 @@ export function useHouseCash(unitId, date) {
       const officialExpenses = expenses
         .filter(e => e.is_official === true)
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+      // Ugyanaz a zseb-szabály, mint a mérlegben (lib/cashPockets.js): csak a
+      // készpénzes fizetés mozgatja a házipénztárat.
       // Hivatalos KÉSZPÉNZES kifizetések (ezek mozgatják a Pénztár zsebet)
       const officialCashExpenses = expenses
-        .filter(e => e.is_official === true && e.payment_method === 'cash')
+        .filter(e => expenseCashPocket(e) === 'cash')
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-      // Nem számlás kifizetések - is_official=false, plusz a dolgozói számlák
-      // ÁFA-fele: mindkettő a Tartalékot csökkenti.
+      // Nem számlás, KÉSZPÉNZES kifizetések, plusz a dolgozói számlák ÁFA-fele:
+      // mindkettő a Tartalékot csökkenti. (A kártyás nem hivatalos számla nem.)
       const nonOfficialExpenses = expenses
-        .filter(e => e.is_official === false)
+        .filter(e => expenseCashPocket(e) === 'reserve')
         .reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0) + employeeInvoiceReserve;
 
       // Fetch cash register revenues separately if we have a daily_revenue record
@@ -438,9 +441,10 @@ export function useHouseCash(unitId, date) {
       const softwareRevenue = parseFloat(dailyRevenueResult.data?.total_revenue) || 0;
 
       // Calculate EFO and wage payment totals (official amounts only)
-      const efoPaymentsTotal = (efoPaymentsResult.data || []).reduce(
-        (sum, p) => sum + (parseFloat(p.official_amount) || 0), 0
-      );
+      // Az átutalással fizetett EFO hivatalos része nem a házipénztárból megy.
+      const efoPaymentsTotal = (efoPaymentsResult.data || [])
+        .filter(efoOfficialMovesCash)
+        .reduce((sum, p) => sum + (parseFloat(p.official_amount) || 0), 0);
       const wagePaymentsTotal = (wagePaymentsResult.data || []).reduce(
         (sum, p) => sum + (parseFloat(p.official_amount) || 0), 0
       );

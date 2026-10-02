@@ -50,8 +50,9 @@ export function useUnitBalanceBreakdown(unitId, pocket /* 'cash' | 'reserve' */)
           if (row.cashDiscrepancies) {
             list.push({ date: d, label: 'Elütések', amount: -row.cashDiscrepancies, type: 'expense' });
           }
+          // A forrás (számla / EFO / bér rekord) a kattintható részletekhez kell.
           (row.cashPaymentItems || []).forEach((it) => {
-            list.push({ date: d, label: it.label, amount: -(parseFloat(it.amount) || 0), type: 'expense' });
+            list.push({ date: d, label: it.label, amount: -(parseFloat(it.amount) || 0), type: 'expense', source: it.source || null, pocket: 'cash' });
           });
           if (row.cashTransfers) {
             list.push({
@@ -73,7 +74,7 @@ export function useUnitBalanceBreakdown(unitId, pocket /* 'cash' | 'reserve' */)
             list.push({ date: d, label: 'Tartalék bevétel (szoftver-pénztárgép különbség + extra)', amount: row.reserveRevenue, type: 'income' });
           }
           (row.reservePaymentItems || []).forEach((it) => {
-            list.push({ date: d, label: it.label, amount: -(parseFloat(it.amount) || 0), type: 'expense' });
+            list.push({ date: d, label: it.label, amount: -(parseFloat(it.amount) || 0), type: 'expense', source: it.source || null, pocket: 'reserve' });
           });
           if (row.reserveTransfers) {
             list.push({
